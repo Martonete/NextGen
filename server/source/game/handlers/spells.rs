@@ -14,9 +14,9 @@ mod spell_support;
 use spell_offensive::*;
 use spell_support::*;
 
-use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, MAX_SPELL_SLOTS};
+use crate::net::ConnectionId;
 use crate::protocol::font_index;
 // Re-export handlers items for use by spell_offensive/spell_support submodules via super::
 #[allow(unused_imports)]
@@ -24,7 +24,7 @@ pub(super) use super::common;
 #[allow(unused_imports)]
 pub(super) use super::common::*;
 #[allow(unused_imports)]
-pub(super) use super::{user_die, npc_die, check_user_level, revive_user};
+pub(super) use super::{check_user_level, npc_die, revive_user, user_die};
 
 // =====================================================================
 // Spell handler
@@ -33,8 +33,14 @@ pub(super) use super::{user_die, npc_die, check_user_level, revive_user};
 /// LH<slot>,<target_x>,<target_y> — Cast spell.
 /// LH<slot> — Select spell to cast (VB6: flags.Hechizo = slot).
 /// Does NOT cast the spell — the cast happens on the next RC (right-click) that targets a tile.
-pub(super) async fn handle_cast_spell(state: &mut GameState, conn_id: ConnectionId, spell_slot: usize) {
-    if spell_slot < 1 || spell_slot > MAX_SPELL_SLOTS { return; }
+pub(super) async fn handle_cast_spell(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    spell_slot: usize,
+) {
+    if spell_slot < 1 || spell_slot > MAX_SPELL_SLOTS {
+        return;
+    }
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         if user.logged {
@@ -56,20 +62,45 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => {
             let slot = u.pending_spell;
-            if slot < 1 || slot > MAX_SPELL_SLOTS { return; }
+            if slot < 1 || slot > MAX_SPELL_SLOTS {
+                return;
+            }
             let spell_id = u.spells[slot - 1];
             (
-                u.pos_map, u.pos_x, u.pos_y, u.char_index,
-                u.dead, u.min_mana,
-                spell_id, u.level, u.target_x, u.target_y, u.target_map,
-                u.target_user, u.target_npc as usize, u.privileges,
+                u.pos_map,
+                u.pos_x,
+                u.pos_y,
+                u.char_index,
+                u.dead,
+                u.min_mana,
+                spell_id,
+                u.level,
+                u.target_x,
+                u.target_y,
+                u.target_map,
+                u.target_user,
+                u.target_npc as usize,
+                u.privileges,
             )
         }
         _ => return,
     };
-    let (map, x, y, char_index, dead, min_mana,
-         spell_id, _level, target_x, target_y, _target_map,
-         target_user_conn, target_npc_idx, privileges) = user_data;
+    let (
+        map,
+        x,
+        y,
+        char_index,
+        dead,
+        min_mana,
+        spell_id,
+        _level,
+        target_x,
+        target_y,
+        _target_map,
+        target_user_conn,
+        target_npc_idx,
+        privileges,
+    ) = user_data;
 
     // VB6: PuedeLanzar does NOT check paralysis — paralyzed users CAN cast spells
     if dead || spell_id == 0 {
@@ -81,7 +112,11 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     const RANGO_VISION_X: i32 = 8;
     const RANGO_VISION_Y: i32 = 6;
     if (target_x - x).abs() > RANGO_VISION_X || (target_y - y).abs() > RANGO_VISION_Y {
-        state.send_console(conn_id, "Estás muy lejos para lanzar ese hechizo.", font_index::FIGHT);
+        state.send_console(
+            conn_id,
+            "Estás muy lejos para lanzar ese hechizo.",
+            font_index::FIGHT,
+        );
         return;
     }
 
@@ -99,7 +134,9 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     // ===== STEP 1: PuedeLanzar — weapon, mana, skill checks (VB6 lines 269-309) =====
 
     // VB6 modHechizos.bas:614-617: must have weapon/staff equipped to cast spells
-    let weapon_equipped = state.users.get(&conn_id)
+    let weapon_equipped = state
+        .users
+        .get(&conn_id)
         .map(|u| u.equip.weapon > 0)
         .unwrap_or(false);
     if !weapon_equipped {
@@ -146,8 +183,15 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         };
         if class == PlayerClass::Mago {
             let staff_power = if weapon_slot > 0 {
-                state.game_data.objects.get(obj_idx as usize).map(|o| o.staff_power).unwrap_or(0)
-            } else { 0 };
+                state
+                    .game_data
+                    .objects
+                    .get(obj_idx as usize)
+                    .map(|o| o.staff_power)
+                    .unwrap_or(0)
+            } else {
+                0
+            };
             if staff_power < spell.need_staff {
                 state.send_msg_id(conn_id, 835, ""); // Staff too weak
                 return;
@@ -160,17 +204,18 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         Some(target_user_conn)
     } else {
         // Check tile and tile+1 for user (VB6 LookatTile checks Y and Y+1)
-        state.world.grid(map)
-            .and_then(|g| {
-                g.tile(target_x, target_y).and_then(|t| t.user_conn)
-                    .or_else(|| g.tile(target_x, target_y + 1).and_then(|t| t.user_conn))
-            })
+        state.world.grid(map).and_then(|g| {
+            g.tile(target_x, target_y)
+                .and_then(|t| t.user_conn)
+                .or_else(|| g.tile(target_x, target_y + 1).and_then(|t| t.user_conn))
+        })
     };
     let target_npc = if target_npc_idx > 0 {
         Some(target_npc_idx)
     } else {
         // Check tile for NPC
-        state.npc_at_tile(map, target_x, target_y)
+        state
+            .npc_at_tile(map, target_x, target_y)
             .or_else(|| state.npc_at_tile(map, target_x, target_y + 1))
     };
 
@@ -212,9 +257,13 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     }
 
     // Determine if spell is offensive (VB6: PuedeAtacar check)
-    let is_offensive = spell.sube_hp == 2 || spell.sube_ham == 2 || spell.sube_sed == 2
-        || spell.paraliza || spell.inmoviliza
-        || spell.envenena || spell.maldicion;
+    let is_offensive = spell.sube_hp == 2
+        || spell.sube_ham == 2
+        || spell.sube_sed == 2
+        || spell.paraliza
+        || spell.inmoviliza
+        || spell.envenena
+        || spell.maldicion;
 
     // ===== STEP 4: Safe zone check for offensive spells (Trigger > Zone > Map) =====
     if is_offensive {
@@ -255,7 +304,9 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
 
         // VB6: Mimetiza on NPC — Druid only, copies NPC appearance onto caster
         if spell.mimetiza {
-            let is_druid = state.users.get(&conn_id)
+            let is_druid = state
+                .users
+                .get(&conn_id)
                 .map(|u| u.class == PlayerClass::Druida)
                 .unwrap_or(false);
             if is_druid {
@@ -277,7 +328,11 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
 
         // Zone-aware safe check — victim in safe zone blocks offensive spells
         if is_offensive && target_id != conn_id {
-            let victim_pos = state.users.get(&target_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((0, 0));
+            let victim_pos = state
+                .users
+                .get(&target_id)
+                .map(|u| (u.pos_x, u.pos_y))
+                .unwrap_or((0, 0));
             if is_safe_at(state, map, victim_pos.0, victim_pos.1) {
                 state.send_msg_id(conn_id, 164, "");
                 return;
@@ -286,7 +341,9 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
 
         // VB6: Can't cast offensive spells on dead users or administrators
         if is_offensive && target_id != conn_id {
-            let (t_dead, t_privs) = state.users.get(&target_id)
+            let (t_dead, t_privs) = state
+                .users
+                .get(&target_id)
                 .map(|u| (u.dead, u.privileges))
                 .unwrap_or((false, 0));
             if t_dead {
@@ -297,8 +354,16 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 return;
             }
             // Clan safe check — can't cast offensive spells on clanmates if EITHER party has seguro_clan on
-            let caster_seguro = state.users.get(&conn_id).map(|u| u.seguro_clan).unwrap_or(false);
-            let target_seguro = state.users.get(&target_id).map(|u| u.seguro_clan).unwrap_or(false);
+            let caster_seguro = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.seguro_clan)
+                .unwrap_or(false);
+            let target_seguro = state
+                .users
+                .get(&target_id)
+                .map(|u| u.seguro_clan)
+                .unwrap_or(false);
             if (caster_seguro || target_seguro) && same_clan(state, conn_id, target_id) {
                 state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO);
                 return;
@@ -307,8 +372,11 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
 
         // VB6: Healing full HP check (||145)
         if spell.sube_hp == 1 {
-            let full_hp = state.users.get(&target_id)
-                .map(|u| u.min_hp >= u.max_hp).unwrap_or(false);
+            let full_hp = state
+                .users
+                .get(&target_id)
+                .map(|u| u.min_hp >= u.max_hp)
+                .unwrap_or(false);
             if full_hp {
                 state.send_msg_id(conn_id, 145, "");
                 return;
@@ -318,8 +386,11 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         // VB6: RemoverParalisis only works if target IS paralyzed (modHechizos.bas:766-802)
         // If target is not paralyzed, b stays False → no mana consumed, no FX
         if spell.remover_paralisis {
-            let is_paralyzed = state.users.get(&target_id)
-                .map(|u| u.paralyzed).unwrap_or(false);
+            let is_paralyzed = state
+                .users
+                .get(&target_id)
+                .map(|u| u.paralyzed)
+                .unwrap_or(false);
             if !is_paralyzed {
                 return;
             }
@@ -355,8 +426,11 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 // Self-only spell — beneficial only
                 // VB6: RemoverParalisis on self also requires being paralyzed
                 if spell.remover_paralisis {
-                    let is_paralyzed = state.users.get(&conn_id)
-                        .map(|u| u.paralyzed).unwrap_or(false);
+                    let is_paralyzed = state
+                        .users
+                        .get(&conn_id)
+                        .map(|u| u.paralyzed)
+                        .unwrap_or(false);
                     if !is_paralyzed {
                         return;
                     }
@@ -391,7 +465,10 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                         // M8: RemueveInvisibilidadParcial (Detect Hidden) terrain spell
                         // VB6: HechizoTerrenoEstado — scan ±8 tiles around target, reveal invisible users
                         if spell.remuve_invisibilidad_parcial {
-                            apply_terrain_detect_hidden(state, conn_id, target_x, target_y, map, &spell).await;
+                            apply_terrain_detect_hidden(
+                                state, conn_id, target_x, target_y, map, &spell,
+                            )
+                            .await;
                         }
                     }
                     _ => {}
@@ -409,8 +486,12 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
 /// Consume mana and stamina after a successful spell cast.
 /// VB6: Only consumed if b=True (spell succeeded), and only for normal users (not GMs).
 /// VB6: Druid with Flauta Élfica gets mana discounts (modHechizos.bas lines 733-752).
-pub(super) async fn consume_spell_mana(state: &mut GameState, conn_id: ConnectionId,
-                             spell: &crate::data::spells::SpellData, privileges: i32) {
+pub(super) async fn consume_spell_mana(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    spell: &crate::data::spells::SpellData,
+    privileges: i32,
+) {
     if privileges == 0 {
         let mut mana_cost = spell.mana_requerido;
 
@@ -420,7 +501,9 @@ pub(super) async fn consume_spell_mana(state: &mut GameState, conn_id: Connectio
                 let ring_slot = user.equip.ring;
                 let ring_obj = if ring_slot > 0 && ring_slot <= user.inventory.len() {
                     user.inventory[ring_slot - 1].obj_index
-                } else { 0 };
+                } else {
+                    0
+                };
                 if ring_obj == spell_offensive::FLAUTAELFICA {
                     if spell.mimetiza {
                         // VB6: Mimicry: 50% less mana

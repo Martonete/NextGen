@@ -1,15 +1,15 @@
 //! Inventory ground interaction: pickup, drop items, drop gold.
 //! Split from inventory.rs for file size management.
 
-use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS};
-use crate::game::world;
-use crate::protocol::font_index;
-use crate::protocol::binary_packets;
+use super::equip::unequip_slot;
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 use crate::game::handlers::send_inventory_slot;
-use super::equip::unequip_slot;
+use crate::game::types::{GameState, MAX_INVENTORY_SLOTS, SendTarget};
+use crate::game::world;
+use crate::net::ConnectionId;
+use crate::protocol::binary_packets;
+use crate::protocol::font_index;
 
 pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId) {
     let user_data = match state.users.get(&conn_id) {
@@ -30,7 +30,9 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     // cannot observe or consume the same item in that window.
     // If this ever moves to a multi-threaded executor or acquires an await between
     // check and clear, revisit with `Option::take()` atomic-take pattern.
-    let ground_item = state.world.grid(map)
+    let ground_item = state
+        .world
+        .grid(map)
         .and_then(|g| g.tile(x, y))
         .map(|t| t.ground_item)
         .unwrap_or_default();
@@ -41,7 +43,8 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
 
     // VB6: Agarrable=1 means the object CANNOT be picked up (fixed object like sign, fire, etc.)
     // If Agarrable <> 1 Then → allow pickup
-    let is_fixed = state.get_object(ground_item.obj_index)
+    let is_fixed = state
+        .get_object(ground_item.obj_index)
         .map(|o| o.agarrable)
         .unwrap_or(false);
 
@@ -54,7 +57,8 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     let amount = ground_item.amount;
 
     // VB6 13.3: Gold (otGuita / ObjType::Money) goes directly to wallet, not inventory
-    let is_gold = state.get_object(obj_idx)
+    let is_gold = state
+        .get_object(obj_idx)
         .map(|o| o.obj_type == ObjType::Money)
         .unwrap_or(false);
 
@@ -75,7 +79,11 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
             user.gold += amount as i64;
         }
         send_stats_gold(state, conn_id).await;
-        state.send_console(conn_id, &format!("Has recogido {} monedas de oro.", amount), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("Has recogido {} monedas de oro.", amount),
+            font_index::INFO,
+        );
         return;
     }
 
@@ -90,7 +98,8 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         let mut stack_slot = None;
         let mut empty_slot = None;
         for i in 0..MAX_INVENTORY_SLOTS {
-            if user.inventory[i].obj_index == ground_item.obj_index && user.inventory[i].amount > 0 {
+            if user.inventory[i].obj_index == ground_item.obj_index && user.inventory[i].amount > 0
+            {
                 stack_slot = Some(i);
                 break;
             }
@@ -130,8 +139,8 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         } else {
             // New slot
             user.inventory[slot].obj_index = obj_idx;
-        user.inventory[slot].amount = amount;
-        user.inventory[slot].equipped = false;
+            user.inventory[slot].amount = amount;
+            user.inventory[slot].equipped = false;
         }
     }
 
@@ -139,7 +148,8 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     send_inventory_slot(state, conn_id, slot).await;
 
     // Get item name for notification
-    let item_name = state.get_object(obj_idx)
+    let item_name = state
+        .get_object(obj_idx)
         .map(|o| o.name.clone())
         .unwrap_or_else(|| format!("Item #{}", obj_idx));
 
@@ -147,13 +157,22 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
 }
 
 /// TI<slot>,<amount> — Drop item from inventory to ground.
-pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionId, slot: usize, amount: i32) {
+pub(crate) async fn handle_drop_item(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    slot: usize,
+    amount: i32,
+) {
     if amount <= 0 {
         return;
     }
 
     // slot must be 1..=max_slots (FLAGORO=-1 gold drops are handled by caller)
-    let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
+    let max_slots = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.current_inventory_slots)
+        .unwrap_or(MAX_INVENTORY_SLOTS);
     if slot < 1 || slot > max_slots {
         return;
     }
@@ -178,11 +197,22 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     }
 
     // VB6 13.3 parity: cannot drop items while navigating, except the boat itself (dismount)
-    let is_navigating = state.users.get(&conn_id).map(|u| u.navigating).unwrap_or(false);
+    let is_navigating = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.navigating)
+        .unwrap_or(false);
     if is_navigating {
-        let is_boat = state.get_object(obj_idx).map(|o| o.obj_type == ObjType::Boat).unwrap_or(false);
+        let is_boat = state
+            .get_object(obj_idx)
+            .map(|o| o.obj_type == ObjType::Boat)
+            .unwrap_or(false);
         if !is_boat {
-            state.send_console(conn_id, "No puedes tirar objetos mientras navegas.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No puedes tirar objetos mientras navegas.",
+                font_index::INFO,
+            );
             return;
         }
     }
@@ -209,7 +239,9 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     }
 
     // If item is equipped, unequip it first (VB6: DropObj line 295 calls Desequipar)
-    let is_equipped = state.users.get(&conn_id)
+    let is_equipped = state
+        .users
+        .get(&conn_id)
         .map(|u| u.inventory[idx].equipped)
         .unwrap_or(false);
 
@@ -231,17 +263,31 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                         user.heading,
                         user.shield_anim,
                         user.casco_anim,
-                        if had_aura { Some(crate::game::handlers::common::build_aura_binary(user)) } else { None },
+                        if had_aura {
+                            Some(crate::game::handlers::common::build_aura_binary(user))
+                        } else {
+                            None
+                        },
                     ),
                     None => return,
                 };
 
             // Broadcast appearance change to area via CP (character change)
-            let send_cp = matches!(obj_type, ObjType::Weapon | ObjType::Armor | ObjType::Shield | ObjType::Helmet);
+            let send_cp = matches!(
+                obj_type,
+                ObjType::Weapon | ObjType::Armor | ObjType::Shield | ObjType::Helmet
+            );
             if send_cp {
                 let pkt_cp = binary_packets::write_character_change(
-                    ci as i16, body as i16, head as i16, heading as u8,
-                    weapon_anim as i16, shield_anim as i16, casco_anim as i16, 0, 0,
+                    ci as i16,
+                    body as i16,
+                    head as i16,
+                    heading as u8,
+                    weapon_anim as i16,
+                    shield_anim as i16,
+                    casco_anim as i16,
+                    0,
+                    0,
                 );
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp);
             }
@@ -263,16 +309,22 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     // VB6: If dropping a mount while mounted, dismount (only if this is the last one)
     // Same for boats while navigating.
     let drop_obj_type = state.get_object(obj_idx).map(|o| o.obj_type);
-    let (is_mounted, is_navigating) = state.users.get(&conn_id)
+    let (is_mounted, is_navigating) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.montado, u.navigating))
         .unwrap_or((false, false));
 
     if drop_obj_type == Some(ObjType::Mount) && is_mounted {
-        let remaining = state.users.get(&conn_id)
+        let remaining = state
+            .users
+            .get(&conn_id)
             .map(|u| {
                 let mut count = 0i32;
                 for s in &u.inventory {
-                    if s.obj_index == obj_idx { count += s.amount; }
+                    if s.obj_index == obj_idx {
+                        count += s.amount;
+                    }
                 }
                 count - drop_amount
             })
@@ -294,11 +346,21 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                 u.casco_anim = ca;
             }
             let (cp_bytes, pkt_usm, pkt_mvol, pkt_cd) = {
-                let u = match state.users.get(&conn_id) { Some(u) => u, None => return };
+                let u = match state.users.get(&conn_id) {
+                    Some(u) => u,
+                    None => return,
+                };
                 (
                     binary_packets::write_character_change(
-                        u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
-                        u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                        u.char_index.0 as i16,
+                        u.body as i16,
+                        u.head as i16,
+                        u.heading as u8,
+                        u.weapon_anim as i16,
+                        u.shield_anim as i16,
+                        u.casco_anim as i16,
+                        0,
+                        0,
                     ),
                     binary_packets::write_user_mount(u.char_index.0 as i16, false),
                     binary_packets::write_levitate(u.char_index.0 as i16, false),
@@ -313,11 +375,15 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     }
 
     if drop_obj_type == Some(ObjType::Boat) && is_navigating {
-        let remaining = state.users.get(&conn_id)
+        let remaining = state
+            .users
+            .get(&conn_id)
             .map(|u| {
                 let mut count = 0i32;
                 for s in &u.inventory {
-                    if s.obj_index == obj_idx { count += s.amount; }
+                    if s.obj_index == obj_idx {
+                        count += s.amount;
+                    }
                 }
                 count - drop_amount
             })
@@ -329,7 +395,9 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                 let saved_head = u.old_head;
                 u.navigating = false;
                 u.body = saved_body;
-                if saved_head > 0 { u.head = saved_head; }
+                if saved_head > 0 {
+                    u.head = saved_head;
+                }
                 u.barco_slot = 0;
             }
             let (wa, sa, ca) = get_equipped_anims(state, conn_id);
@@ -339,11 +407,21 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                 u.casco_anim = ca;
             }
             let (cp_bytes, naveg_ci) = {
-                let u = match state.users.get(&conn_id) { Some(u) => u, None => return };
+                let u = match state.users.get(&conn_id) {
+                    Some(u) => u,
+                    None => return,
+                };
                 (
                     binary_packets::write_character_change(
-                        u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
-                        u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                        u.char_index.0 as i16,
+                        u.body as i16,
+                        u.head as i16,
+                        u.heading as u8,
+                        u.weapon_anim as i16,
+                        u.shield_anim as i16,
+                        u.casco_anim as i16,
+                        0,
+                        0,
                     ),
                     u.char_index.0,
                 )
@@ -358,9 +436,7 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     }
 
     // Get GrhIndex for the item
-    let grh_index = state.get_object(obj_idx)
-        .map(|o| o.grh_index)
-        .unwrap_or(0);
+    let grh_index = state.get_object(obj_idx).map(|o| o.grh_index).unwrap_or(0);
 
     // Place on ground
     let is_new = {
@@ -386,8 +462,8 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
         let cur_amt = user.inventory[idx].amount;
         if drop_amount >= cur_amt {
             user.inventory[idx].obj_index = 0;
-        user.inventory[idx].amount = 0;
-        user.inventory[idx].equipped = false;
+            user.inventory[idx].amount = 0;
+            user.inventory[idx].equipped = false;
         } else {
             user.inventory[idx].amount = cur_amt - drop_amount;
         }
@@ -418,9 +494,17 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
     }
 
     // VB6 13.3 parity: cannot drop gold while navigating
-    let is_navigating = state.users.get(&conn_id).map(|u| u.navigating).unwrap_or(false);
+    let is_navigating = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.navigating)
+        .unwrap_or(false);
     if is_navigating {
-        state.send_console(conn_id, "No puedes tirar objetos mientras navegas.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No puedes tirar objetos mientras navegas.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -435,7 +519,8 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
 
     // VB6: TirarOro — place gold object (iORO=12) on ground tile
     // Split into MAX_INVENTORY_OBJS (10000) chunks like VB6
-    let grh_index = state.get_object(GOLD_OBJ_INDEX)
+    let grh_index = state
+        .get_object(GOLD_OBJ_INDEX)
         .map(|o| o.grh_index)
         .unwrap_or(0);
 
@@ -445,7 +530,9 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
         remaining -= chunk;
 
         // Check tile availability
-        let can_place = state.world.grid(map)
+        let can_place = state
+            .world
+            .grid(map)
             .and_then(|g| g.tile(x, y))
             .map(|t| t.ground_item.obj_index == 0 || t.ground_item.obj_index == GOLD_OBJ_INDEX)
             .unwrap_or(false);
@@ -485,5 +572,9 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
         break;
     }
 
-    state.send_console(conn_id, &format!("Tiraste {} monedas de oro.", drop_total), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Tiraste {} monedas de oro.", drop_total),
+        font_index::INFO,
+    );
 }

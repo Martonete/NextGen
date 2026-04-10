@@ -1,18 +1,23 @@
 //! Inventory click handlers: left click (look at), right click (interact), doors, forum, safe toggle.
 //! Split from inventory.rs for file size management.
 
-use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget};
-use crate::game::world;
-use crate::protocol::font_index;
-use crate::protocol::binary_packets;
+use super::doors::{accion_para_foro, accion_para_puerta};
 use crate::game::handlers::common::*;
 use crate::game::handlers::{
-    warp_user, iniciar_comercio_npc, iniciar_banco, iniciar_banco_clan, user_die,
+    iniciar_banco, iniciar_banco_clan, iniciar_comercio_npc, user_die, warp_user,
 };
-use super::doors::{accion_para_puerta, accion_para_foro};
+use crate::game::types::{GameState, SendTarget};
+use crate::game::world;
+use crate::net::ConnectionId;
+use crate::protocol::binary_packets;
+use crate::protocol::font_index;
 
-pub(crate) async fn handle_left_click(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
+pub(crate) async fn handle_left_click(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    x: i32,
+    y: i32,
+) {
     do_lookat_tile(state, conn_id, x, y).await;
 }
 
@@ -20,8 +25,13 @@ pub(crate) async fn handle_left_click(state: &mut GameState, conn_id: Connection
 /// Called from LC handler and WLC Magia handler (VB6 calls LookatTile before LanzarHechizo).
 pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
     let (map, user_x, user_y, my_privileges, my_survival_skill) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.privileges,
-            u.skills.get(8).copied().unwrap_or(0)), // eSkill.Supervivencia = 9 (1-based) → skills[8] (0-based)
+        Some(u) if u.logged => (
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+            u.privileges,
+            u.skills.get(8).copied().unwrap_or(0),
+        ), // eSkill.Supervivencia = 9 (1-based) → skills[8] (0-based)
         _ => return,
     };
 
@@ -46,8 +56,12 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
 
     // ========== OBJECT / DOOR DETECTION (VB6 lines 520-759) ==========
     // Check exact tile first, then nearby tiles for doors
-    let obj_tile = state.world.grid(map).and_then(|g| g.tile(x, y))
-        .map(|t| t.ground_item.obj_index).unwrap_or(0);
+    let obj_tile = state
+        .world
+        .grid(map)
+        .and_then(|g| g.tile(x, y))
+        .map(|t| t.ground_item.obj_index)
+        .unwrap_or(0);
     if obj_tile > 0 {
         // Set target obj
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -57,10 +71,16 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
         }
         found_something = true;
         // Display object info
-        let obj_info = state.get_object(obj_tile).map(|o| (o.name.clone(), o.index));
+        let obj_info = state
+            .get_object(obj_tile)
+            .map(|o| (o.name.clone(), o.index));
         if let Some((name, idx)) = obj_info {
-            let amount = state.world.grid(map).and_then(|g| g.tile(x, y))
-                .map(|t| t.ground_item.amount).unwrap_or(0);
+            let amount = state
+                .world
+                .grid(map)
+                .and_then(|g| g.tile(x, y))
+                .map(|t| t.ground_item.amount)
+                .unwrap_or(0);
             let msg = if !is_user {
                 if amount > 1 {
                     format!("{} - {} - {}", name, amount, idx)
@@ -83,10 +103,14 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
     let grid_height = state.world.grid(map).map(|g| g.height).unwrap_or(100);
     if found_char == 0 {
         for &check_y in &[y + 1, y] {
-            if check_y < 1 || check_y > grid_height { continue; }
+            if check_y < 1 || check_y > grid_height {
+                continue;
+            }
             // Check for user
             if found_char == 0 {
-                let tile_user = state.world.grid(map)
+                let tile_user = state
+                    .world
+                    .grid(map)
                     .and_then(|g| g.tile(x, check_y))
                     .and_then(|t| t.user_conn);
                 if let Some(tc) = tile_user {
@@ -98,7 +122,9 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
             }
             // Check for NPC on same tile
             if found_char == 0 {
-                let tile_npc = state.world.grid(map)
+                let tile_npc = state
+                    .world
+                    .grid(map)
                     .and_then(|g| g.tile(x, check_y))
                     .map(|t| t.npc_index)
                     .unwrap_or(0);
@@ -107,7 +133,9 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                     found_char = 2;
                 }
             }
-            if found_char != 0 { break; }
+            if found_char != 0 {
+                break;
+            }
         }
     }
 
@@ -115,16 +143,41 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
     if found_char == 1 {
         let target = temp_char_index_user;
         let info = state.users.get(&target).map(|t| {
-            (t.char_name.clone(), t.level, t.guild_index, t.min_hp, t.max_hp,
-             t.dead, t.privileges, t.criminal, t.armada_real, t.fuerzas_caos,
-             t.desc.clone(), t.char_index.0,
-             t.recompensas_real, t.recompensas_caos)
+            (
+                t.char_name.clone(),
+                t.level,
+                t.guild_index,
+                t.min_hp,
+                t.max_hp,
+                t.dead,
+                t.privileges,
+                t.criminal,
+                t.armada_real,
+                t.fuerzas_caos,
+                t.desc.clone(),
+                t.char_index.0,
+                t.recompensas_real,
+                t.recompensas_caos,
+            )
         });
 
-        if let Some((name, level, guild_idx, min_hp, max_hp, dead, priv_target,
-                      criminal, armada, caos, desc, char_idx,
-                      recomp_real, recomp_caos)) = info {
-
+        if let Some((
+            name,
+            level,
+            guild_idx,
+            min_hp,
+            max_hp,
+            dead,
+            priv_target,
+            criminal,
+            armada,
+            caos,
+            desc,
+            char_idx,
+            recomp_real,
+            recomp_caos,
+        )) = info
+        {
             let mut stat = String::new();
             let limite_newbie = 9;
 
@@ -135,7 +188,11 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
 
             // VB6: Guild tag
             if guild_idx > 0 {
-                let gn = state.users.get(&target).map(|u| u.guild_name.clone()).unwrap_or_default();
+                let gn = state
+                    .users
+                    .get(&target)
+                    .map(|u| u.guild_name.clone())
+                    .unwrap_or_default();
                 if !gn.is_empty() {
                     stat.push_str(&format!(" <{}>", gn));
                 }
@@ -242,18 +299,40 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
     if found_char == 2 {
         let npc_idx = temp_char_index_npc;
         let npc_data = state.get_npc(npc_idx).map(|npc| {
-            (npc.is_alive(), npc.name.clone(), npc.desc.clone(),
-             npc.char_index, npc.min_hp, npc.max_hp, npc.npc_number,
-             npc.npc_type)
+            (
+                npc.is_alive(),
+                npc.name.clone(),
+                npc.desc.clone(),
+                npc.char_index,
+                npc.min_hp,
+                npc.max_hp,
+                npc.npc_number,
+                npc.npc_type,
+            )
         });
 
-        if let Some((alive, npc_name, npc_desc, npc_char_index, npc_min_hp, npc_max_hp, npc_num, _npc_type)) = npc_data {
+        if let Some((
+            alive,
+            npc_name,
+            npc_desc,
+            npc_char_index,
+            npc_min_hp,
+            npc_max_hp,
+            npc_num,
+            _npc_type,
+        )) = npc_data
+        {
             if alive {
                 // VB6: GM gets detailed NPC info (line 987)
                 if my_privileges > 0 {
-                    state.send_console(conn_id,
-                        &format!("Nombre : {} /  Vida : {}/{} Numero de NPC : {}", npc_name, npc_min_hp, npc_max_hp, npc_num),
-                        font_index::NPCSX);
+                    state.send_console(
+                        conn_id,
+                        &format!(
+                            "Nombre : {} /  Vida : {}/{} Numero de NPC : {}",
+                            npc_name, npc_min_hp, npc_max_hp, npc_num
+                        ),
+                        font_index::NPCSX,
+                    );
                 }
 
                 // VB6: Health status based on Survival skill (lines 993-1036)
@@ -267,12 +346,22 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                 if npc_desc.len() > 1 {
                     // GM gets extra info line before desc
                     if is_gm {
-                        state.send_console(conn_id,
-                            &format!("Nombre: {} Vida: {}/{} Numero de NPC: {} Indice: {}", npc_name, npc_min_hp, npc_max_hp, npc_num, npc_idx),
-                            font_index::NPCSX);
+                        state.send_console(
+                            conn_id,
+                            &format!(
+                                "Nombre: {} Vida: {}/{} Numero de NPC: {} Indice: {}",
+                                npc_name, npc_min_hp, npc_max_hp, npc_num, npc_idx
+                            ),
+                            font_index::NPCSX,
+                        );
                     }
                     // Speech bubble with desc (overhead white text)
-                    state.send_chat_over_head_to(SendTarget::ToIndex(conn_id), &npc_desc, npc_char_index.0 as i16, 16777215);
+                    state.send_chat_over_head_to(
+                        SendTarget::ToIndex(conn_id),
+                        &npc_desc,
+                        npc_char_index.0 as i16,
+                        16777215,
+                    );
                 } else {
                     // No desc → show name + health status
                     state.send_msg_id(conn_id, 674, &format!("{}@{}", npc_name, estatus));
@@ -291,17 +380,25 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
     // ========== CLEANUP (VB6 lines 1085-1115) ==========
     // Don't reset target_npc while in commerce mode (VB6: commerce form is modal,
     // so LC packets can't arrive during commerce. Godot client is non-modal.)
-    let comerciando = state.users.get(&conn_id).map(|u| u.comerciando).unwrap_or(false);
+    let comerciando = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.comerciando)
+        .unwrap_or(false);
     if found_char == 0 {
         if let Some(user) = state.users.get_mut(&conn_id) {
-            if !comerciando { user.target_npc = 0; }
+            if !comerciando {
+                user.target_npc = 0;
+            }
             user.target_npc_idx = 0;
             user.target_user = 0;
         }
     }
     if !found_something {
         if let Some(user) = state.users.get_mut(&conn_id) {
-            if !comerciando { user.target_npc = 0; }
+            if !comerciando {
+                user.target_npc = 0;
+            }
             user.target_npc_idx = 0;
             user.target_user = 0;
         }
@@ -342,7 +439,9 @@ pub(crate) fn titulo_caos(recompensas: i32) -> &'static str {
 /// - skill 41-59: fine-grained 5%/10%/25%/50%/75% thresholds
 /// - skill >= 60: exact "Tiene X puntos de vida"
 pub(crate) fn npc_health_by_survival(min_hp: i32, max_hp: i32, survival_skill: i32) -> String {
-    if max_hp <= 0 { return "Intacto".to_string(); }
+    if max_hp <= 0 {
+        return "Intacto".to_string();
+    }
 
     // VB6: NpcHP% = Int(Npc(NpcIndex).MIN_HP * 100 / Npc(NpcIndex).MAX_HP)
     let npc_hp_pct = (min_hp as f64 / max_hp as f64 * 100.0) as i32;
@@ -352,27 +451,46 @@ pub(crate) fn npc_health_by_survival(min_hp: i32, max_hp: i32, survival_skill: i
         return format!("Tiene {} puntos de vida", min_hp);
     } else if survival_skill >= 41 {
         // VB6 skill < 60 branch — 5-tier detail with 5%/10%/25%/50%/75% thresholds
-        if npc_hp_pct <= 5 { "Agonizando".to_string() }
-        else if npc_hp_pct <= 10 { "Casi muerto".to_string() }
-        else if npc_hp_pct <= 25 { "Muy malherido".to_string() }
-        else if npc_hp_pct <= 50 { "Malherido".to_string() }
-        else if npc_hp_pct <= 75 { "Herido".to_string() }
-        else { "Sano".to_string() }
+        if npc_hp_pct <= 5 {
+            "Agonizando".to_string()
+        } else if npc_hp_pct <= 10 {
+            "Casi muerto".to_string()
+        } else if npc_hp_pct <= 25 {
+            "Muy malherido".to_string()
+        } else if npc_hp_pct <= 50 {
+            "Malherido".to_string()
+        } else if npc_hp_pct <= 75 {
+            "Herido".to_string()
+        } else {
+            "Sano".to_string()
+        }
     } else if survival_skill <= 40 && survival_skill >= 31 {
         // VB6 skill <= 40 branch
-        if npc_hp_pct <= 25 { "Agonizando".to_string() }
-        else if npc_hp_pct <= 50 { "Malherido".to_string() }
-        else if npc_hp_pct <= 75 { "Herido".to_string() }
-        else { "Sano".to_string() }
+        if npc_hp_pct <= 25 {
+            "Agonizando".to_string()
+        } else if npc_hp_pct <= 50 {
+            "Malherido".to_string()
+        } else if npc_hp_pct <= 75 {
+            "Herido".to_string()
+        } else {
+            "Sano".to_string()
+        }
     } else if survival_skill <= 30 && survival_skill >= 21 {
         // VB6 skill <= 30 branch
-        if npc_hp_pct <= 50 { "Malherido".to_string() }
-        else if npc_hp_pct <= 75 { "Herido".to_string() }
-        else { "Sano".to_string() }
+        if npc_hp_pct <= 50 {
+            "Malherido".to_string()
+        } else if npc_hp_pct <= 75 {
+            "Herido".to_string()
+        } else {
+            "Sano".to_string()
+        }
     } else if survival_skill <= 20 && survival_skill >= 11 {
         // VB6 skill <= 20 branch
-        if npc_hp_pct <= 50 { "Herido".to_string() }
-        else { "Sano".to_string() }
+        if npc_hp_pct <= 50 {
+            "Herido".to_string()
+        } else {
+            "Sano".to_string()
+        }
     } else {
         // VB6 skill <= 10 branch
         "Dudoso".to_string()
@@ -381,7 +499,12 @@ pub(crate) fn npc_health_by_survival(min_hp: i32, max_hp: i32, survival_skill: i
 
 /// RC<x>,<y> — Right click on tile (interact / context menu).
 /// VB6 equivalent: Accion() in Acciones.bas — handles doors, NPCs, users, items.
-pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
+pub(crate) async fn handle_right_click(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    x: i32,
+    y: i32,
+) {
     let (map, user_x, user_y, privileges, dead) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.privileges, u.dead),
         _ => return,
@@ -406,11 +529,18 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
 
     // Gather tile data without holding borrows
     let tile_data = state.world.grid(map).and_then(|g| g.tile(x, y)).map(|t| {
-        (t.user_conn, t.npc_index, t.ground_item.obj_index, t.ground_item.amount)
+        (
+            t.user_conn,
+            t.npc_index,
+            t.ground_item.obj_index,
+            t.ground_item.amount,
+        )
     });
     let (tile_user, mut tile_npc_idx, tile_obj_idx, _tile_obj_amt) = match tile_data {
         Some(d) => d,
-        None => { return; }
+        None => {
+            return;
+        }
     };
 
     // VB6 Acciones.bas: check Y+1 FIRST, then Y for characters.
@@ -419,7 +549,12 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     let rc_grid_height = state.world.grid(map).map(|g| g.height).unwrap_or(100);
     let rc_grid_width = state.world.grid(map).map(|g| g.width).unwrap_or(100);
     if tile_npc_idx == 0 && y + 1 <= rc_grid_height {
-        if let Some(npc_on_y1) = state.world.grid(map).and_then(|g| g.tile(x, y + 1)).map(|t| t.npc_index) {
+        if let Some(npc_on_y1) = state
+            .world
+            .grid(map)
+            .and_then(|g| g.tile(x, y + 1))
+            .map(|t| t.npc_index)
+        {
             if npc_on_y1 > 0 {
                 tile_npc_idx = npc_on_y1;
             }
@@ -441,12 +576,15 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x-1: only for PuertaDoble or Porton doors
     for dx in [-1i32] {
         let ax = x + dx;
-        if ax < 1 || ax > rc_grid_width { continue; }
+        if ax < 1 || ax > rc_grid_width {
+            continue;
+        }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
                 if obj.obj_type == crate::data::objects::ObjType::Door
-                    && (obj.puerta_doble == 1 || obj.porton == 1) {
+                    && (obj.puerta_doble == 1 || obj.porton == 1)
+                {
                     accion_para_puerta(state, conn_id, map, ax, y, adj_obj).await;
                     return;
                 }
@@ -456,12 +594,13 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x-2: only for Porton doors
     for dx in [-2i32] {
         let ax = x + dx;
-        if ax < 1 || ax > rc_grid_width { continue; }
+        if ax < 1 || ax > rc_grid_width {
+            continue;
+        }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
-                if obj.obj_type == crate::data::objects::ObjType::Door
-                    && obj.porton == 1 {
+                if obj.obj_type == crate::data::objects::ObjType::Door && obj.porton == 1 {
                     accion_para_puerta(state, conn_id, map, ax, y, adj_obj).await;
                     return;
                 }
@@ -471,7 +610,9 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x+1: any door type
     for dx in [1i32] {
         let ax = x + dx;
-        if ax < 1 || ax > rc_grid_width { continue; }
+        if ax < 1 || ax > rc_grid_width {
+            continue;
+        }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
@@ -485,12 +626,15 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x+2: only for PuertaDoble or Porton doors (VB6 line 93-99)
     for dx in [2i32] {
         let ax = x + dx;
-        if ax < 1 || ax > rc_grid_width { continue; }
+        if ax < 1 || ax > rc_grid_width {
+            continue;
+        }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
                 if obj.obj_type == crate::data::objects::ObjType::Door
-                    && (obj.puerta_doble == 1 || obj.porton == 1) {
+                    && (obj.puerta_doble == 1 || obj.porton == 1)
+                {
                     accion_para_puerta(state, conn_id, map, ax, y, adj_obj).await;
                     return;
                 }
@@ -535,7 +679,14 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     if tile_npc_idx > 0 {
         let npc_idx = tile_npc_idx as usize;
         let npc_info = state.get_npc(npc_idx).map(|npc| {
-            (npc.is_alive(), npc.comercia, npc.name.clone(), npc.npc_type, npc.desc.clone(), npc.npc_number)
+            (
+                npc.is_alive(),
+                npc.comercia,
+                npc.name.clone(),
+                npc.npc_type,
+                npc.desc.clone(),
+                npc.npc_number,
+            )
         });
 
         if let Some((alive, comercia, _npc_name, npc_type, _npc_desc, npc_num)) = npc_info {
@@ -555,41 +706,58 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                 // Commerce takes priority over type (VB6 line 135)
                 // VB6 13.3 parity: max 3 tiles for all NPC interactions
                 if comercia {
-                    if dead { state.send_msg_id(conn_id, 3, ""); return; }
+                    if dead {
+                        state.send_msg_id(conn_id, 3, "");
+                        return;
+                    }
                     if dist > 3 {
-                        state.send_msg_id(conn_id, 13, ""); return;
+                        state.send_msg_id(conn_id, 13, "");
+                        return;
                     }
                     iniciar_comercio_npc(state, conn_id, npc_idx).await;
                 } else {
                     match npc_type {
                         NpcType::Banker => {
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
+                            }
                             if dist > 3 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
                             }
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
+                            }
                             if dist > 3 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
                             }
                             iniciar_banco_clan(state, conn_id).await;
                         }
                         NpcType::Traveler => {
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
+                            }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
                             }
                             let pkt_travels = binary_packets::write_travels();
                             state.send_bytes(conn_id, &pkt_travels);
                         }
-                        NpcType::Quest | NpcType::QuestNoble => { }
+                        NpcType::Quest | NpcType::QuestNoble => {}
                         NpcType::Reviver => {
                             // VB6 Acciones.bas:408-422 — Revividor NPC
                             // Distance check: <= 10 tiles
                             if dist > 10 {
-                                state.send_msg_id(conn_id, 12, ""); return;
+                                state.send_msg_id(conn_id, 12, "");
+                                return;
                             }
 
                             // If dead: revive first
@@ -606,22 +774,39 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             send_stats_hp(state, conn_id).await;
                         }
                         NpcType::Trainer => {
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 10 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
                             }
-                            state.send_console(conn_id, "Habla con el entrenador usando el chat.", font_index::INFO);
+                            if dist > 10 {
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
+                            }
+                            state.send_console(
+                                conn_id,
+                                "Habla con el entrenador usando el chat.",
+                                font_index::INFO,
+                            );
                         }
                         NpcType::Surgeon => {
                             if dist > 10 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
                             }
                             if let Some(user) = state.users.get_mut(&conn_id) {
                                 if user.poisoned {
                                     user.poisoned = false;
-                                    state.send_console(conn_id, "El cirujano te ha curado el veneno.", font_index::INFO);
+                                    state.send_console(
+                                        conn_id,
+                                        "El cirujano te ha curado el veneno.",
+                                        font_index::INFO,
+                                    );
                                 } else {
-                                    state.send_console(conn_id, "No necesitas curacion.", font_index::INFO);
+                                    state.send_console(
+                                        conn_id,
+                                        "No necesitas curacion.",
+                                        font_index::INFO,
+                                    );
                                 }
                             }
                         }
@@ -630,82 +815,133 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                         }
                         NpcType::Citizenship => {
                             // VB6: Ciudadania (type 13)
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
+                            }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
                             }
                             state.send_console(conn_id, "Habla conmigo para cambiar tu ciudadania. Escribe /CIUDADANO para convertirte en ciudadano o /CRIMINAL para renunciar.", font_index::INFO);
                         }
                         NpcType::HouseSeller => {
                             // VB6: ShowCasas (type 15) — house seller NPC
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
+                            }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
                             }
                             // VB6: sends house listing UI. Rust: use /CASAINFO <num> and /CASACOMPRAR <num>
                             state.send_console(conn_id, "Bienvenido a la inmobiliaria. Usa /CASAINFO <numero> para ver detalles o /CASACOMPRAR <numero> para comprar.", font_index::INFO);
                         }
-                        NpcType::Arena => { }
+                        NpcType::Arena => {}
                         NpcType::GodNpc => {
                             // VB6: NpcDioses (type 18)
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 3 {
-                                state.send_msg_id(conn_id, 14, ""); return;
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
                             }
-                            state.send_console(conn_id, "Acercate mas para hablar con los dioses.", font_index::INFO);
+                            if dist > 3 {
+                                state.send_msg_id(conn_id, 14, "");
+                                return;
+                            }
+                            state.send_console(
+                                conn_id,
+                                "Acercate mas para hablar con los dioses.",
+                                font_index::INFO,
+                            );
                         }
                         NpcType::Bargomaud => {
                             // VB6: NpcBargomaud (type 20) — check level >= 55, warp to 161,50,53
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
+                            }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 14, ""); return;
+                                state.send_msg_id(conn_id, 14, "");
+                                return;
                             }
                             let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(0);
                             if level < 55 {
-                                state.send_msg_id(conn_id, 643, ""); return;
+                                state.send_msg_id(conn_id, 643, "");
+                                return;
                             }
                             warp_user(state, conn_id, 161, 50, 53).await;
-                            let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+                            let name = state
+                                .users
+                                .get(&conn_id)
+                                .map(|u| u.char_name.clone())
+                                .unwrap_or_default();
                             state.send_msg_id(conn_id, 651, &name);
                         }
                         NpcType::QuintaJera => {
                             // VB6: QuintaJera (type 21) — faction rewards
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 5 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
                             }
-                            state.send_console(conn_id, "Usa los comandos /RECOMPENSA y /ENLISTAR para interactuar.", font_index::INFO);
+                            if dist > 5 {
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
+                            }
+                            state.send_console(
+                                conn_id,
+                                "Usa los comandos /RECOMPENSA y /ENLISTAR para interactuar.",
+                                font_index::INFO,
+                            );
                         }
                         NpcType::BoxDelivery => {
                             // VB6: EntregaCajas (type 24)
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 5 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                            if dead {
+                                state.send_msg_id(conn_id, 3, "");
+                                return;
                             }
-                            state.send_console(conn_id, "Trae las cajas de quest para recibir tu recompensa.", font_index::INFO);
+                            if dist > 5 {
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
+                            }
+                            state.send_console(
+                                conn_id,
+                                "Trae las cajas de quest para recibir tu recompensa.",
+                                font_index::INFO,
+                            );
                         }
                         NpcType::Noble => {
                             // VB6 13.3: Noble NPC (Rey/Demonio) kills enemy-faction players on click.
                             // alineacion 1 = Royal NPC → kills Caos players.
                             // alineacion 2 = Chaos NPC → kills Armada players.
-                            if dead { return; }
+                            if dead {
+                                return;
+                            }
                             if dist > 3 {
-                                state.send_msg_id(conn_id, 13, ""); return;
+                                state.send_msg_id(conn_id, 13, "");
+                                return;
                             }
                             let (is_armada, is_caos) = match state.users.get(&conn_id) {
                                 Some(u) => (u.armada_real, u.fuerzas_caos),
                                 None => return,
                             };
-                            let npc_alineacion = state.game_data.npcs.get(npc_num as usize)
+                            let npc_alineacion = state
+                                .game_data
+                                .npcs
+                                .get(npc_num as usize)
                                 .map(|d| d.alineacion)
                                 .unwrap_or(0);
                             let should_kill = match npc_alineacion {
-                                1 => is_caos,    // Royal NPC kills Caos players
-                                2 => is_armada,  // Chaos NPC kills Armada players
+                                1 => is_caos,   // Royal NPC kills Caos players
+                                2 => is_armada, // Chaos NPC kills Armada players
                                 _ => false,
                             };
                             if should_kill {
-                                state.send_console(conn_id, "Los guardias te han matado.", font_index::INFO);
+                                state.send_console(
+                                    conn_id,
+                                    "Los guardias te han matado.",
+                                    font_index::INFO,
+                                );
                                 user_die(state, conn_id, None).await;
                             }
                         }

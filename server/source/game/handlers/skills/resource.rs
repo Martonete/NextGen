@@ -1,19 +1,18 @@
 //! Resource gathering skills: fishing, woodcutting, mining.
 
-use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget};
-use crate::protocol::{font_index, binary_packets};
+use super::{
+    ESFUERZO_EXCAVAR_GENERAL, ESFUERZO_EXCAVAR_RECOLECTOR, ESFUERZO_PESCAR_GENERAL,
+    ESFUERZO_PESCAR_RECOLECTOR, ESFUERZO_TALAR_GENERAL, ESFUERZO_TALAR_RECOLECTOR,
+    equipped_weapon_obj, is_recolector, luck_denominator, max_items_extraibles, mod_fundicion,
+    try_level_skill_with_hit,
+};
 use crate::data::objects::ObjType;
+use crate::game::constants::*;
 use crate::game::handlers::common::*;
 use crate::game::handlers::send_inventory_slot;
-use crate::game::constants::*;
-use super::{luck_denominator, max_items_extraibles,
-    is_recolector, try_level_skill_with_hit, equipped_weapon_obj,
-    mod_fundicion,
-    ESFUERZO_PESCAR_RECOLECTOR, ESFUERZO_PESCAR_GENERAL,
-    ESFUERZO_TALAR_RECOLECTOR, ESFUERZO_TALAR_GENERAL,
-    ESFUERZO_EXCAVAR_RECOLECTOR, ESFUERZO_EXCAVAR_GENERAL,
-};
+use crate::game::types::{GameState, SendTarget};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
 
 /// VB6: PECES_POSIBLES — fish types obtainable from net fishing (ListaPeces).
 /// Regular fishing (rod) always yields PESCADO_OBJ (139).
@@ -27,7 +26,11 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     };
 
     // Check equipped fishing tool
-    let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
+    let weapon = state
+        .users
+        .get(&conn_id)
+        .map(|u| equipped_weapon_obj(u))
+        .unwrap_or(0);
     if weapon == 0 {
         state.send_console(conn_id, "Necesitas una caña de pescar", font_index::INFO);
         return;
@@ -42,7 +45,11 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     }
 
     // Stamina cost
-    let sta_cost = if is_recolector(class) { ESFUERZO_PESCAR_RECOLECTOR } else { ESFUERZO_PESCAR_GENERAL };
+    let sta_cost = if is_recolector(class) {
+        ESFUERZO_PESCAR_RECOLECTOR
+    } else {
+        ESFUERZO_PESCAR_GENERAL
+    };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
             state.send_msg_id(conn_id, 17, "");
@@ -101,7 +108,11 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     };
 
     // Check equipped axe
-    let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
+    let weapon = state
+        .users
+        .get(&conn_id)
+        .map(|u| equipped_weapon_obj(u))
+        .unwrap_or(0);
     if weapon != HACHA_LENADOR {
         state.send_console(conn_id, "Necesitas un hacha de leñador", font_index::INFO);
         return;
@@ -114,12 +125,17 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     }
 
     // Check tile has a tree (otArboles = 4)
-    let tile_obj = state.game_data.maps.get(map as usize)
+    let tile_obj = state
+        .game_data
+        .maps
+        .get(map as usize)
         .and_then(|m| m.as_ref())
         .and_then(|m| {
             if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
                 if tile.obj.obj_index > 0 {
-                    state.get_object(tile.obj.obj_index as i32).map(|o| o.obj_type)
+                    state
+                        .get_object(tile.obj.obj_index as i32)
+                        .map(|o| o.obj_type)
                 } else {
                     None
                 }
@@ -129,11 +145,15 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
         });
 
     // Also check ground items on world grid
-    let ground_obj_type = state.world.grid(map)
+    let ground_obj_type = state
+        .world
+        .grid(map)
         .and_then(|g| g.tile(tx, ty))
         .and_then(|t| {
             if t.ground_item.obj_index > 0 {
-                state.get_object(t.ground_item.obj_index).map(|o| o.obj_type)
+                state
+                    .get_object(t.ground_item.obj_index)
+                    .map(|o| o.obj_type)
             } else {
                 None
             }
@@ -146,7 +166,11 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     }
 
     // Stamina cost
-    let sta_cost = if is_recolector(class) { ESFUERZO_TALAR_RECOLECTOR } else { ESFUERZO_TALAR_GENERAL };
+    let sta_cost = if is_recolector(class) {
+        ESFUERZO_TALAR_RECOLECTOR
+    } else {
+        ESFUERZO_TALAR_GENERAL
+    };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
             state.send_msg_id(conn_id, 17, "");
@@ -200,7 +224,11 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     };
 
     // Check equipped pick
-    let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
+    let weapon = state
+        .users
+        .get(&conn_id)
+        .map(|u| equipped_weapon_obj(u))
+        .unwrap_or(0);
     if weapon != PIQUETE_MINERO {
         state.send_console(conn_id, "Necesitas un pico de minero", font_index::INFO);
         return;
@@ -213,7 +241,9 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     }
 
     // Check tile has a mineral deposit (otYacimiento = Deposit = 22)
-    let mineral_obj = state.world.grid(map)
+    let mineral_obj = state
+        .world
+        .grid(map)
         .and_then(|g| g.tile(tx, ty))
         .and_then(|t| {
             if t.ground_item.obj_index > 0 {
@@ -223,7 +253,10 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
             }
         })
         .or_else(|| {
-            state.game_data.maps.get(map as usize)
+            state
+                .game_data
+                .maps
+                .get(map as usize)
                 .and_then(|m| m.as_ref())
                 .and_then(|m| {
                     if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
@@ -247,7 +280,11 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     };
 
     // Stamina cost
-    let sta_cost = if is_recolector(class) { ESFUERZO_EXCAVAR_RECOLECTOR } else { ESFUERZO_EXCAVAR_GENERAL };
+    let sta_cost = if is_recolector(class) {
+        ESFUERZO_EXCAVAR_RECOLECTOR
+    } else {
+        ESFUERZO_EXCAVAR_GENERAL
+    };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
             state.send_msg_id(conn_id, 17, "");
@@ -316,7 +353,11 @@ pub(crate) async fn do_pescar_red(state: &mut GameState, conn_id: ConnectionId, 
     // Distance check — VB6: Abs(.Pos.X - X) + Abs(.Pos.Y - Y) > 2 (Manhattan)
     let manhattan = (tx - ux).abs() + (ty - uy).abs();
     if manhattan > 2 {
-        state.send_console(conn_id, "Estás demasiado lejos para pescar.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Estás demasiado lejos para pescar.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -327,28 +368,44 @@ pub(crate) async fn do_pescar_red(state: &mut GameState, conn_id: ConnectionId, 
     }
 
     // Check the static map tile has a fish school object (ObjType::FishingSpot = otYacimientoPez)
-    let tile_obj_index = state.game_data.maps.get(map as usize)
+    let tile_obj_index = state
+        .game_data
+        .maps
+        .get(map as usize)
         .and_then(|m| m.as_ref())
         .and_then(|m| m.tiles.get((tx - 1) as usize, (ty - 1) as usize))
         .map(|t| t.obj.obj_index)
         .unwrap_or(0);
 
     if tile_obj_index == 0 {
-        state.send_console(conn_id, "No hay un yacimiento de peces donde pescar.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No hay un yacimiento de peces donde pescar.",
+            font_index::INFO,
+        );
         return;
     }
 
-    let is_fish_spot = state.get_object(tile_obj_index as i32)
+    let is_fish_spot = state
+        .get_object(tile_obj_index as i32)
         .map(|o| o.obj_type == ObjType::FishingSpot)
         .unwrap_or(false);
 
     if !is_fish_spot {
-        state.send_console(conn_id, "No hay un yacimiento de peces donde pescar.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No hay un yacimiento de peces donde pescar.",
+            font_index::INFO,
+        );
         return;
     }
 
     // Stamina cost
-    let sta_cost = if is_recolector(class) { ESFUERZO_PESCAR_RECOLECTOR } else { ESFUERZO_PESCAR_GENERAL };
+    let sta_cost = if is_recolector(class) {
+        ESFUERZO_PESCAR_RECOLECTOR
+    } else {
+        ESFUERZO_PESCAR_GENERAL
+    };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
             state.send_msg_id(conn_id, 17, "");

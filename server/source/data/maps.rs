@@ -17,10 +17,10 @@
 //
 // All integers are little-endian (VB6 standard).
 
-use std::collections::HashMap;
-use std::io::{self, Read, Cursor};
-use std::path::Path;
 use crate::config::IniFile;
+use std::collections::HashMap;
+use std::io::{self, Cursor, Read};
+use std::path::Path;
 
 pub const MAP_WIDTH: usize = 100;
 pub const MAP_HEIGHT: usize = 100;
@@ -32,13 +32,13 @@ pub const MAX_MAPS: usize = 200; // Buffer above the 180-193 actual maps
 pub enum Trigger {
     #[default]
     None = 0,
-    Indoor = 1,         // BAJOTECHO — under roof
+    Indoor = 1, // BAJOTECHO — under roof
     Reserved = 2,
-    InvalidPos = 3,     // POSINVALIDA — NPCs can't walk
-    SafeZone = 4,       // ZONASEGURA — no theft/combat
-    AntiBlock = 5,      // ANTIPIQUETE — anti-picketing
-    CombatZone = 6,     // ZONAPELEA — items don't drop on death
-    NoElevation = 7,    // SINELE
+    InvalidPos = 3,  // POSINVALIDA — NPCs can't walk
+    SafeZone = 4,    // ZONASEGURA — no theft/combat
+    AntiBlock = 5,   // ANTIPIQUETE — anti-picketing
+    CombatZone = 6,  // ZONAPELEA — items don't drop on death
+    NoElevation = 7, // SINELE
 }
 
 impl Trigger {
@@ -76,11 +76,11 @@ pub struct TileObj {
 pub struct MapTile {
     // From .map file
     pub blocked: bool,
-    pub graphic: [i32; 4],          // 4 graphic layers (int32 to support 100k+ GRH indices)
+    pub graphic: [i32; 4], // 4 graphic layers (int32 to support 100k+ GRH indices)
     pub trigger: Trigger,
     pub particle_group_index: i16,
     pub range_light: i16,
-    pub rgb_light: [i16; 3],        // R, G, B
+    pub rgb_light: [i16; 3], // R, G, B
 
     // From .inf file
     pub tile_exit: Option<WorldPos>,
@@ -137,7 +137,10 @@ impl MapTiles {
                         rgb_light: [0; 3],
                         tile_exit: None,
                         npc_index: 0,
-                        obj: TileObj { obj_index: 0, amount: 0 },
+                        obj: TileObj {
+                            obj_index: 0,
+                            amount: 0,
+                        },
                         user_index: 0,
                         original_blocked: false,
                         original_obj_index: 0,
@@ -155,7 +158,9 @@ impl MapTiles {
         if x < self.width && y < self.height {
             let chunk_key = (x / CHUNK_SIZE, y / CHUNK_SIZE);
             let local_idx = (y % CHUNK_SIZE) * CHUNK_SIZE + (x % CHUNK_SIZE);
-            let chunk = self.chunks.entry(chunk_key)
+            let chunk = self
+                .chunks
+                .entry(chunk_key)
                 .or_insert_with(|| vec![MapTile::default(); CHUNK_SIZE * CHUNK_SIZE]);
             Some(&mut chunk[local_idx])
         } else {
@@ -210,7 +215,9 @@ impl Default for MapInfo {
             zona: String::new(),
             restringir: "NO".into(),
             backup: false,
-            r: 200, g: 200, b: 200,
+            r: 200,
+            g: 200,
+            b: 200,
             on_death_go_to: (0, 0, 0),
             num_users: 0,
         }
@@ -232,11 +239,21 @@ pub struct GameMap {
 }
 
 impl GameMap {
-    pub fn is_pk_zone(&self)       -> bool { self.flags & 0x01 != 0 }
-    pub fn is_safe_zone(&self)     -> bool { self.flags & 0x02 != 0 }
-    pub fn is_no_magic_zone(&self) -> bool { self.flags & 0x04 != 0 }
-    pub fn is_dungeon(&self)       -> bool { self.flags & 0x08 != 0 }
-    pub fn is_no_respawn(&self)    -> bool { self.flags & 0x10 != 0 }
+    pub fn is_pk_zone(&self) -> bool {
+        self.flags & 0x01 != 0
+    }
+    pub fn is_safe_zone(&self) -> bool {
+        self.flags & 0x02 != 0
+    }
+    pub fn is_no_magic_zone(&self) -> bool {
+        self.flags & 0x04 != 0
+    }
+    pub fn is_dungeon(&self) -> bool {
+        self.flags & 0x08 != 0
+    }
+    pub fn is_no_respawn(&self) -> bool {
+        self.flags & 0x10 != 0
+    }
 
     /// Pre-cache zone_id on every tile for O(1) lookup.
     /// Called after loading the .aozone file.
@@ -259,10 +276,14 @@ impl GameMap {
 
     /// Get the zone data for a tile position, or None if wilderness (zone_id=0).
     pub fn get_zone_at(&self, x: i32, y: i32) -> Option<&super::zones::ZoneData> {
-        let zone_id = self.tiles.get(x as usize, y as usize)
+        let zone_id = self
+            .tiles
+            .get(x as usize, y as usize)
             .map(|t| t.zone_id)
             .unwrap_or(0);
-        if zone_id == 0 { return None; }
+        if zone_id == 0 {
+            return None;
+        }
         self.zones.as_ref()?.zones.iter().find(|z| z.id == zone_id)
     }
 }
@@ -302,7 +323,8 @@ fn read_map_tiles(cursor: &mut Cursor<&[u8]>, tiles: &mut MapTiles) -> Result<()
             let by_flags = read_u8(cursor)
                 .map_err(|e| format!("Failed to read tile ({},{}) flags: {}", x + 1, y + 1, e))?;
 
-            let tile = tiles.get_mut(x, y)
+            let tile = tiles
+                .get_mut(x, y)
                 .ok_or_else(|| format!("Tile ({},{}) out of bounds", x + 1, y + 1))?;
 
             // Bit 0: Blocked
@@ -363,15 +385,15 @@ fn read_map_tiles(cursor: &mut Cursor<&[u8]>, tiles: &mut MapTiles) -> Result<()
 /// Load legacy .map binary file (tile graphics and properties).
 /// Header: 273 bytes, fixed 100x100 grid.
 fn load_map_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
-    let data = std::fs::read(path)
-        .map_err(|e| format!("Failed to read .map: {}", e))?;
+    let data = std::fs::read(path).map_err(|e| format!("Failed to read .map: {}", e))?;
 
     let mut cursor = Cursor::new(data.as_slice());
 
     // Skip header: 273 bytes
     // MapVersion(2) + Desc(255) + CRC(4) + MagicWord(4) + Reserved(8)
     let mut header = vec![0u8; 273];
-    cursor.read_exact(&mut header)
+    cursor
+        .read_exact(&mut header)
         .map_err(|e| format!("Failed to read .map header: {}", e))?;
 
     read_map_tiles(&mut cursor, tiles)
@@ -387,8 +409,7 @@ fn load_map_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
 ///   Padding: 2 bytes (reserved)
 /// Tiles: Width x Height, same ByFlags encoding as legacy .map
 fn load_aomap_file(path: &Path) -> Result<(MapTiles, i32), String> {
-    let data = std::fs::read(path)
-        .map_err(|e| format!("Failed to read .aomap: {}", e))?;
+    let data = std::fs::read(path).map_err(|e| format!("Failed to read .aomap: {}", e))?;
 
     if data.len() < 16 {
         return Err("Invalid .aomap file: too short for header".into());
@@ -398,35 +419,44 @@ fn load_aomap_file(path: &Path) -> Result<(MapTiles, i32), String> {
 
     // Read and validate magic: "AOMAP\0" (6 bytes)
     let mut magic = [0u8; 6];
-    cursor.read_exact(&mut magic)
+    cursor
+        .read_exact(&mut magic)
         .map_err(|e| format!("Failed to read .aomap magic: {}", e))?;
     if &magic != b"AOMAP\0" {
-        return Err(format!("Invalid .aomap magic: expected AOMAP\\0, got {:?}", magic));
+        return Err(format!(
+            "Invalid .aomap magic: expected AOMAP\\0, got {:?}",
+            magic
+        ));
     }
 
     // Read version (must be 1)
-    let version = read_u16(&mut cursor)
-        .map_err(|e| format!("Failed to read .aomap version: {}", e))?;
+    let version =
+        read_u16(&mut cursor).map_err(|e| format!("Failed to read .aomap version: {}", e))?;
     if version != 1 {
-        return Err(format!("Unsupported .aomap version: {} (expected 1)", version));
+        return Err(format!(
+            "Unsupported .aomap version: {} (expected 1)",
+            version
+        ));
     }
 
     // Read dimensions
-    let width = read_u16(&mut cursor)
-        .map_err(|e| format!("Failed to read .aomap width: {}", e))? as usize;
-    let height = read_u16(&mut cursor)
-        .map_err(|e| format!("Failed to read .aomap height: {}", e))? as usize;
+    let width =
+        read_u16(&mut cursor).map_err(|e| format!("Failed to read .aomap width: {}", e))? as usize;
+    let height =
+        read_u16(&mut cursor).map_err(|e| format!("Failed to read .aomap height: {}", e))? as usize;
 
     if width == 0 || height == 0 {
         return Err(format!("Invalid .aomap dimensions: {}x{}", width, height));
     }
     if width > 10000 || height > 10000 {
-        return Err(format!("Unreasonable .aomap dimensions: {}x{}", width, height));
+        return Err(format!(
+            "Unreasonable .aomap dimensions: {}x{}",
+            width, height
+        ));
     }
 
     // .aomap flags: bit0=PK zone, bit1=Safe zone, bit2=NoMagic, bit3=Dungeon, bit4=NoRespawn
-    let flags = read_i32(&mut cursor)
-        .map_err(|e| format!("Failed to read .aomap flags: {}", e))?;
+    let flags = read_i32(&mut cursor).map_err(|e| format!("Failed to read .aomap flags: {}", e))?;
 
     // Header is exactly 16 bytes: magic(6) + version(2) + width(2) + height(2) + flags(4)
     // Tiles start immediately after — no padding.
@@ -440,23 +470,25 @@ fn load_aomap_file(path: &Path) -> Result<(MapTiles, i32), String> {
 
 /// Load .inf binary file (exits, NPCs, objects on tiles).
 fn load_inf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
-    let data = std::fs::read(path)
-        .map_err(|e| format!("Failed to read .inf: {}", e))?;
+    let data = std::fs::read(path).map_err(|e| format!("Failed to read .inf: {}", e))?;
 
     let mut cursor = Cursor::new(data.as_slice());
 
     // Skip header: 10 bytes (5 reserved Integers)
     let mut header = vec![0u8; 10];
-    cursor.read_exact(&mut header)
+    cursor
+        .read_exact(&mut header)
         .map_err(|e| format!("Failed to read .inf header: {}", e))?;
 
     // Read tiles in same order as .map
     for y in 0..tiles.height {
         for x in 0..tiles.width {
-            let by_flags = read_u8(&mut cursor)
-                .map_err(|e| format!("Failed to read inf tile ({},{}) flags: {}", x + 1, y + 1, e))?;
+            let by_flags = read_u8(&mut cursor).map_err(|e| {
+                format!("Failed to read inf tile ({},{}) flags: {}", x + 1, y + 1, e)
+            })?;
 
-            let tile = tiles.get_mut(x, y)
+            let tile = tiles
+                .get_mut(x, y)
                 .ok_or_else(|| format!("Inf tile ({},{}) out of bounds", x + 1, y + 1))?;
 
             // Bit 0: TileExit (6 bytes: Map, X, Y)
@@ -492,8 +524,7 @@ fn load_inf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
 /// Load .aoinf binary file (extended format with dimensions in header).
 /// Same header format as .aomap: Magic("AOINF\0") + version + width + height + flags.
 fn load_aoinf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
-    let data = std::fs::read(path)
-        .map_err(|e| format!("Failed to read .aoinf: {}", e))?;
+    let data = std::fs::read(path).map_err(|e| format!("Failed to read .aoinf: {}", e))?;
 
     if data.len() < 16 {
         return Err("Invalid .aoinf file: too short for header".into());
@@ -503,7 +534,9 @@ fn load_aoinf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
 
     // Read and validate header
     let mut magic = [0u8; 6];
-    cursor.read_exact(&mut magic).map_err(|e| format!(".aoinf magic: {}", e))?;
+    cursor
+        .read_exact(&mut magic)
+        .map_err(|e| format!(".aoinf magic: {}", e))?;
     if &magic != b"AOINF\0" {
         return Err("Invalid .aoinf file: bad magic".into());
     }
@@ -513,7 +546,10 @@ fn load_aoinf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
     let _flags = read_i32(&mut cursor).map_err(|e| format!(".aoinf flags: {}", e))?;
 
     if width != tiles.width || height != tiles.height {
-        return Err(format!(".aoinf dimensions {}x{} don't match map {}x{}", width, height, tiles.width, tiles.height));
+        return Err(format!(
+            ".aoinf dimensions {}x{} don't match map {}x{}",
+            width, height, tiles.width, tiles.height
+        ));
     }
 
     // Read tiles (same format as legacy .inf but using the extended dimensions)
@@ -522,7 +558,8 @@ fn load_aoinf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
             let by_flags = read_u8(&mut cursor)
                 .map_err(|e| format!("aoinf tile ({},{}) flags: {}", x + 1, y + 1, e))?;
 
-            let tile = tiles.get_mut(x, y)
+            let tile = tiles
+                .get_mut(x, y)
                 .ok_or_else(|| format!("aoinf tile ({},{}) out of bounds", x + 1, y + 1))?;
 
             if (by_flags & 0x01) != 0 {
@@ -535,7 +572,8 @@ fn load_aoinf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
                 tile.npc_index = read_i16(&mut cursor).map_err(|e| format!("aoinf npc: {}", e))?;
             }
             if (by_flags & 0x04) != 0 {
-                tile.obj.obj_index = read_i16(&mut cursor).map_err(|e| format!("aoinf obj: {}", e))?;
+                tile.obj.obj_index =
+                    read_i16(&mut cursor).map_err(|e| format!("aoinf obj: {}", e))?;
                 tile.obj.amount = read_i16(&mut cursor).map_err(|e| format!("aoinf amt: {}", e))?;
             }
         }
@@ -548,20 +586,24 @@ fn load_aoinf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
 fn load_map_dat(path: &Path, map_num: usize) -> MapInfo {
     let ini = match IniFile::load(path) {
         Ok(i) => i,
-        Err(_) => return MapInfo { num: map_num, ..Default::default() },
+        Err(_) => {
+            return MapInfo {
+                num: map_num,
+                ..Default::default()
+            };
+        }
     };
 
     let section = format!("Mapa{}", map_num);
 
-    let get_str = |key: &str| -> String {
-        ini.get(&section, key).unwrap_or_default()
-    };
+    let get_str = |key: &str| -> String { ini.get(&section, key).unwrap_or_default() };
     let get_int = |key: &str| -> i32 {
-        ini.get(&section, key).and_then(|s| s.parse().ok()).unwrap_or(0)
+        ini.get(&section, key)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
     };
-    let get_bool = |key: &str| -> bool {
-        ini.get(&section, key).map(|s| s == "1").unwrap_or(false)
-    };
+    let get_bool =
+        |key: &str| -> bool { ini.get(&section, key).map(|s| s == "1").unwrap_or(false) };
 
     MapInfo {
         num: map_num,
@@ -581,14 +623,27 @@ fn load_map_dat(path: &Path, map_num: usize) -> MapInfo {
             if r.is_empty() { "NO".into() } else { r }
         },
         backup: get_bool("BackUp"),
-        r: { let v = get_int("R"); if v == 0 { 200 } else { v } },
-        g: { let v = get_int("G"); if v == 0 { 200 } else { v } },
-        b: { let v = get_int("B"); if v == 0 { 200 } else { v } },
+        r: {
+            let v = get_int("R");
+            if v == 0 { 200 } else { v }
+        },
+        g: {
+            let v = get_int("G");
+            if v == 0 { 200 } else { v }
+        },
+        b: {
+            let v = get_int("B");
+            if v == 0 { 200 } else { v }
+        },
         on_death_go_to: {
             // VB6: "Map-X-Y" format. Zero map means no restriction.
             let raw = get_str("OnDeathGoTo");
             let parts: Vec<i32> = raw.split('-').filter_map(|s| s.parse().ok()).collect();
-            if parts.len() >= 3 { (parts[0], parts[1], parts[2]) } else { (0, 0, 0) }
+            if parts.len() >= 3 {
+                (parts[0], parts[1], parts[2])
+            } else {
+                (0, 0, 0)
+            }
         },
         num_users: 0,
     }
@@ -599,7 +654,9 @@ fn load_map_dat(path: &Path, map_num: usize) -> MapInfo {
 fn resolve_map_path(maps_dir: &Path, name: &str, extensions: &[&str]) -> std::path::PathBuf {
     for ext in extensions {
         let p = maps_dir.join(format!("{}.{}", name, ext));
-        if p.exists() { return p; }
+        if p.exists() {
+            return p;
+        }
     }
     // Fallback to first extension
     maps_dir.join(format!("{}.{}", name, extensions[0]))
@@ -648,7 +705,12 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
     // Load zone data (.aozone file)
     let zones = super::zones::load_zone_file(maps_dir.to_str().unwrap_or(""), map_num as i32);
 
-    let mut game_map = GameMap { info, tiles, zones, flags: map_flags };
+    let mut game_map = GameMap {
+        info,
+        tiles,
+        zones,
+        flags: map_flags,
+    };
     game_map.init_zones(); // Pre-cache zone_id on every tile
 
     Ok(game_map)
@@ -713,7 +775,13 @@ pub fn load_all_maps(base: &Path) -> Result<Vec<Option<GameMap>>, String> {
             }
         }
     }
-    tracing::info!("Maps loaded: {} OK, {} failed, {} total slots, {} tile exits found", loaded, failed, num_maps, total_exits);
+    tracing::info!(
+        "Maps loaded: {} OK, {} failed, {} total slots, {} tile exits found",
+        loaded,
+        failed,
+        num_maps,
+        total_exits
+    );
     Ok(maps)
 }
 
@@ -745,9 +813,14 @@ mod tests {
                     }
                 }
             }
-            if has_graphic { break; }
+            if has_graphic {
+                break;
+            }
         }
-        assert!(has_graphic, "Map 1 should have at least one tile with graphics");
+        assert!(
+            has_graphic,
+            "Map 1 should have at least one tile with graphics"
+        );
     }
 
     #[test]

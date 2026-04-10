@@ -3,23 +3,27 @@
 
 use tracing::{info, warn};
 
-use crate::net::ConnectionId;
-use crate::protocol::{fields::read_field, binary_packets};
-use crate::db::{accounts, charfile, password};
-use crate::data::objects::ObjType;
-use crate::game::class_race::{PlayerClass, PlayerRace};
-use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, MAX_NORMAL_INVENTORY_SLOTS};
-use crate::game::constants::{DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL};
-use crate::game::world;
 use super::super::common::*;
 use super::super::{make_user_visible, send_warp_fx};
+use crate::data::objects::ObjType;
+use crate::db::{accounts, charfile, password};
+use crate::game::class_race::{PlayerClass, PlayerRace};
+use crate::game::constants::{DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL};
+use crate::game::types::{GameState, MAX_INVENTORY_SLOTS, MAX_NORMAL_INVENTORY_SLOTS, SendTarget};
+use crate::game::world;
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, fields::read_field};
 
 // =====================================================================
 // Pre-login handlers
 // =====================================================================
 
 /// HardwareCheck — Hardware serial check (first packet from client).
-pub(crate) async fn handle_hardware_check(state: &mut GameState, conn_id: ConnectionId, hd_serial: &str) {
+pub(crate) async fn handle_hardware_check(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    hd_serial: &str,
+) {
     info!("[AUTH] HD serial check from #{}: HD={}", conn_id, hd_serial);
 
     let is_banned = state.bans.is_hd_banned(&hd_serial);
@@ -70,26 +74,56 @@ fn check_rate_limit(
 }
 
 /// AccountLogin — Account login.
-pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str) {
-    info!("[AUTH] Login attempt: account='{}' pass_len={} pass_bytes={:?} from #{}", account_name, password.len(), password.as_bytes(), conn_id);
+pub(crate) async fn handle_account_login(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    account_name: &str,
+    password: &str,
+) {
+    info!(
+        "[AUTH] Login attempt: account='{}' pass_len={} pass_bytes={:?} from #{}",
+        account_name,
+        password.len(),
+        password.as_bytes(),
+        conn_id
+    );
 
-    let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
+    let paso_hd = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.paso_hd)
+        .unwrap_or(false);
     if !paso_hd {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     // Rate limiting: check per-IP failed-attempt counter before processing credentials.
-    let ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
+    let ip = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.ip.clone())
+        .unwrap_or_default();
     if !ip.is_empty() {
         match check_rate_limit(&state.auth_failures, &ip) {
-            RateLimitResult::Expired => { state.auth_failures.remove(&ip); }
+            RateLimitResult::Expired => {
+                state.auth_failures.remove(&ip);
+            }
             RateLimitResult::Locked => {
-                warn!("[AUTH] Rate limit: IP {} is locked out (too many failed attempts)", ip);
-                state.send_bytes(conn_id, &binary_packets::write_error_msg(
-                    "Demasiados intentos fallidos. Intente nuevamente en 5 minutos."
-                ));
+                warn!(
+                    "[AUTH] Rate limit: IP {} is locked out (too many failed attempts)",
+                    ip
+                );
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_error_msg(
+                        "Demasiados intentos fallidos. Intente nuevamente en 5 minutos.",
+                    ),
+                );
                 return;
             }
             RateLimitResult::Allow => {}
@@ -97,12 +131,20 @@ pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: Connect
     }
 
     if !is_valid_name(&account_name) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre de cuenta invalido."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Nombre de cuenta invalido."),
+        );
         return; // Don't disconnect — let client retry
     }
 
     if !accounts::account_exists(&state.pool, &account_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe. Verificá el nombre e intentá nuevamente."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg(
+                "La cuenta no existe. Verificá el nombre e intentá nuevamente.",
+            ),
+        );
         return;
     }
 
@@ -110,7 +152,12 @@ pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: Connect
         Ok(acc) => acc,
         Err(e) => {
             warn!("[AUTH] Failed to load account '{}': {}", account_name, e);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error interno al leer la cuenta. Intentá nuevamente."));
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_error_msg(
+                    "Error interno al leer la cuenta. Intentá nuevamente.",
+                ),
+            );
             return;
         }
     };
@@ -118,11 +165,22 @@ pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: Connect
     if !password::verify_password(&password, &account.password_hash) {
         // Record failure for rate limiting.
         if !ip.is_empty() {
-            let entry = state.auth_failures.entry(ip.clone()).or_insert((0, std::time::Instant::now()));
+            let entry = state
+                .auth_failures
+                .entry(ip.clone())
+                .or_insert((0, std::time::Instant::now()));
             entry.0 += 1;
-            warn!("[AUTH] Wrong password for account '{}' from {} (failure #{}/{})", account_name, ip, entry.0, MAX_AUTH_FAILURES);
+            warn!(
+                "[AUTH] Wrong password for account '{}' from {} (failure #{}/{})",
+                account_name, ip, entry.0, MAX_AUTH_FAILURES
+            );
         }
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Contraseña incorrecta. Verificá e intentá nuevamente."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg(
+                "Contraseña incorrecta. Verificá e intentá nuevamente.",
+            ),
+        );
         return;
     }
 
@@ -130,9 +188,13 @@ pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: Connect
         let motivo = &account.ban_reason;
         let ban_by = read_field(2, motivo, ',');
         let ban_reason = read_field(1, motivo, ',');
-        state.send_bytes(conn_id, &binary_packets::write_error_msg(
-            &format!("Tu cuenta se encuentra actualmente baneada por: {} con motivo: {}.", ban_by, ban_reason)
-        ));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg(&format!(
+                "Tu cuenta se encuentra actualmente baneada por: {} con motivo: {}.",
+                ban_by, ban_reason
+            )),
+        );
         close_connection(state, conn_id).await;
         return;
     }
@@ -147,7 +209,10 @@ pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: Connect
         user.account_id = account.id;
     }
 
-    state.send_bytes(conn_id, &binary_packets::write_init_account(account.num_pjs as u8, &state.notice));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_init_account(account.num_pjs as u8, &state.notice),
+    );
 
     for i in 0..account.num_pjs {
         let pj_name = &account.characters[i];
@@ -180,12 +245,22 @@ pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: Connect
                     }
                 }
 
-                state.send_bytes(conn_id, &binary_packets::write_add_pj(
-                    pj_name, (i + 1) as u8,
-                    preview.head as i16, preview.body as i16,
-                    weapon_anim, shield_anim, helmet_anim,
-                    preview.level as u8, &preview.class, preview.dead, &preview.race,
-                ));
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_add_pj(
+                        pj_name,
+                        (i + 1) as u8,
+                        preview.head as i16,
+                        preview.body as i16,
+                        weapon_anim,
+                        shield_anim,
+                        helmet_anim,
+                        preview.level as u8,
+                        &preview.class,
+                        preview.dead,
+                        &preview.race,
+                    ),
+                );
             }
             Err(e) => {
                 warn!("[AUTH] Failed to load preview for '{}': {}", pj_name, e);
@@ -193,25 +268,52 @@ pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: Connect
         }
     }
 
-    state.send_bytes(conn_id, &binary_packets::write_security_code(&account.security_code));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_security_code(&account.security_code),
+    );
 
-    info!("[AUTH] Account '{}' authenticated, {} characters", account_name, account.num_pjs);
+    info!(
+        "[AUTH] Account '{}' authenticated, {} characters",
+        account_name, account.num_pjs
+    );
 }
 
 /// CreateAccount — Create new account.
-pub(crate) async fn handle_create_account(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str, pin: &str) {
-    info!("[AUTH] New account request: '{}' from #{}", account_name, conn_id);
+pub(crate) async fn handle_create_account(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    account_name: &str,
+    password: &str,
+    pin: &str,
+) {
+    info!(
+        "[AUTH] New account request: '{}' from #{}",
+        account_name, conn_id
+    );
 
     // Rate limiting: block IPs that have exceeded the failed-attempt threshold.
-    let ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
+    let ip = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.ip.clone())
+        .unwrap_or_default();
     if !ip.is_empty() {
         match check_rate_limit(&state.auth_failures, &ip) {
-            RateLimitResult::Expired => { state.auth_failures.remove(&ip); }
+            RateLimitResult::Expired => {
+                state.auth_failures.remove(&ip);
+            }
             RateLimitResult::Locked => {
-                warn!("[AUTH] Rate limit: IP {} locked out from account creation", ip);
-                state.send_bytes(conn_id, &binary_packets::write_error_msg(
-                    "Demasiados intentos fallidos. Intente nuevamente en 5 minutos."
-                ));
+                warn!(
+                    "[AUTH] Rate limit: IP {} locked out from account creation",
+                    ip
+                );
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_error_msg(
+                        "Demasiados intentos fallidos. Intente nuevamente en 5 minutos.",
+                    ),
+                );
                 close_connection(state, conn_id).await;
                 return;
             }
@@ -220,26 +322,40 @@ pub(crate) async fn handle_create_account(state: &mut GameState, conn_id: Connec
     }
 
     if !is_valid_name(&account_name) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre de cuenta invalido."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Nombre de cuenta invalido."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     if account_name.len() < 3 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El nombre de la cuenta debe tener al menos 3 caracteres."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg(
+                "El nombre de la cuenta debe tener al menos 3 caracteres.",
+            ),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     if password.len() < 3 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("La password debe tener al menos 3 caracteres."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("La password debe tener al menos 3 caracteres."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     // PIN validation: 4-10 numeric digits only
     if pin.len() < 4 || pin.len() > 10 || !pin.chars().all(|c| c.is_ascii_digit()) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El PIN debe ser de 4 a 10 digitos numericos."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("El PIN debe ser de 4 a 10 digitos numericos."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
@@ -248,7 +364,10 @@ pub(crate) async fn handle_create_account(state: &mut GameState, conn_id: Connec
         Ok(h) => h,
         Err(e) => {
             warn!("[AUTH] Failed to hash password: {}", e);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error interno del servidor."));
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_error_msg("Error interno del servidor."),
+            );
             close_connection(state, conn_id).await;
             return;
         }
@@ -260,18 +379,29 @@ pub(crate) async fn handle_create_account(state: &mut GameState, conn_id: Connec
         &password_hash,
         &pin,
         &state.security_code,
-    ).await {
+    )
+    .await
+    {
         Ok(_account_id) => {
             info!("[AUTH] Account '{}' created successfully", account_name);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Cuenta creada con exito!"));
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_error_msg("Cuenta creada con exito!"),
+            );
             close_connection(state, conn_id).await;
         }
         Err(e) => {
             // Count creation failures (e.g. duplicate account name) toward the lockout.
             if !ip.is_empty() {
-                let entry = state.auth_failures.entry(ip.clone()).or_insert((0, std::time::Instant::now()));
+                let entry = state
+                    .auth_failures
+                    .entry(ip.clone())
+                    .or_insert((0, std::time::Instant::now()));
                 entry.0 += 1;
-                warn!("[AUTH] Account creation failed for '{}' from {} (failure #{}/{}): {}", account_name, ip, entry.0, MAX_AUTH_FAILURES, e);
+                warn!(
+                    "[AUTH] Account creation failed for '{}' from {} (failure #{}/{}): {}",
+                    account_name, ip, entry.0, MAX_AUTH_FAILURES, e
+                );
             }
             state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string()));
             close_connection(state, conn_id).await;
@@ -280,24 +410,46 @@ pub(crate) async fn handle_create_account(state: &mut GameState, conn_id: Connec
 }
 
 /// CharacterSelect — Character login (primary, with full validation).
-pub(crate) async fn handle_character_select(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account: &str, codex: &str) {
-    info!("[AUTH] Character login (CharacterSelect): '{}' account='{}' from #{}", char_name, account, conn_id);
+pub(crate) async fn handle_character_select(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    char_name: &str,
+    account: &str,
+    codex: &str,
+) {
+    info!(
+        "[AUTH] Character login (CharacterSelect): '{}' account='{}' from #{}",
+        char_name, account, conn_id
+    );
 
-    let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
+    let paso_hd = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.paso_hd)
+        .unwrap_or(false);
     if !paso_hd {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     if !is_valid_name(&char_name) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Nombre invalido."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     if !charfile::character_exists(&state.pool, &char_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("El personaje no existe."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
@@ -310,11 +462,16 @@ pub(crate) async fn handle_character_select(state: &mut GameState, conn_id: Conn
         return;
     }
 
-    let expected_account = state.users.get(&conn_id)
+    let expected_account = state
+        .users
+        .get(&conn_id)
         .map(|u| u.account_name.clone())
         .unwrap_or_default();
     if !expected_account.is_empty() && account.to_uppercase() != expected_account.to_uppercase() {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al conectar, intente de nuevo."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Error al conectar, intente de nuevo."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
@@ -323,46 +480,78 @@ pub(crate) async fn handle_character_select(state: &mut GameState, conn_id: Conn
 }
 
 /// CharacterLogin — Character login (simplified variant).
-pub(crate) async fn handle_character_login(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account: &str, codex: &str) {
-    info!("[AUTH] Character login (CharacterLogin): '{}' from #{}", char_name, conn_id);
+pub(crate) async fn handle_character_login(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    char_name: &str,
+    account: &str,
+    codex: &str,
+) {
+    info!(
+        "[AUTH] Character login (CharacterLogin): '{}' from #{}",
+        char_name, conn_id
+    );
 
     // HD ban check (VB6 13.3 parity)
-    let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
+    let paso_hd = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.paso_hd)
+        .unwrap_or(false);
     if !paso_hd {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     // Verify user is logged into an account
-    let (account_name, account_id) = state.users.get(&conn_id)
+    let (account_name, account_id) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.account_name.clone(), u.account_id))
         .unwrap_or_default();
     if account_name.is_empty() || account_id == 0 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Debes iniciar sesion primero."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Debes iniciar sesion primero."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     if !charfile::character_exists(&state.pool, &char_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("El personaje no existe."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     // Verify character belongs to the logged-in account (prevent cross-account login)
-    let char_account_id = charfile::load_charfile(&state.pool, &char_name).await
-        .map(|c| c.account_id).unwrap_or(0);
+    let char_account_id = charfile::load_charfile(&state.pool, &char_name)
+        .await
+        .map(|c| c.account_id)
+        .unwrap_or(0);
     if char_account_id != account_id {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Este personaje no pertenece a tu cuenta."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg("Este personaje no pertenece a tu cuenta."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     if is_char_banned(&state.pool, &char_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg(
-            "Se te ha prohibido la entrada a Argentum Nextgen debido a tu mal comportamiento."
-        ));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg(
+                "Se te ha prohibido la entrada a Argentum Nextgen debido a tu mal comportamiento.",
+            ),
+        );
         close_connection(state, conn_id).await;
         return;
     }
@@ -380,21 +569,31 @@ pub(crate) async fn connect_user(
 ) {
     // Check max users
     if state.num_users >= state.config.max_users {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg(
-            "El servidor ha alcanzado el maximo de usuarios soportado. Intente mas tarde."
-        ));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_msg(
+                "El servidor ha alcanzado el maximo de usuarios soportado. Intente mas tarde.",
+            ),
+        );
         close_connection(state, conn_id).await;
         return;
     }
 
     // Multi-login check
     if !state.config.allow_multi_logins {
-        let user_ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
+        let user_ip = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.ip.clone())
+            .unwrap_or_default();
         if is_same_ip_online(state, conn_id, &user_ip) {
             state.send_bytes(conn_id, &binary_packets::write_finish_ok());
-            state.send_bytes(conn_id, &binary_packets::write_error_show(
-                "No es posible usar mas de un personaje al mismo tiempo."
-            ));
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_error_show(
+                    "No es posible usar mas de un personaje al mismo tiempo.",
+                ),
+            );
             close_connection(state, conn_id).await;
             return;
         }
@@ -405,7 +604,10 @@ pub(crate) async fn connect_user(
         Ok(data) => data,
         Err(e) => {
             warn!("[AUTH] Failed to load character '{}': {}", char_name, e);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error en el personaje."));
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_error_msg("Error en el personaje."),
+            );
             close_connection(state, conn_id).await;
             return;
         }
@@ -415,7 +617,10 @@ pub(crate) async fn connect_user(
     // Guard on char_data.password (not codex) to prevent bypass via empty string.
     if !char_data.password.is_empty() && char_data.password.to_uppercase() != codex.to_uppercase() {
         state.send_bytes(conn_id, &binary_packets::write_finish_ok());
-        state.send_bytes(conn_id, &binary_packets::write_error_show("Password incorrecto."));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_error_show("Password incorrecto."),
+        );
         close_connection(state, conn_id).await;
         return;
     }
@@ -425,24 +630,37 @@ pub(crate) async fn connect_user(
     // Disconnected event yet when the client reconnects.
     if state.is_name_online(char_name) {
         // Find the old connection with the same char name
-        let old_conn = state.users.iter()
-            .find(|(id, u)| **id != conn_id && u.logged && u.char_name.eq_ignore_ascii_case(char_name))
+        let old_conn = state
+            .users
+            .iter()
+            .find(|(id, u)| {
+                **id != conn_id && u.logged && u.char_name.eq_ignore_ascii_case(char_name)
+            })
             .map(|(id, _)| *id);
 
         if let Some(old_id) = old_conn {
-            info!("[AUTH] Force-disconnecting stale session #{} for '{}' (re-login from #{})", old_id, char_name, conn_id);
+            info!(
+                "[AUTH] Force-disconnecting stale session #{} for '{}' (re-login from #{})",
+                old_id, char_name, conn_id
+            );
             // VB6: QDL to entire map, BP to 27×27 area to remove old character
             if let Some(old_user) = state.users.get(&old_id) {
                 let ci = old_user.char_index.0;
                 let map = old_user.pos_map;
                 let qdl_pkt = binary_packets::write_remove_char_dialog(ci as i16);
                 state.send_data_bytes(
-                    SendTarget::ToMapButIndex { conn_id: old_id, map },
+                    SendTarget::ToMapButIndex {
+                        conn_id: old_id,
+                        map,
+                    },
                     &qdl_pkt,
                 );
                 let bp_pkt = binary_packets::write_character_remove(ci as i16);
                 state.send_data_bytes(
-                    SendTarget::ToMapButIndex { conn_id: old_id, map },
+                    SendTarget::ToMapButIndex {
+                        conn_id: old_id,
+                        map,
+                    },
                     &bp_pkt,
                 );
             }
@@ -450,13 +668,17 @@ pub(crate) async fn connect_user(
             state.remove_connection(old_id);
         } else {
             // Name is "online" but no matching connection — stale entry, clean it up
-            info!("[AUTH] Cleaning stale online_names entry for '{}'", char_name);
+            info!(
+                "[AUTH] Cleaning stale online_names entry for '{}'",
+                char_name
+            );
             state.online_names.remove(&char_name.to_uppercase());
         }
     }
 
     // Check same-account multi-character
-    let account_chars = accounts::load_account(&state.pool, account).await
+    let account_chars = accounts::load_account(&state.pool, account)
+        .await
         .map(|a| a.characters)
         .unwrap_or_default();
     if let Some(other) = state.is_account_char_online(&account_chars, char_name) {
@@ -469,14 +691,34 @@ pub(crate) async fn connect_user(
 
     // Determine position — fallback to start pos if map doesn't exist
     let (map, x, y) = {
-        let saved_map = if char_data.map > 0 { char_data.map } else { state.config.start_map };
-        let saved_x = if char_data.x > 0 { char_data.x } else { state.config.start_x };
-        let saved_y = if char_data.y > 0 { char_data.y } else { state.config.start_y };
+        let saved_map = if char_data.map > 0 {
+            char_data.map
+        } else {
+            state.config.start_map
+        };
+        let saved_x = if char_data.x > 0 {
+            char_data.x
+        } else {
+            state.config.start_x
+        };
+        let saved_y = if char_data.y > 0 {
+            char_data.y
+        } else {
+            state.config.start_y
+        };
         if state.world.grid(saved_map).is_some() {
             (saved_map, saved_x, saved_y)
         } else {
-            tracing::warn!("Map {} does not exist, sending {} to start position", saved_map, char_name);
-            (state.config.start_map, state.config.start_x, state.config.start_y)
+            tracing::warn!(
+                "Map {} does not exist, sending {} to start position",
+                saved_map,
+                char_name
+            );
+            (
+                state.config.start_map,
+                state.config.start_x,
+                state.config.start_y,
+            )
         }
     };
 
@@ -490,7 +732,11 @@ pub(crate) async fn connect_user(
         user.pos_map = map;
         user.pos_x = x;
         user.pos_y = y;
-        user.heading = if char_data.heading > 0 { char_data.heading } else { world::HEADING_SOUTH };
+        user.heading = if char_data.heading > 0 {
+            char_data.heading
+        } else {
+            world::HEADING_SOUTH
+        };
         user.char_index = char_index;
         user.dead = char_data.dead;
         user.body = char_data.body;
@@ -506,7 +752,14 @@ pub(crate) async fn connect_user(
         // restore naked body. body=0 can happen if a GM disconnects while invisible.
         // SKIP if navigating (boat has head=0) or montado (flying mount has head=0).
         let parsed_race = PlayerRace::from_str_or_default(&char_data.race);
-        if !user.dead && !char_data.navigating && !char_data.montado && (user.body <= 0 || user.body == DEAD_BODY_NEUTRAL || user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL) {
+        if !user.dead
+            && !char_data.navigating
+            && !char_data.montado
+            && (user.body <= 0
+                || user.body == DEAD_BODY_NEUTRAL
+                || user.head <= 0
+                || user.head == DEAD_HEAD_NEUTRAL)
+        {
             user.body = naked_body(parsed_race, char_data.gender);
             // Head 500 is ghost head, head 0 is invisible — use a default for race/gender
             if user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL {
@@ -517,7 +770,12 @@ pub(crate) async fn connect_user(
         // VB6: OrigChar.Head — immutable original head for revive.
         // If DB has dead head (500/501/511/512), use a default for the race/gender instead.
         let saved_head = char_data.head;
-        user.orig_head = if saved_head == 500 || saved_head == 501 || saved_head == 511 || saved_head == 512 || saved_head <= 0 {
+        user.orig_head = if saved_head == 500
+            || saved_head == 501
+            || saved_head == 511
+            || saved_head == 512
+            || saved_head <= 0
+        {
             default_head_for_race(parsed_race, char_data.gender)
         } else {
             saved_head
@@ -530,7 +788,10 @@ pub(crate) async fn connect_user(
         user.casco_anim = 2;
         // VB6: TCP.bas lines 1565-1598 — check server.ini role sections in priority order.
         // If the character name is listed in any role section, override DB privileges.
-        let role_priv = state.role_overrides.get(&char_data.name.to_lowercase()).copied();
+        let role_priv = state
+            .role_overrides
+            .get(&char_data.name.to_lowercase())
+            .copied();
         let effective_priv = role_priv.unwrap_or(char_data.privileges);
         user.privileges = effective_priv;
         user.saved_privileges = effective_priv;
@@ -547,7 +808,8 @@ pub(crate) async fn connect_user(
         user.guild_index = char_data.guild_index;
         // Cache guild name for CC packet clan tag
         if char_data.guild_index > 0 {
-            if let Some(g) = crate::db::guilds::load_guild(&state.pool, char_data.guild_index).await {
+            if let Some(g) = crate::db::guilds::load_guild(&state.pool, char_data.guild_index).await
+            {
                 user.guild_name = g.name;
             }
         }
@@ -608,8 +870,8 @@ pub(crate) async fn connect_user(
         for (i, &(obj_idx, amount, equipped)) in char_data.inventory.iter().enumerate() {
             if i < MAX_INVENTORY_SLOTS {
                 user.inventory[i].obj_index = obj_idx;
-        user.inventory[i].amount = amount;
-        user.inventory[i].equipped = equipped;
+                user.inventory[i].amount = amount;
+                user.inventory[i].equipped = equipped;
             }
         }
         // Reconstruct ring equip slot from inventory (equipped Tool/Ring item)
@@ -640,7 +902,8 @@ pub(crate) async fn connect_user(
                 if let Some(obj) = state.game_data.objects.get(oi.wrapping_sub(1)) {
                     if obj.obj_type == ObjType::Backpack {
                         user.backpack_slot = i + 1; // 1-indexed
-                        let new_slots = MAX_NORMAL_INVENTORY_SLOTS + (obj.mochila_type as usize) * 5;
+                        let new_slots =
+                            MAX_NORMAL_INVENTORY_SLOTS + (obj.mochila_type as usize) * 5;
                         user.current_inventory_slots = new_slots.min(MAX_INVENTORY_SLOTS);
                         break;
                     }
@@ -652,7 +915,7 @@ pub(crate) async fn connect_user(
         for (i, &(obj_idx, amount)) in char_data.bank.iter().enumerate() {
             if i < user.bank.len() {
                 user.bank[i].obj_index = obj_idx;
-        user.bank[i].amount = amount;
+                user.bank[i].amount = amount;
             }
         }
 
@@ -672,16 +935,34 @@ pub(crate) async fn connect_user(
         // Pre-extract obj indices to avoid borrow conflict with state.get_object()
         let weapon_obj_idx = if user.equip.weapon > 0 {
             let s = (user.equip.weapon - 1) as usize;
-            if s < MAX_INVENTORY_SLOTS { user.inventory[s].obj_index } else { 0 }
-        } else { 0 };
+            if s < MAX_INVENTORY_SLOTS {
+                user.inventory[s].obj_index
+            } else {
+                0
+            }
+        } else {
+            0
+        };
         let shield_obj_idx = if user.equip.shield > 0 {
             let s = (user.equip.shield - 1) as usize;
-            if s < MAX_INVENTORY_SLOTS { user.inventory[s].obj_index } else { 0 }
-        } else { 0 };
+            if s < MAX_INVENTORY_SLOTS {
+                user.inventory[s].obj_index
+            } else {
+                0
+            }
+        } else {
+            0
+        };
         let helmet_obj_idx = if user.equip.helmet > 0 {
             let s = (user.equip.helmet - 1) as usize;
-            if s < MAX_INVENTORY_SLOTS { user.inventory[s].obj_index } else { 0 }
-        } else { 0 };
+            if s < MAX_INVENTORY_SLOTS {
+                user.inventory[s].obj_index
+            } else {
+                0
+            }
+        } else {
+            0
+        };
         // Look up animations directly from game_data.objects (avoids borrow conflict with state.users)
         if weapon_obj_idx >= 1 {
             if let Some(obj) = state.game_data.objects.get((weapon_obj_idx - 1) as usize) {
@@ -690,15 +971,31 @@ pub(crate) async fn connect_user(
         }
         if shield_obj_idx >= 1 {
             if let Some(obj) = state.game_data.objects.get((shield_obj_idx - 1) as usize) {
-                tracing::info!("[LOGIN-EQUIP] Shield obj={} '{}' type={:?} shield_anim={}", shield_obj_idx, obj.name, obj.obj_type, obj.shield_anim);
+                tracing::info!(
+                    "[LOGIN-EQUIP] Shield obj={} '{}' type={:?} shield_anim={}",
+                    shield_obj_idx,
+                    obj.name,
+                    obj.obj_type,
+                    obj.shield_anim
+                );
                 user.shield_anim = obj.shield_anim;
             }
         } else {
-            tracing::info!("[LOGIN-EQUIP] No shield equipped (equip.shield={}, shield_obj_idx={})", user.equip.shield, shield_obj_idx);
+            tracing::info!(
+                "[LOGIN-EQUIP] No shield equipped (equip.shield={}, shield_obj_idx={})",
+                user.equip.shield,
+                shield_obj_idx
+            );
         }
         if helmet_obj_idx >= 1 {
             if let Some(obj) = state.game_data.objects.get((helmet_obj_idx - 1) as usize) {
-                tracing::info!("[LOGIN-EQUIP] Helmet obj={} '{}' type={:?} casco_anim={}", helmet_obj_idx, obj.name, obj.obj_type, obj.casco_anim);
+                tracing::info!(
+                    "[LOGIN-EQUIP] Helmet obj={} '{}' type={:?} casco_anim={}",
+                    helmet_obj_idx,
+                    obj.name,
+                    obj.obj_type,
+                    obj.casco_anim
+                );
                 user.casco_anim = obj.casco_anim;
             }
         }
@@ -707,9 +1004,13 @@ pub(crate) async fn connect_user(
         // Skip if mounted — weapons/shield/helmet are hidden, no auras should show.
         if !user.montado {
             for slot_idx in 0..MAX_INVENTORY_SLOTS {
-                if !user.inventory[slot_idx].equipped { continue; }
+                if !user.inventory[slot_idx].equipped {
+                    continue;
+                }
                 let oi = user.inventory[slot_idx].obj_index;
-                if oi < 1 { continue; }
+                if oi < 1 {
+                    continue;
+                }
                 if let Some(obj) = state.game_data.objects.get((oi - 1) as usize) {
                     if obj.crea_aura > 0 {
                         match obj.obj_type {
@@ -744,7 +1045,9 @@ pub(crate) async fn connect_user(
     // Respawn saved pets near the player
     if char_data.pet_count > 0 && !char_data.pet_types.is_empty() {
         for (slot, &npc_type) in char_data.pet_types.iter().enumerate() {
-            if npc_type <= 0 || slot >= 3 { break; }
+            if npc_type <= 0 || slot >= 3 {
+                break;
+            }
             if let Some(npc_idx) = state.spawn_npc(npc_type as usize, map, x, y) {
                 // Link pet to owner
                 if let Some(npc) = state.get_npc_mut(npc_idx) {
@@ -765,19 +1068,23 @@ pub(crate) async fn connect_user(
                         _ => {}
                     }
                 }
-                tracing::info!("[LOGIN] Spawned saved pet NPC {} (slot {}) for '{}'", npc_type, slot, char_name);
+                tracing::info!(
+                    "[LOGIN] Spawned saved pet NPC {} (slot {}) for '{}'",
+                    npc_type,
+                    slot,
+                    char_name
+                );
             }
         }
     }
-
-
 
     // Set Logged=1 in charfile
     let _ = charfile::set_logged_flag(&state.pool, char_name, true).await;
 
     // Get map info from loaded data
     let map_idx = map as usize;
-    let (r, g, b, music, map_name) = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+    let (r, g, b, music, map_name) = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx)
+    {
         (
             game_map.info.r,
             game_map.info.g,
@@ -795,32 +1102,51 @@ pub(crate) async fn connect_user(
     // =========================================================
 
     // --- PHASE 1: Map setup (VB6 lines 1552-1555) ---
-    state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8));
-    state.send_bytes(conn_id, &binary_packets::write_pos_update(x as i16, y as i16));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8),
+    );
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_pos_update(x as i16, y as i16),
+    );
     state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
     state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
 
     // --- PHASE 2: Privilege level (VB6 lines 1558-1596) ---
     // Use effective privileges (role_overrides may have elevated above char_data.privileges)
-    let eff_priv = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(char_data.privileges);
-    state.send_bytes(conn_id, &binary_packets::write_privilege_level(eff_priv as u8));
+    let eff_priv = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.privileges)
+        .unwrap_or(char_data.privileges);
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_privilege_level(eff_priv as u8),
+    );
 
     // --- PHASE 3: Hunger/Thirst (VB6 line 1608) ---
-    state.send_bytes(conn_id, &binary_packets::write_update_hunger_thirst(
-        char_data.max_agua as u8, char_data.min_agua as u8,
-        char_data.max_ham as u8, char_data.min_ham as u8,
-    ));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_update_hunger_thirst(
+            char_data.max_agua as u8,
+            char_data.min_agua as u8,
+            char_data.max_ham as u8,
+            char_data.min_ham as u8,
+        ),
+    );
 
     // --- PHASE 4: Broadcast status to area (VB6 line 1609) ---
     let status_mith = if char_data.criminal { 2u8 } else { 1u8 };
-    let px_pkt = binary_packets::write_update_tag_and_status(char_index.0 as i16, status_mith, char_name);
-    state.send_data_bytes(
-        SendTarget::ToAreaButIndex { conn_id, map, x, y },
-        &px_pkt,
-    );
+    let px_pkt =
+        binary_packets::write_update_tag_and_status(char_index.0 as i16, status_mith, char_name);
+    state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id, map, x, y }, &px_pkt);
 
     // --- PHASE 5: Reputation (VB6 line 1666) ---
-    state.send_bytes(conn_id, &binary_packets::write_reputation(char_data.reputation as i32));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_reputation(char_data.reputation as i32),
+    );
 
     // --- PHASE 7: LOGGED — client switches to game mode (VB6 line 1692) ---
     // CRITICAL: Must come BEFORE stats, inventory, spells, area visibility
@@ -847,35 +1173,45 @@ pub(crate) async fn connect_user(
 
     // --- PHASE 9: Bulk stats [ES (VB6 line 1720) ---
     let exp_next = state.exp_for_level(char_data.level);
-    state.send_bytes(conn_id, &binary_packets::write_update_user_stats(
-        char_data.max_hp as i16, char_data.min_hp as i16,
-        char_data.max_mana as i16, char_data.min_mana as i16,
-        char_data.max_sta as i16, char_data.min_sta as i16,
-        char_data.gold as i32,
-        char_data.level as u8,
-        exp_next as i32,
-        char_data.exp as i32,
-    ));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_update_user_stats(
+            char_data.max_hp as i16,
+            char_data.min_hp as i16,
+            char_data.max_mana as i16,
+            char_data.min_mana as i16,
+            char_data.max_sta as i16,
+            char_data.min_sta as i16,
+            char_data.gold as i32,
+            char_data.level as u8,
+            exp_next as i32,
+            char_data.exp as i32,
+        ),
+    );
 
     // --- PHASE 9b: Attributes ---
-    state.send_bytes(conn_id, &binary_packets::write_attributes(
-        char_data.attributes[0] as u8, // STR
-        char_data.attributes[1] as u8, // AGI
-        char_data.attributes[2] as u8, // INT
-        char_data.attributes[3] as u8, // CON
-        char_data.attributes[4] as u8, // CHA
-    ));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_attributes(
+            char_data.attributes[0] as u8, // STR
+            char_data.attributes[1] as u8, // AGI
+            char_data.attributes[2] as u8, // INT
+            char_data.attributes[3] as u8, // CON
+            char_data.attributes[4] as u8, // CHA
+        ),
+    );
 
     // --- PHASE 9c: Skills ---
     // Calculate ELU for each skill: 200 * 1.05^level
-    let elu_skills: Vec<i32> = char_data.skills.iter()
-        .map(|&lvl| (200.0 * 1.05_f64.powi(lvl) ) as i32)
+    let elu_skills: Vec<i32> = char_data
+        .skills
+        .iter()
+        .map(|&lvl| (200.0 * 1.05_f64.powi(lvl)) as i32)
         .collect();
-    state.send_bytes(conn_id, &binary_packets::write_send_skills(
-        &char_data.skills,
-        &char_data.exp_skills,
-        &elu_skills,
-    ));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_send_skills(&char_data.skills, &char_data.exp_skills, &elu_skills),
+    );
 
     // --- PHASE 10: Stop state (VB6 line 1730) ---
     state.send_bytes(conn_id, &binary_packets::write_stop_dancing(false));
@@ -884,7 +1220,12 @@ pub(crate) async fn connect_user(
     // PARADOK is a toggle — client starts with UserParalizado=False,
     // so we send one PARADOK to set it to True if the char is paralyzed.
     if char_data.paralyzed {
-        let para_secs = (state.users.get(&conn_id).map(|u| u.counter_paralisis).unwrap_or(0) as f32 * 0.04) as i16;
+        let para_secs = (state
+            .users
+            .get(&conn_id)
+            .map(|u| u.counter_paralisis)
+            .unwrap_or(0) as f32
+            * 0.04) as i16;
         state.send_bytes(conn_id, &binary_packets::write_paralize_ok(para_secs));
     }
 
@@ -893,18 +1234,25 @@ pub(crate) async fn connect_user(
     // NAVEG is a toggle — client starts with UserNavegando=False,
     // so we send one NAVEG to set it to True.
     {
-        let nav_info = state.users.get(&conn_id).map(|u| (u.navigating, u.barco_slot));
+        let nav_info = state
+            .users
+            .get(&conn_id)
+            .map(|u| (u.navigating, u.barco_slot));
         if let Some((true, barco_slot)) = nav_info {
             // VB6: BarcoObjIndex = Invent.Object(BarcoSlot).ObjIndex
             // Then Body = ObjData(BarcoObjIndex).Ropaje
             let boat_ropaje = if barco_slot >= 1 {
-                state.users.get(&conn_id)
+                state
+                    .users
+                    .get(&conn_id)
                     .and_then(|u| u.inventory.get(barco_slot - 1))
                     .map(|s| s.obj_index)
                     .and_then(|oi| if oi > 0 { state.get_object(oi) } else { None })
                     .map(|o| o.num_ropaje)
                     .unwrap_or(0)
-            } else { 0 };
+            } else {
+                0
+            };
 
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.head = 0;
@@ -923,14 +1271,25 @@ pub(crate) async fn connect_user(
     // Send mount state to the user's client so it knows the character is mounted.
     // Also broadcast to area so other players see the mount.
     {
-        let mount_info = state.users.get(&conn_id).map(|u| (u.montado, u.levitando, u.char_index.0));
+        let mount_info = state
+            .users
+            .get(&conn_id)
+            .map(|u| (u.montado, u.levitando, u.char_index.0));
         if let Some((true, levitando, char_idx)) = mount_info {
-            let (m, x, y) = state.users.get(&conn_id)
+            let (m, x, y) = state
+                .users
+                .get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y))
                 .unwrap_or((0, 0, 0));
-            state.send_data_bytes(SendTarget::ToArea { map: m, x, y }, &binary_packets::write_user_mount(char_idx as i16, true));
+            state.send_data_bytes(
+                SendTarget::ToArea { map: m, x, y },
+                &binary_packets::write_user_mount(char_idx as i16, true),
+            );
             if levitando {
-                state.send_data_bytes(SendTarget::ToArea { map: m, x, y }, &binary_packets::write_levitate(char_idx as i16, true));
+                state.send_data_bytes(
+                    SendTarget::ToArea { map: m, x, y },
+                    &binary_packets::write_levitate(char_idx as i16, true),
+                );
             }
         }
     }
@@ -939,28 +1298,35 @@ pub(crate) async fn connect_user(
     // VB6 calls WarpUserChar which sends: BKW, CM, XM, N~, PU, CC, area visibility, BKW
     {
         let map_idx = map as usize;
-        let (r, g, b, music, map_name) = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-            (
-                game_map.info.r,
-                game_map.info.g,
-                game_map.info.b,
-                game_map.info.music,
-                game_map.info.name.clone(),
-            )
-        } else {
-            (200, 200, 200, 0, format!("Mapa {}", map))
-        };
+        let (r, g, b, music, map_name) =
+            if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+                (
+                    game_map.info.r,
+                    game_map.info.g,
+                    game_map.info.b,
+                    game_map.info.music,
+                    game_map.info.name.clone(),
+                )
+            } else {
+                (200, 200, 200, 0, format!("Mapa {}", map))
+            };
 
         // BKW (fade to black)
         state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
         // CM (change map — client loads the map file)
-        state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8),
+        );
         // XM (music)
         state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
         // N~ (map name display)
         state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
         // IP (self char index — tells client which CC is "me")
-        state.send_bytes(conn_id, &binary_packets::write_user_char_index(char_index.0 as i16));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_user_char_index(char_index.0 as i16),
+        );
         // Own CC packet (client renders self) + [CD (char data)
         if let Some(user) = state.users.get(&conn_id) {
             let own_cc = user.build_cc_binary();
@@ -969,7 +1335,10 @@ pub(crate) async fn connect_user(
             state.send_bytes(conn_id, &own_cd);
         }
         // PU (position update — tells client where to center camera)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(x as i16, y as i16));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_pos_update(x as i16, y as i16),
+        );
         // Send area visibility (other players, NPCs, ground items)
         make_user_visible(state, conn_id).await;
 
@@ -996,7 +1365,10 @@ pub(crate) async fn connect_user(
 
     // --- PHASE 12b: Online count (ON opcode → frmMain.ONLINES.Caption) ---
     // VB6 MostrarNumUsers: broadcast online count to ALL players (General.bas:628)
-    state.send_data_bytes(SendTarget::ToAll, &binary_packets::write_online_count(state.num_users as i16));
+    state.send_data_bytes(
+        SendTarget::ToAll,
+        &binary_packets::write_online_count(state.num_users as i16),
+    );
 
     // --- PHASE 13: Scroll timers (VB6 lines 1781-1783) ---
     for i in 1u8..=4 {

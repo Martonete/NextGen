@@ -1,18 +1,22 @@
 //! GM moderation commands: /BAN, /KICK, /CARCEL, /SILENCIAR, etc.
 
-use tracing::{info, error};
-use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, privilege_level};
-use crate::protocol::{font_index, binary_packets};
 use super::common::*;
-use super::{warp_user, user_die};
+use super::{user_die, warp_user};
+use crate::game::types::{GameState, SendTarget, privilege_level};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
+use tracing::{error, info};
 
 /// /KICK name — Disconnect a player (requires SEMIDIOS+).
 pub(super) async fn handle_slash_kick(state: &mut GameState, conn_id: ConnectionId, target: &str) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tenes permisos para usar este comando.",
+                font_index::INFO,
+            );
             return;
         }
     }
@@ -20,7 +24,11 @@ pub(super) async fn handle_slash_kick(state: &mut GameState, conn_id: Connection
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -32,16 +40,32 @@ pub(super) async fn handle_slash_kick(state: &mut GameState, conn_id: Connection
     }
 
     // Check target privilege — can't kick equal or higher
-    let target_priv = state.users.get(&target_id).map(|u| u.privileges).unwrap_or(0);
+    let target_priv = state
+        .users
+        .get(&target_id)
+        .map(|u| u.privileges)
+        .unwrap_or(0);
     let my_priv = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
     if target_priv >= my_priv {
-        state.send_console(conn_id, "No podes kickear a alguien de igual o mayor rango.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No podes kickear a alguien de igual o mayor rango.",
+            font_index::INFO,
+        );
         return;
     }
 
-    state.send_console(target_id, "Has sido desconectado por un GM.", font_index::INFO);
+    state.send_console(
+        target_id,
+        "Has sido desconectado por un GM.",
+        font_index::INFO,
+    );
     close_connection(state, target_id).await;
-    state.send_console(conn_id, &format!("Jugador '{}' desconectado.", target), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Jugador '{}' desconectado.", target),
+        font_index::INFO,
+    );
 }
 
 /// /BAN nick@reason — Ban character.
@@ -60,11 +84,17 @@ pub(super) async fn handle_slash_ban(state: &mut GameState, conn_id: ConnectionI
         return;
     }
 
-    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let admin_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
 
     // Check if target is online
     let target_upper = nick.to_uppercase();
-    let target_conn = state.users.values()
+    let target_conn = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| u.conn_id);
 
@@ -76,17 +106,29 @@ pub(super) async fn handle_slash_ban(state: &mut GameState, conn_id: ConnectionI
     let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, true).await;
 
     // Broadcast ban notification
-    state.send_msg_id_to(SendTarget::ToAdmins, 760, &format!("{}@{}", admin_name, nick));
+    state.send_msg_id_to(
+        SendTarget::ToAdmins,
+        760,
+        &format!("{}@{}", admin_name, nick),
+    );
 
     // If online, disconnect
     if let Some(tc) = target_conn {
-        state.send_console(tc, &format!("Has sido baneado. Razon: {}", reason), font_index::FIGHT);
+        state.send_console(
+            tc,
+            &format!("Has sido baneado. Razon: {}", reason),
+            font_index::FIGHT,
+        );
         if let Some(w) = state.writers.get_mut(&tc) {
             w.shutdown().await;
         }
     }
 
-    state.send_console(conn_id, &format!("{} ha sido baneado. Razon: {}", nick, reason), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("{} ha sido baneado. Razon: {}", nick, reason),
+        font_index::INFO,
+    );
     info!("[GM] {} banned {} for: {}", admin_name, nick, reason);
 }
 
@@ -105,9 +147,21 @@ pub(super) async fn handle_slash_unban(state: &mut GameState, conn_id: Connectio
 
     let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, false).await;
 
-    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_msg_id_to(SendTarget::ToAdmins, 762, &format!("{}@{}", admin_name, nick));
-    state.send_console(conn_id, &format!("{} ha sido desbaneado.", nick), font_index::INFO);
+    let admin_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    state.send_msg_id_to(
+        SendTarget::ToAdmins,
+        762,
+        &format!("{}@{}", admin_name, nick),
+    );
+    state.send_console(
+        conn_id,
+        &format!("{} ha sido desbaneado.", nick),
+        font_index::INFO,
+    );
     info!("[GM] {} unbanned {}", admin_name, nick);
 }
 
@@ -119,17 +173,27 @@ pub(super) async fn handle_slash_banip(state: &mut GameState, conn_id: Connectio
     }
 
     let target = args.trim().replace(['\\', '/'], "");
-    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let admin_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
 
     // Check if target is a nick (online user)
     let target_upper = target.to_uppercase();
-    let found = state.users.values()
+    let found = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| (u.conn_id, u.ip.clone(), u.char_name.clone()));
 
     let ip_to_ban = if let Some((tc, ip, name)) = found {
         // Banning by nick — also kick the player
-        state.send_msg_id_to(SendTarget::ToAdmins, 798, &format!("{}@{}", admin_name, name));
+        state.send_msg_id_to(
+            SendTarget::ToAdmins,
+            798,
+            &format!("{}@{}", admin_name, name),
+        );
         if let Some(w) = state.writers.get_mut(&tc) {
             w.shutdown().await;
         }
@@ -146,7 +210,11 @@ pub(super) async fn handle_slash_banip(state: &mut GameState, conn_id: Connectio
     }
 
     let _ = state.bans.ban_ip(&state.pool, &ip_to_ban).await;
-    state.send_console(conn_id, &format!("IP {} baneada.", ip_to_ban), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("IP {} baneada.", ip_to_ban),
+        font_index::INFO,
+    );
     info!("[GM] {} banned IP {}", admin_name, ip_to_ban);
 }
 
@@ -160,7 +228,11 @@ pub(super) async fn handle_slash_unbanip(state: &mut GameState, conn_id: Connect
     let ip = ip.trim();
     if state.bans.unban_ip(&state.pool, ip).await {
         state.send_msg_id(conn_id, 799, &ip.to_string());
-        let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        let admin_name = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
         info!("[GM] {} unbanned IP {}", admin_name, ip);
     } else {
         state.send_msg_id(conn_id, 800, "");
@@ -176,24 +248,38 @@ pub(super) async fn handle_slash_banacc(state: &mut GameState, conn_id: Connecti
 
     let parts: Vec<&str> = args.splitn(2, '@').collect();
     let nick = parts[0].trim().replace(['\\', '/'], "");
-    let _reason = if parts.len() > 1 { parts[1].trim() } else { "Sin razon" };
+    let _reason = if parts.len() > 1 {
+        parts[1].trim()
+    } else {
+        "Sin razon"
+    };
 
     if nick.is_empty() {
         state.send_msg_id(conn_id, 758, "");
         return;
     }
 
-    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let admin_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
 
     // Find account name (from online user or charfile)
     let target_upper = nick.to_uppercase();
-    let online = state.users.values()
+    let online = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| (u.conn_id, u.account_name.clone()));
 
     let account_name = if let Some((tc, acc)) = online {
         // Kick the player
-        state.send_msg_id_to(SendTarget::ToAdmins, 752, &format!("{}@{}", admin_name, nick));
+        state.send_msg_id_to(
+            SendTarget::ToAdmins,
+            752,
+            &format!("{}@{}", admin_name, nick),
+        );
         if let Some(w) = state.writers.get_mut(&tc) {
             w.shutdown().await;
         }
@@ -207,23 +293,47 @@ pub(super) async fn handle_slash_banacc(state: &mut GameState, conn_id: Connecti
     let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, true).await;
 
     // Ban account in DB
-    let _ = crate::db::accounts::set_account_banned(&state.pool, &account_name, true, "BANACC").await;
+    let _ =
+        crate::db::accounts::set_account_banned(&state.pool, &account_name, true, "BANACC").await;
 
-    state.send_msg_id_to(SendTarget::ToAdmins, 760, &format!("{}@{}", admin_name, nick));
-    state.send_msg_id_to(SendTarget::ToAdmins, 761, &format!("{}@{}", admin_name, account_name));
-    state.send_console(conn_id, &format!("{} y cuenta {} baneados.", nick, account_name), font_index::INFO);
-    info!("[GM] {} banned account {} (char: {})", admin_name, account_name, nick);
+    state.send_msg_id_to(
+        SendTarget::ToAdmins,
+        760,
+        &format!("{}@{}", admin_name, nick),
+    );
+    state.send_msg_id_to(
+        SendTarget::ToAdmins,
+        761,
+        &format!("{}@{}", admin_name, account_name),
+    );
+    state.send_console(
+        conn_id,
+        &format!("{} y cuenta {} baneados.", nick, account_name),
+        font_index::INFO,
+    );
+    info!(
+        "[GM] {} banned account {} (char: {})",
+        admin_name, account_name, nick
+    );
 }
 
 /// /UNBANACC nick — Unban account.
-pub(super) async fn handle_slash_unbanacc(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+pub(super) async fn handle_slash_unbanacc(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SUB_ADMINISTRADOR => {}
         _ => return,
     }
 
     let nick = target.replace(['\\', '/'], "");
-    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let admin_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
 
     // Unban character in DB
     let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, false).await;
@@ -231,8 +341,16 @@ pub(super) async fn handle_slash_unbanacc(state: &mut GameState, conn_id: Connec
     // Try unban account (use nick as account name fallback)
     let _ = crate::db::accounts::set_account_banned(&state.pool, &nick, false, "").await;
 
-    state.send_msg_id_to(SendTarget::ToAdmins, 763, &format!("{}@{}", admin_name, nick));
-    state.send_console(conn_id, &format!("Cuenta de {} desbaneada.", nick), font_index::INFO);
+    state.send_msg_id_to(
+        SendTarget::ToAdmins,
+        763,
+        &format!("{}@{}", admin_name, nick),
+    );
+    state.send_console(
+        conn_id,
+        &format!("Cuenta de {} desbaneada.", nick),
+        font_index::INFO,
+    );
     info!("[GM] {} unbanned account for {}", admin_name, nick);
 }
 
@@ -259,7 +377,9 @@ pub(super) async fn handle_slash_carcel(state: &mut GameState, conn_id: Connecti
     }
 
     let target_upper = nick.to_uppercase();
-    let target_conn = state.users.values()
+    let target_conn = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| (u.conn_id, u.privileges));
 
@@ -282,9 +402,20 @@ pub(super) async fn handle_slash_carcel(state: &mut GameState, conn_id: Connecti
             // Warp to prison
             warp_user(state, tc, 78, 50, 50).await;
 
-            let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_console(conn_id, &format!("{} encarcelado por {} minutos.", nick, minutes), font_index::INFO);
-            info!("[GM] {} jailed {} for {}m: {}", admin_name, nick, minutes, reason);
+            let admin_name = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.char_name.clone())
+                .unwrap_or_default();
+            state.send_console(
+                conn_id,
+                &format!("{} encarcelado por {} minutos.", nick, minutes),
+                font_index::INFO,
+            );
+            info!(
+                "[GM] {} jailed {} for {}m: {}",
+                admin_name, nick, minutes, reason
+            );
         }
         None => {
             state.send_msg_id(conn_id, 196, "");
@@ -293,7 +424,11 @@ pub(super) async fn handle_slash_carcel(state: &mut GameState, conn_id: Connecti
 }
 
 /// /SILENCIAR nick@minutes — Mute/unmute user.
-pub(super) async fn handle_slash_silenciar(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+pub(super) async fn handle_slash_silenciar(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    args: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {}
         _ => return,
@@ -301,7 +436,11 @@ pub(super) async fn handle_slash_silenciar(state: &mut GameState, conn_id: Conne
 
     let parts: Vec<&str> = args.splitn(2, '@').collect();
     let nick = parts[0].trim().replace(['\\', '/'], "");
-    let minutes: i32 = if parts.len() > 1 { parts[1].trim().parse().unwrap_or(5) } else { 5 };
+    let minutes: i32 = if parts.len() > 1 {
+        parts[1].trim().parse().unwrap_or(5)
+    } else {
+        5
+    };
 
     if minutes > 60 {
         state.send_msg_id(conn_id, 944, "");
@@ -309,7 +448,9 @@ pub(super) async fn handle_slash_silenciar(state: &mut GameState, conn_id: Conne
     }
 
     let target_upper = nick.to_uppercase();
-    let target_conn = state.users.values()
+    let target_conn = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| (u.conn_id, u.silenced));
 
@@ -332,8 +473,17 @@ pub(super) async fn handle_slash_silenciar(state: &mut GameState, conn_id: Conne
                 state.send_msg_id(conn_id, 737, "");
                 state.send_msg_id(tc, 943, &minutes.to_string());
             }
-            let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            info!("[GM] {} {} {}", admin_name, if is_silenced { "unmuted" } else { "muted" }, nick);
+            let admin_name = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.char_name.clone())
+                .unwrap_or_default();
+            info!(
+                "[GM] {} {} {}",
+                admin_name,
+                if is_silenced { "unmuted" } else { "muted" },
+                nick
+            );
         }
         None => {
             state.send_msg_id(conn_id, 196, "");
@@ -342,7 +492,11 @@ pub(super) async fn handle_slash_silenciar(state: &mut GameState, conn_id: Conne
 }
 
 /// /ADVERTIR nick@reason — Warn user. 5 warnings = auto-ban.
-pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+pub(super) async fn handle_slash_advertir(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    args: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {}
         _ => return,
@@ -357,10 +511,16 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
         return;
     }
 
-    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let admin_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
 
     let target_upper = nick.to_uppercase();
-    let target_conn = state.users.values()
+    let target_conn = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| (u.conn_id, u.privileges, u.warnings));
 
@@ -379,8 +539,16 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
             }
 
             // Broadcast
-            state.send_msg_id_to(SendTarget::ToAdmins, 742, &format!("{}@{}", admin_name, nick));
-            state.send_msg_id(tc, 743, &format!("{}@{}@{}", admin_name, reason, new_warnings));
+            state.send_msg_id_to(
+                SendTarget::ToAdmins,
+                742,
+                &format!("{}@{}", admin_name, nick),
+            );
+            state.send_msg_id(
+                tc,
+                743,
+                &format!("{}@{}@{}", admin_name, reason, new_warnings),
+            );
 
             if new_warnings >= 5 {
                 // Auto-ban in DB
@@ -400,7 +568,10 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
                 warp_user(state, tc, 78, 50, 50).await;
             }
 
-            info!("[GM] {} warned {} (#{}) for: {}", admin_name, nick, new_warnings, reason);
+            info!(
+                "[GM] {} warned {} (#{}) for: {}",
+                admin_name, nick, new_warnings, reason
+            );
         }
         None => {
             state.send_msg_id(conn_id, 440, "");
@@ -416,20 +587,34 @@ pub(super) async fn handle_slash_kill(state: &mut GameState, conn_id: Connection
     }
 
     let target_upper = target.to_uppercase();
-    let target_conn = state.users.values()
+    let target_conn = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| u.conn_id);
 
     match target_conn {
         Some(tc) => {
-            let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            let (map, x, y) = state.users.get(&tc).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
+            let admin_name = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.char_name.clone())
+                .unwrap_or_default();
+            let (map, x, y) = state
+                .users
+                .get(&tc)
+                .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+                .unwrap_or((0, 0, 0));
 
             // Kill the user
             user_die(state, tc, None).await;
 
             // Broadcast
-            state.send_msg_id_to(SendTarget::ToArea { map, x, y }, 753, &format!("{}@{}", admin_name, target));
+            state.send_msg_id_to(
+                SendTarget::ToArea { map, x, y },
+                753,
+                &format!("{}@{}", admin_name, target),
+            );
             info!("[GM] {} killed {}", admin_name, target);
         }
         None => {
@@ -444,14 +629,21 @@ pub(super) async fn handle_slash_echar(state: &mut GameState, conn_id: Connectio
 }
 
 /// /STOP nick — Freeze user (can't move).
-pub(super) async fn handle_slash_stop(state: &mut GameState, conn_id: ConnectionId, target: &str, freeze: bool) {
+pub(super) async fn handle_slash_stop(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+    freeze: bool,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => return,
     }
 
     let target_upper = target.to_uppercase();
-    let target_conn = state.users.values()
+    let target_conn = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| u.conn_id);
 
@@ -460,8 +652,16 @@ pub(super) async fn handle_slash_stop(state: &mut GameState, conn_id: Connection
             if let Some(user) = state.users.get_mut(&tc) {
                 user.paralyzed = freeze;
             }
-            let status = if freeze { "paralizado" } else { "desparalizado" };
-            state.send_console(conn_id, &format!("{} {}.", target, status), font_index::INFO);
+            let status = if freeze {
+                "paralizado"
+            } else {
+                "desparalizado"
+            };
+            state.send_console(
+                conn_id,
+                &format!("{} {}.", target, status),
+                font_index::INFO,
+            );
         }
         None => {
             state.send_msg_id(conn_id, 196, "");
@@ -479,7 +679,9 @@ pub(super) async fn handle_slash_cheat(state: &mut GameState, conn_id: Connectio
     let target_conn = if target_upper == "YO" {
         Some(conn_id)
     } else {
-        state.users.values()
+        state
+            .users
+            .values()
             .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
             .map(|u| u.conn_id)
     };
@@ -487,7 +689,13 @@ pub(super) async fn handle_slash_cheat(state: &mut GameState, conn_id: Connectio
     match target_conn {
         Some(tc) => {
             if let Some(user) = state.users.get_mut(&tc) {
-                let (mhp, mmana, msta, magua, mham) = (user.max_hp, user.max_mana, user.max_sta, user.max_agua, user.max_ham);
+                let (mhp, mmana, msta, magua, mham) = (
+                    user.max_hp,
+                    user.max_mana,
+                    user.max_sta,
+                    user.max_agua,
+                    user.max_ham,
+                );
                 user.min_hp = mhp;
                 user.min_mana = mmana;
                 user.min_sta = msta;
@@ -506,7 +714,11 @@ pub(super) async fn handle_slash_cheat(state: &mut GameState, conn_id: Connectio
             state.send_bytes(tc, &mana_pkt);
             state.send_bytes(tc, &sta_pkt);
 
-            state.send_console(conn_id, &format!("{} restaurado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("{} restaurado.", target),
+                font_index::INFO,
+            );
         }
         None => {
             state.send_msg_id(conn_id, 196, "");
@@ -531,7 +743,11 @@ pub(super) async fn handle_slash_noadv(state: &mut GameState, conn_id: Connectio
 }
 
 /// /LIBERAR <name> — Release player from prison. Requires Semidios+.
-pub(super) async fn handle_slash_liberar(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+pub(super) async fn handle_slash_liberar(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
     let gm_name = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => u.char_name.clone(),
         _ => return,
@@ -543,7 +759,11 @@ pub(super) async fn handle_slash_liberar(state: &mut GameState, conn_id: Connect
     if let Some(t_conn) = target_conn {
         // Warp target to Ullathorpe (map 1, 50, 50) as release location
         warp_user(state, t_conn, 1, 50, 50).await;
-        state.send_msg_id_to(SendTarget::ToAdmins, 443, &format!("{}@{}", gm_name, target));
+        state.send_msg_id_to(
+            SendTarget::ToAdmins,
+            443,
+            &format!("{}@{}", gm_name, target),
+        );
         state.send_msg_id(t_conn, 444, ""); // You've been released
         info!("[GM] {} released {} from prison", gm_name, target);
     } else {
@@ -595,7 +815,9 @@ pub(super) async fn handle_slash_set_privilege(
             user.privileges = new_level.min(user.privileges);
         }
         // Re-warp to refresh
-        let (map, x, y) = state.users.get(&conn_id)
+        let (map, x, y) = state
+            .users
+            .get(&conn_id)
             .map(|u| (u.pos_map, u.pos_x, u.pos_y))
             .unwrap_or((1, 50, 50));
         warp_user(state, conn_id, map, x, y).await;
@@ -611,12 +833,18 @@ pub(super) async fn handle_slash_set_privilege(
         }
     };
 
-    let target_real_name = state.users.get(&target_conn)
+    let target_real_name = state
+        .users
+        .get(&target_conn)
         .map(|u| u.char_name.clone())
         .unwrap_or_default();
 
     // Announce to admins
-    state.send_msg_id_to(SendTarget::ToAdmins, 562, &format!("{}@{}@{}", gm_name, target_real_name, level_name));
+    state.send_msg_id_to(
+        SendTarget::ToAdmins,
+        562,
+        &format!("{}@{}@{}", gm_name, target_real_name, level_name),
+    );
 
     // Set the new privilege level
     if let Some(user) = state.users.get_mut(&target_conn) {
@@ -624,25 +852,40 @@ pub(super) async fn handle_slash_set_privilege(
     }
 
     // Re-warp to refresh character appearance (privilege affects CC packet)
-    let (map, x, y) = state.users.get(&target_conn)
+    let (map, x, y) = state
+        .users
+        .get(&target_conn)
         .map(|u| (u.pos_map, u.pos_x, u.pos_y))
         .unwrap_or((1, 50, 50));
     warp_user(state, target_conn, map, x, y).await;
 
-    info!("[GM] {} set {} to {} (level {})", gm_name, target_real_name, level_name, new_level);
+    info!(
+        "[GM] {} set {} to {} (level {})",
+        gm_name, target_real_name, level_name, new_level
+    );
 }
 
 /// /CHANGENICK <newname> — Change own character name. Requires Administrador.
-pub(super) async fn handle_slash_changenick(state: &mut GameState, conn_id: ConnectionId, new_name: &str) {
+pub(super) async fn handle_slash_changenick(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    new_name: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
         _ => return,
     }
 
-    if new_name.is_empty() { return; }
+    if new_name.is_empty() {
+        return;
+    }
 
     // Remove old name from online_names
-    let old_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let old_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
     state.online_names.remove(&old_name.to_uppercase());
 
     // Set new name
@@ -652,7 +895,9 @@ pub(super) async fn handle_slash_changenick(state: &mut GameState, conn_id: Conn
     state.online_names.insert(new_name.to_uppercase(), conn_id);
 
     // Re-warp to refresh CC packet with new name
-    let (map, x, y) = state.users.get(&conn_id)
+    let (map, x, y) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.pos_map, u.pos_x, u.pos_y))
         .unwrap_or((1, 50, 50));
     warp_user(state, conn_id, map, x, y).await;
@@ -661,7 +906,11 @@ pub(super) async fn handle_slash_changenick(state: &mut GameState, conn_id: Conn
 }
 
 /// /BORRARPJ <name> — Delete a character. Requires Director+.
-pub(super) async fn handle_slash_borrarpj(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+pub(super) async fn handle_slash_borrarpj(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
     let gm_name = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIRECTOR => u.char_name.clone(),
         _ => return,
@@ -670,7 +919,9 @@ pub(super) async fn handle_slash_borrarpj(state: &mut GameState, conn_id: Connec
     let target_upper = target.to_uppercase();
 
     // SHAY protection
-    if target_upper == "SHAY" && gm_name.to_uppercase() != "SHAY" { return; }
+    if target_upper == "SHAY" && gm_name.to_uppercase() != "SHAY" {
+        return;
+    }
 
     // If target is online, disconnect them
     if let Some(&t_conn) = state.online_names.get(&target_upper) {
@@ -700,14 +951,18 @@ pub(super) async fn handle_slash_borrarpj(state: &mut GameState, conn_id: Connec
 /// /BANHD <name> — Ban player's HD + IP + account. Requires Administrador.
 pub(super) async fn handle_slash_banhd(state: &mut GameState, conn_id: ConnectionId, target: &str) {
     let gm_name = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {
+            u.char_name.clone()
+        }
         _ => return,
     };
 
     let target_upper = target.to_uppercase();
 
     // SHAY protection
-    if target_upper == "SHAY" { return; }
+    if target_upper == "SHAY" {
+        return;
+    }
 
     let target_conn = match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
@@ -740,7 +995,13 @@ pub(super) async fn handle_slash_banhd(state: &mut GameState, conn_id: Connectio
 
     // Ban account
     if !target_account.is_empty() {
-        let _ = crate::db::accounts::set_account_banned(&state.pool, &target_account, true, "Tolerancia 0").await;
+        let _ = crate::db::accounts::set_account_banned(
+            &state.pool,
+            &target_account,
+            true,
+            "Tolerancia 0",
+        )
+        .await;
     }
 
     // Disconnect the target
@@ -748,21 +1009,44 @@ pub(super) async fn handle_slash_banhd(state: &mut GameState, conn_id: Connectio
 
     // Announce
     state.send_msg_id_to(SendTarget::ToAll, 567, &format!("{}@{}", gm_name, target));
-    state.send_msg_id_to(SendTarget::ToAll, 568, &format!("{}@{}", gm_name, target_hd));
-    state.send_msg_id_to(SendTarget::ToAll, 569, &format!("{}@{}", gm_name, target_ip));
-    state.send_msg_id_to(SendTarget::ToAll, 570, &format!("{}@{}", gm_name, target_account));
+    state.send_msg_id_to(
+        SendTarget::ToAll,
+        568,
+        &format!("{}@{}", gm_name, target_hd),
+    );
+    state.send_msg_id_to(
+        SendTarget::ToAll,
+        569,
+        &format!("{}@{}", gm_name, target_ip),
+    );
+    state.send_msg_id_to(
+        SendTarget::ToAll,
+        570,
+        &format!("{}@{}", gm_name, target_account),
+    );
 
-    info!("[GM] {} banned {} (HD={}, IP={}, Account={})", gm_name, target, target_hd, target_ip, target_account);
+    info!(
+        "[GM] {} banned {} (HD={}, IP={}, Account={})",
+        gm_name, target, target_hd, target_ip, target_account
+    );
 }
 
 // =============================================================================
 
 /// /PERDON <name> — Forgive user: set criminal=false, broadcast updated appearance. Requires ADMIN+.
-pub(super) async fn handle_slash_perdon(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+pub(super) async fn handle_slash_perdon(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tenes permisos para usar este comando.",
+                font_index::INFO,
+            );
             return;
         }
     }
@@ -770,7 +1054,11 @@ pub(super) async fn handle_slash_perdon(state: &mut GameState, conn_id: Connecti
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -786,24 +1074,43 @@ pub(super) async fn handle_slash_perdon(state: &mut GameState, conn_id: Connecti
 
     // Re-broadcast appearance with updated nick color (citizen = blue)
     let Some(u) = state.users.get(&target_id) else {
-        tracing::warn!(conn_id = conn_id, "user not found for cc broadcast after pardon");
+        tracing::warn!(
+            conn_id = conn_id,
+            "user not found for cc broadcast after pardon"
+        );
         return;
     };
     let cc = u.build_cc_binary();
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
 
-    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let gm_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
     state.send_console(target_id, "Has sido perdonado.", font_index::INFO);
-    state.send_console(conn_id, &format!("{} ha sido perdonado.", target), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("{} ha sido perdonado.", target),
+        font_index::INFO,
+    );
     info!("[GM] {} forgave {}", gm_name, target);
 }
 
 /// /EJECUTAR <name> — Execute user: kill with full penalty (lose exp, drop items). Requires DIOS+.
-pub(super) async fn handle_slash_ejecutar(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+pub(super) async fn handle_slash_ejecutar(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tenes permisos para usar este comando.",
+                font_index::INFO,
+            );
             return;
         }
     }
@@ -811,7 +1118,11 @@ pub(super) async fn handle_slash_ejecutar(state: &mut GameState, conn_id: Connec
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -825,18 +1136,34 @@ pub(super) async fn handle_slash_ejecutar(state: &mut GameState, conn_id: Connec
     // Kill with full penalty (user_die handles exp loss, item drop, etc.)
     user_die(state, target_id, None).await;
 
-    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let gm_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
     state.send_console(target_id, "Has sido ejecutado por un GM.", font_index::INFO);
-    state.send_console(conn_id, &format!("{} ha sido ejecutado.", target), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("{} ha sido ejecutado.", target),
+        font_index::INFO,
+    );
     info!("[GM] {} executed {}", gm_name, target);
 }
 
 /// /NOCAOS <name> — Kick from Chaos faction: set fuerzas_caos=false, reset kills. Requires ADMIN+.
-pub(super) async fn handle_slash_nocaos(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+pub(super) async fn handle_slash_nocaos(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tenes permisos para usar este comando.",
+                font_index::INFO,
+            );
             return;
         }
     }
@@ -844,7 +1171,11 @@ pub(super) async fn handle_slash_nocaos(state: &mut GameState, conn_id: Connecti
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -855,18 +1186,38 @@ pub(super) async fn handle_slash_nocaos(state: &mut GameState, conn_id: Connecti
         user.recompensas_caos = 0;
     }
 
-    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(target_id, "Has sido expulsado de la Legion del Caos.", font_index::INFO);
-    state.send_console(conn_id, &format!("{} expulsado de la Legion del Caos.", target), font_index::INFO);
+    let gm_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    state.send_console(
+        target_id,
+        "Has sido expulsado de la Legion del Caos.",
+        font_index::INFO,
+    );
+    state.send_console(
+        conn_id,
+        &format!("{} expulsado de la Legion del Caos.", target),
+        font_index::INFO,
+    );
     info!("[GM] {} kicked {} from Chaos faction", gm_name, target);
 }
 
 /// /NOREAL <name> — Kick from Royal Army: set armada_real=false, reset kills. Requires ADMIN+.
-pub(super) async fn handle_slash_noreal(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+pub(super) async fn handle_slash_noreal(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tenes permisos para usar este comando.",
+                font_index::INFO,
+            );
             return;
         }
     }
@@ -874,7 +1225,11 @@ pub(super) async fn handle_slash_noreal(state: &mut GameState, conn_id: Connecti
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -885,9 +1240,20 @@ pub(super) async fn handle_slash_noreal(state: &mut GameState, conn_id: Connecti
         user.recompensas_real = 0;
     }
 
-    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(target_id, "Has sido expulsado de la Armada Real.", font_index::INFO);
-    state.send_console(conn_id, &format!("{} expulsado de la Armada Real.", target), font_index::INFO);
+    let gm_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    state.send_console(
+        target_id,
+        "Has sido expulsado de la Armada Real.",
+        font_index::INFO,
+    );
+    state.send_console(
+        conn_id,
+        &format!("{} expulsado de la Armada Real.", target),
+        font_index::INFO,
+    );
     info!("[GM] {} kicked {} from Royal Army", gm_name, target);
 }
-

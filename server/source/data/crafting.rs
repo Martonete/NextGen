@@ -4,8 +4,8 @@
 // Each file contains a list of object indices that can be crafted in the respective skill.
 // The actual recipe details (materials, skill requirements) come from Obj.dat.
 
-use std::path::Path;
 use crate::config::IniFile;
+use std::path::Path;
 
 /// All crafting recipe lists loaded from DAT files.
 #[derive(Debug, Clone, Default)]
@@ -48,7 +48,9 @@ pub fn load_crafting(base: &Path) -> Result<CraftingData, String> {
 
     tracing::info!(
         "Crafting recipes loaded: {} smith weapons, {} smith armors, {} carpenter items",
-        smith_weapons.len(), smith_armors.len(), carpenter_items.len()
+        smith_weapons.len(),
+        smith_armors.len(),
+        carpenter_items.len()
     );
 
     Ok(CraftingData {
@@ -67,17 +69,21 @@ fn load_smith_weapons(base: &Path) -> Result<Vec<i32>, String> {
         return Ok(Vec::new());
     }
 
-    let ini = IniFile::load(&path)
-        .map_err(|e| format!("Failed to load ArmasHerrero.dat: {}", e))?;
+    let ini =
+        IniFile::load(&path).map_err(|e| format!("Failed to load ArmasHerrero.dat: {}", e))?;
 
-    let num = ini.get("INIT", "NumArmas")
+    let num = ini
+        .get("INIT", "NumArmas")
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(0);
 
     let mut items = Vec::with_capacity(num as usize);
     for i in 1..=num {
         let section = format!("Arma{}", i);
-        if let Some(idx) = ini.get(&section, "Index").and_then(|v| v.parse::<i32>().ok()) {
+        if let Some(idx) = ini
+            .get(&section, "Index")
+            .and_then(|v| v.parse::<i32>().ok())
+        {
             if idx > 0 {
                 items.push(idx);
             }
@@ -95,17 +101,21 @@ fn load_smith_armors(base: &Path) -> Result<Vec<i32>, String> {
         return Ok(Vec::new());
     }
 
-    let ini = IniFile::load(&path)
-        .map_err(|e| format!("Failed to load ArmadurasHerrero.dat: {}", e))?;
+    let ini =
+        IniFile::load(&path).map_err(|e| format!("Failed to load ArmadurasHerrero.dat: {}", e))?;
 
-    let num = ini.get("INIT", "NumArmaduras")
+    let num = ini
+        .get("INIT", "NumArmaduras")
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(0);
 
     let mut items = Vec::with_capacity(num as usize);
     for i in 1..=num {
         let section = format!("Armadura{}", i);
-        if let Some(idx) = ini.get(&section, "Index").and_then(|v| v.parse::<i32>().ok()) {
+        if let Some(idx) = ini
+            .get(&section, "Index")
+            .and_then(|v| v.parse::<i32>().ok())
+        {
             if idx > 0 {
                 items.push(idx);
             }
@@ -123,17 +133,21 @@ fn load_carpenter_items(base: &Path) -> Result<Vec<i32>, String> {
         return Ok(Vec::new());
     }
 
-    let ini = IniFile::load(&path)
-        .map_err(|e| format!("Failed to load ObjCarpintero.dat: {}", e))?;
+    let ini =
+        IniFile::load(&path).map_err(|e| format!("Failed to load ObjCarpintero.dat: {}", e))?;
 
-    let num = ini.get("INIT", "NumObjs")
+    let num = ini
+        .get("INIT", "NumObjs")
         .and_then(|v| v.parse::<i32>().ok())
         .unwrap_or(0);
 
     let mut items = Vec::with_capacity(num as usize);
     for i in 1..=num {
         let section = format!("OBJ{}", i);
-        if let Some(idx) = ini.get(&section, "Index").and_then(|v| v.parse::<i32>().ok()) {
+        if let Some(idx) = ini
+            .get(&section, "Index")
+            .and_then(|v| v.parse::<i32>().ok())
+        {
             if idx > 0 {
                 items.push(idx);
             }

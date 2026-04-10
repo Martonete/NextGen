@@ -36,12 +36,11 @@ public class LightSystem
         int mapW = state.MapData?.Width ?? 100;
         int mapH = state.MapData?.Height ?? 100;
 
-        // Use the map's actual RGB as ambient. When lights are active,
-        // WorldRenderer.Modulate = white, so the light system handles all tinting.
-        // Unlit tiles get the map ambient; lit tiles are brighter via MAX blending.
-        float AmbR = state.MapColorR / 255f;
-        float AmbG = state.MapColorG / 255f;
-        float AmbB = state.MapColorB / 255f;
+        // Use zone ambient if set, otherwise fall back to map ambient.
+        var (ambByteR, ambByteG, ambByteB) = GetEffectiveAmbient(state);
+        float AmbR = ambByteR / 255f;
+        float AmbG = ambByteG / 255f;
+        float AmbB = ambByteB / 255f;
         var ambient = new Color(AmbR, AmbG, AmbB, 1f);
 
         // Allocate chunked grid if needed, reset all allocated chunks to ambient
@@ -83,22 +82,32 @@ public class LightSystem
 
                     // Corner 1 (NW) → index 1
                     grid.Set(tx, ty, 1, CalcCorner(lightPxX, lightPxY, tileX, tileY,
-                        rangePx, grid.Get(tx, ty, 1), lightR, lightG, lightB, AmbR, AmbG, AmbB));
+                        rangePx, grid.Get(tx, ty, 1), lightR, lightG, lightB, AmbR, AmbG, AmbB, state));
 
                     // Corner 3 (NE) → index 3
                     grid.Set(tx, ty, 3, CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY,
-                        rangePx, grid.Get(tx, ty, 3), lightR, lightG, lightB, AmbR, AmbG, AmbB));
+                        rangePx, grid.Get(tx, ty, 3), lightR, lightG, lightB, AmbR, AmbG, AmbB, state));
 
                     // Corner 0 (SW) → index 0
                     grid.Set(tx, ty, 0, CalcCorner(lightPxX, lightPxY, tileX, tileY + TileSize,
-                        rangePx, grid.Get(tx, ty, 0), lightR, lightG, lightB, AmbR, AmbG, AmbB));
+                        rangePx, grid.Get(tx, ty, 0), lightR, lightG, lightB, AmbR, AmbG, AmbB, state));
 
                     // Corner 2 (SE) → index 2
                     grid.Set(tx, ty, 2, CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY + TileSize,
-                        rangePx, grid.Get(tx, ty, 2), lightR, lightG, lightB, AmbR, AmbG, AmbB));
+                        rangePx, grid.Get(tx, ty, 2), lightR, lightG, lightB, AmbR, AmbG, AmbB, state));
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Returns zone ambient if any channel is nonzero, else falls back to map ambient.
+    /// </summary>
+    private static (byte r, byte g, byte b) GetEffectiveAmbient(GameState state)
+    {
+        if (state.ZoneAmbientR != 0 || state.ZoneAmbientG != 0 || state.ZoneAmbientB != 0)
+            return (state.ZoneAmbientR, state.ZoneAmbientG, state.ZoneAmbientB);
+        return ((byte)state.MapColorR, (byte)state.MapColorG, (byte)state.MapColorB);
     }
 
     /// <summary>
@@ -106,6 +115,7 @@ public class LightSystem
     /// If dist > range, return existing value unchanged.
     /// Light center uses (lightX + 16, lightY + 16) — center of the light's tile.
     /// Uses MAX blending: lights can only brighten above existing value.
+    /// Applies partial occlusion (0.25x) when a blocked tile lies between light and corner.
     /// </summary>
     private static Color CalcCorner(
         float lightX, float lightY,
@@ -113,7 +123,8 @@ public class LightSystem
         int rangePx,
         Color existing,
         float lightR, float lightG, float lightB,
-        float ambR, float ambG, float ambB)
+        float ambR, float ambG, float ambB,
+        GameState? state = null)
     {
         // VB6: XDist = LightX + 16 - XCoord
         float dx = (lightX + 16f) - cornerX;
@@ -130,12 +141,66 @@ public class LightSystem
         float g = lightG + (ambG - lightG) * factor;
         float b = lightB + (ambB - lightB) * factor;
 
+        // Occlusion: if a blocked tile lies between the light and corner, reduce contribution
+        if (state != null)
+        {
+            int lTileX = (int)(lightX / TileSize);
+            int lTileY = (int)(lightY / TileSize);
+            int cTileX = (int)(cornerX / TileSize);
+            int cTileY = (int)(cornerY / TileSize);
+            if (IsBlockedBetween(state, lTileX, lTileY, cTileX, cTileY))
+            {
+                const float Bleed = 0.25f;
+                r = ambR + (r - ambR) * Bleed;
+                g = ambG + (g - ambG) * Bleed;
+                b = ambB + (b - ambB) * Bleed;
+            }
+        }
+
         // MAX blending: lights can only brighten above existing value.
         r = Math.Max(existing.R, r);
         g = Math.Max(existing.G, g);
         b = Math.Max(existing.B, b);
 
         return new Color(r, g, b, 1f);
+    }
+
+    /// <summary>
+    /// Bresenham line walk: returns true if any tile between (x0,y0) and (x1,y1)
+    /// (excluding endpoints) has Blocked == true. Checks at most 12 tiles.
+    /// </summary>
+    private static bool IsBlockedBetween(GameState state, int x0, int y0, int x1, int y1)
+    {
+        if (state.MapData == null) return false;
+
+        int dx = Math.Abs(x1 - x0);
+        int dy = Math.Abs(y1 - y0);
+        int steps = Math.Max(dx, dy);
+        if (steps <= 1) return false;
+        if (steps > 12) steps = 12;
+
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy;
+        int x = x0, y = y0;
+
+        for (int i = 0; i < steps - 1; i++)
+        {
+            int e2 = err * 2;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 < dx)  { err += dx; y += sy; }
+
+            // Skip endpoints
+            if (x == x1 && y == y1) break;
+
+            int tx = x, ty = y;
+            if (tx >= 1 && ty >= 1 && tx <= (state.MapData.Width) && ty <= (state.MapData.Height))
+            {
+                if (state.MapData.Tiles[tx, ty].Blocked)
+                    return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

@@ -1,16 +1,16 @@
 //! Movement handlers: walk, change heading, request position.
 //! Extracted from mod.rs to reduce file size.
 
-use tracing::warn;
-use crate::net::ConnectionId;
-use crate::protocol::{font_index, binary_packets};
+use super::common::*;
+use super::{
+    auto_cura_user, check_update_needed_user, mover_casper, send_warp_fx, warp_user, zona_cura,
+};
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget};
 use crate::game::world;
-use super::common::*;
-use super::{
-    warp_user, send_warp_fx, mover_casper, check_update_needed_user, zona_cura, auto_cura_user,
-};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
+use tracing::warn;
 
 // =====================================================================
 // Helpers
@@ -40,11 +40,21 @@ fn check_teleport_restrictions(
 
     // Look up zone data at destination (zones use 0-based coordinates).
     let map_idx = dest_map as usize;
-    let zone_opt: Option<(bool, i32, i32, bool, i32)> =
-        state.game_data.maps.get(map_idx)
-            .and_then(|m| m.as_ref())
-            .and_then(|gm| gm.get_zone_at(dest_x - 1, dest_y - 1))
-            .map(|z| (z.newbie, z.min_level, z.max_level, z.solo_faccion, z.faccion));
+    let zone_opt: Option<(bool, i32, i32, bool, i32)> = state
+        .game_data
+        .maps
+        .get(map_idx)
+        .and_then(|m| m.as_ref())
+        .and_then(|gm| gm.get_zone_at(dest_x - 1, dest_y - 1))
+        .map(|z| {
+            (
+                z.newbie,
+                z.min_level,
+                z.max_level,
+                z.solo_faccion,
+                z.faccion,
+            )
+        });
 
     if let Some((newbie, min_level, max_level, solo_faccion, faccion)) = zone_opt {
         // Newbie zone: block high-level players (max_level > 0).
@@ -99,7 +109,13 @@ fn check_teleport_restrictions(
 ///   i=2: dx+1, dy+1 (SE quadrant)
 ///   i=3: dx-1, dy+1 (SW quadrant)
 ///   i=4: dx-1, dy-1 (NW quadrant)
-fn randomize_exit(state: &GameState, exit_map: i32, exit_x: i32, exit_y: i32, radio: i32) -> (i32, i32) {
+fn randomize_exit(
+    state: &GameState,
+    exit_map: i32,
+    exit_x: i32,
+    exit_y: i32,
+    radio: i32,
+) -> (i32, i32) {
     if radio <= 0 {
         return (exit_x, exit_y);
     }
@@ -136,15 +152,40 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
     // Movement packets are very frequent, don't log them
     // Check logged in
     let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.meditating, u.navigating, u.resting, u.traveling),
+        Some(u) if u.logged => (
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+            u.char_index,
+            u.paralyzed,
+            u.dead,
+            u.meditating,
+            u.navigating,
+            u.resting,
+            u.traveling,
+        ),
         _ => return,
     };
-    let (map, old_x, old_y, char_index, paralyzed, dead, meditating, navigating, resting, traveling) = user_data;
+    let (
+        map,
+        old_x,
+        old_y,
+        char_index,
+        paralyzed,
+        dead,
+        meditating,
+        navigating,
+        resting,
+        traveling,
+    ) = user_data;
 
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
     if paralyzed {
         // Force client back to server position (prevents ghost movement on client)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_pos_update(old_x as i16, old_y as i16),
+        );
         return;
     }
 
@@ -167,7 +208,11 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         state.send_msg_id(conn_id, 205, ""); // TEXTO205: Dejas de meditar
         // Remove meditation FX from area
         state.send_data_bytes(
-            SendTarget::ToArea { map, x: old_x, y: old_y },
+            SendTarget::ToArea {
+                map,
+                x: old_x,
+                y: old_y,
+            },
             &binary_packets::write_create_fx(char_index.0 as i16, 0, 0),
         );
     }
@@ -194,9 +239,13 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
             let now = std::time::Instant::now();
             let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default().as_millis() as u64;
+                .unwrap_or_default()
+                .as_millis() as u64;
             let (elapsed_ms, steps) = match state.users.get(&conn_id) {
-                Some(u) => (now.duration_since(u.speed_window_start).as_millis() as i64, u.speed_steps),
+                Some(u) => (
+                    now.duration_since(u.speed_window_start).as_millis() as i64,
+                    u.speed_steps,
+                ),
                 None => return,
             };
 
@@ -212,12 +261,21 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
                     user.speed_steps = new_steps;
                 }
                 if new_steps > 30 {
-                    let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+                    let name = state
+                        .users
+                        .get(&conn_id)
+                        .map(|u| u.char_name.clone())
+                        .unwrap_or_default();
                     let first_strike_ms = state.users.get(&conn_id).and_then(|u| u.count_sh);
                     match first_strike_ms {
                         None => {
                             // First detection — record timestamp and warn
-                            tracing::warn!("[SECURITY] Speed-hack first strike: '{}' ({} steps in {}ms)", name, new_steps, elapsed_ms);
+                            tracing::warn!(
+                                "[SECURITY] Speed-hack first strike: '{}' ({} steps in {}ms)",
+                                name,
+                                new_steps,
+                                elapsed_ms
+                            );
                             if let Some(user) = state.users.get_mut(&conn_id) {
                                 user.count_sh = Some(now_ms);
                                 user.speed_steps = 0;
@@ -227,12 +285,22 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
                         Some(first_ms) => {
                             // Second detection — check if within 30 seconds
                             if now_ms.saturating_sub(first_ms) <= 30_000 {
-                                tracing::warn!("[SECURITY] Speed-hack second strike: '{}' kicked ({} steps in {}ms)", name, new_steps, elapsed_ms);
+                                tracing::warn!(
+                                    "[SECURITY] Speed-hack second strike: '{}' kicked ({} steps in {}ms)",
+                                    name,
+                                    new_steps,
+                                    elapsed_ms
+                                );
                                 state.security_kick_queue.push(conn_id);
                                 return;
                             } else {
                                 // More than 30s since first strike — reset to first strike
-                                tracing::warn!("[SECURITY] Speed-hack first strike (reset): '{}' ({} steps in {}ms)", name, new_steps, elapsed_ms);
+                                tracing::warn!(
+                                    "[SECURITY] Speed-hack first strike (reset): '{}' ({} steps in {}ms)",
+                                    name,
+                                    new_steps,
+                                    elapsed_ms
+                                );
                                 if let Some(user) = state.users.get_mut(&conn_id) {
                                     user.count_sh = Some(now_ms);
                                     user.speed_steps = 0;
@@ -278,23 +346,40 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
             // VB6 M22: dead players cannot enter maps that have OnDeathGoTo defined
             let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
-            let exit_map_restricts_dead = state.game_data.maps
+            let exit_map_restricts_dead = state
+                .game_data
+                .maps
                 .get(exit_map as usize)
                 .and_then(|m| m.as_ref())
                 .map(|m| m.info.on_death_go_to.0 != 0)
                 .unwrap_or(false);
             if is_dead && exit_map_restricts_dead {
-                state.send_console(conn_id, "Solo se permite entrar al mapa a los personajes vivos.", crate::protocol::font_index::INFO);
-                state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
+                state.send_console(
+                    conn_id,
+                    "Solo se permite entrar al mapa a los personajes vivos.",
+                    crate::protocol::font_index::INFO,
+                );
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_pos_update(old_x as i16, old_y as i16),
+                );
                 return;
             }
 
             // FX if tile has otTeleport object OR particle group (particle teleports)
             let (has_teleport_fx, teleport_radio) = {
                 let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
-                let has_obj = obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false);
+                let has_obj = obj_idx > 0
+                    && state
+                        .get_object(obj_idx)
+                        .map(|o| o.obj_type == crate::data::objects::ObjType::Teleport)
+                        .unwrap_or(false);
                 let has_particle = get_map_tile_particle(state, map, new_x, new_y) > 0;
-                let radio = if obj_idx > 0 { state.get_object(obj_idx).map(|o| o.radio).unwrap_or(0) } else { 0 };
+                let radio = if obj_idx > 0 {
+                    state.get_object(obj_idx).map(|o| o.radio).unwrap_or(0)
+                } else {
+                    0
+                };
                 (has_obj || has_particle, radio)
             };
             let (dest_x, dest_y) = randomize_exit(state, exit_map, exit_x, exit_y, teleport_radio);
@@ -305,14 +390,20 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
                 }
             } else {
                 // Blocked — send position correction so the client doesn't drift.
-                state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_pos_update(old_x as i16, old_y as i16),
+                );
             }
             return;
         }
 
         // Reject movement — send position correction
         // Walk rejected — don't log (too frequent)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_pos_update(old_x as i16, old_y as i16),
+        );
         return;
     }
 
@@ -323,10 +414,16 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
 
     // VB6 HandleWalk: Moving while hidden (Oculto) reveals non-Thief/non-Bandit classes.
     // Spell invisibility is NOT broken by movement.
-    let (was_hidden, class_for_hide, is_spell_invis, navigating_for_hide) = match state.users.get(&conn_id) {
-        Some(u) => (u.hidden && !u.admin_invisible, u.class, u.invisible && !u.admin_invisible, u.navigating),
-        None => (false, PlayerClass::default(), false, false),
-    };
+    let (was_hidden, class_for_hide, is_spell_invis, navigating_for_hide) =
+        match state.users.get(&conn_id) {
+            Some(u) => (
+                u.hidden && !u.admin_invisible,
+                u.class,
+                u.invisible && !u.admin_invisible,
+                u.navigating,
+            ),
+            None => (false, PlayerClass::default(), false, false),
+        };
     if was_hidden {
         if !class_for_hide.is_thief_or_bandit() {
             // Reveal hidden state
@@ -373,9 +470,14 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
     // Broadcast movement to area (CharacterMove packet) — only to OTHER players
     // VB6 SendToUserAreaButindex: broadcasts to all users in the sender's 27x27 area
     // When invisible, still send movement to same-clan members.
-    let is_invisible = state.users.get(&conn_id).map(|u| u.invisible || u.hidden).unwrap_or(false);
+    let is_invisible = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.invisible || u.hidden)
+        .unwrap_or(false);
     {
-        let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as i16, new_y as i16);
+        let move_pkt =
+            binary_packets::write_character_move(char_index.0 as i16, new_x as i16, new_y as i16);
         let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
             Some(u) => (u.area_min_x, u.area_min_y),
             None => (0, 0),
@@ -409,7 +511,12 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         } else if !is_invisible {
             // Fallback: use standard area broadcast (no clan filter in fallback)
             state.send_data_bytes(
-                SendTarget::ToAreaButIndex { conn_id, map, x: new_x, y: new_y },
+                SendTarget::ToAreaButIndex {
+                    conn_id,
+                    map,
+                    x: new_x,
+                    y: new_y,
+                },
                 &move_pkt,
             );
         }
@@ -431,23 +538,40 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
     if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
         // VB6 M22: dead players cannot enter maps that have OnDeathGoTo defined
         let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
-        let exit_map_restricts_dead = state.game_data.maps
+        let exit_map_restricts_dead = state
+            .game_data
+            .maps
             .get(exit_map as usize)
             .and_then(|m| m.as_ref())
             .map(|m| m.info.on_death_go_to.0 != 0)
             .unwrap_or(false);
         if is_dead && exit_map_restricts_dead {
-            state.send_console(conn_id, "Solo se permite entrar al mapa a los personajes vivos.", crate::protocol::font_index::INFO);
-            state.send_bytes(conn_id, &binary_packets::write_pos_update(new_x as i16, new_y as i16));
+            state.send_console(
+                conn_id,
+                "Solo se permite entrar al mapa a los personajes vivos.",
+                crate::protocol::font_index::INFO,
+            );
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_pos_update(new_x as i16, new_y as i16),
+            );
             return;
         }
 
         // FX if tile has otTeleport object OR particle group (particle teleports)
         let (has_teleport_fx, teleport_radio) = {
             let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
-            let has_obj = obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false);
+            let has_obj = obj_idx > 0
+                && state
+                    .get_object(obj_idx)
+                    .map(|o| o.obj_type == crate::data::objects::ObjType::Teleport)
+                    .unwrap_or(false);
             let has_particle = get_map_tile_particle(state, map, new_x, new_y) > 0;
-            let radio = if obj_idx > 0 { state.get_object(obj_idx).map(|o| o.radio).unwrap_or(0) } else { 0 };
+            let radio = if obj_idx > 0 {
+                state.get_object(obj_idx).map(|o| o.radio).unwrap_or(0)
+            } else {
+                0
+            };
             (has_obj || has_particle, radio)
         };
         let (dest_x, dest_y) = randomize_exit(state, exit_map, exit_x, exit_y, teleport_radio);
@@ -461,7 +585,11 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
 }
 
 /// CHEA<heading> — Change heading without moving.
-pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: ConnectionId, heading: i32) {
+pub(super) async fn handle_change_heading(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    heading: i32,
+) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index),
         _ => return,
@@ -487,7 +615,10 @@ pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: Connec
 pub(super) async fn handle_request_pos(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(user) = state.users.get(&conn_id) {
         if user.logged {
-            state.send_bytes(conn_id, &binary_packets::write_pos_update(user.pos_x as i16, user.pos_y as i16));
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_pos_update(user.pos_x as i16, user.pos_y as i16),
+            );
         }
     }
 }

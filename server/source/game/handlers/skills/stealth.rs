@@ -1,13 +1,13 @@
 //! Stealth skills: stealing, hiding.
 
-use crate::net::ConnectionId;
-use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, UserState, SendTarget, MAX_INVENTORY_SLOTS};
-use crate::protocol::{font_index, binary_packets};
+use super::{luck_denominator_lookup, try_level_skill_with_hit};
 use crate::data::objects::ObjType;
+use crate::game::class_race::PlayerClass;
 use crate::game::handlers::common::*;
 use crate::game::handlers::send_inventory_slot;
-use super::{luck_denominator_lookup, try_level_skill_with_hit};
+use crate::game::types::{GameState, MAX_INVENTORY_SLOTS, SendTarget, UserState};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
 
 pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy, skill, class, level) = match state.users.get(&conn_id) {
@@ -33,7 +33,9 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
     send_stats_sta(state, conn_id).await;
 
     // Find target user on tile
-    let target_conn = state.world.grid(map)
+    let target_conn = state
+        .world
+        .grid(map)
         .and_then(|g| g.tile(tx, ty))
         .and_then(|t| t.user_conn);
 
@@ -63,7 +65,8 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
                 for (i, slot) in victim.inventory.iter().enumerate() {
                     if slot.obj_index > 0 && slot.amount > 0 && !slot.equipped {
                         // Check item isn't newbie/key/special
-                        let ok = state.get_object(slot.obj_index)
+                        let ok = state
+                            .get_object(slot.obj_index)
                             .map(|o| !o.newbie && o.obj_type != ObjType::Key)
                             .unwrap_or(false);
                         if ok {
@@ -72,8 +75,12 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
                     }
                 }
                 if !stealable_slots.is_empty() {
-                    let idx = stealable_slots[random_number(0, stealable_slots.len() as i32 - 1) as usize];
-                    let (obj_idx, amount) = (victim.inventory[idx].obj_index, victim.inventory[idx].amount);
+                    let idx = stealable_slots
+                        [random_number(0, stealable_slots.len() as i32 - 1) as usize];
+                    let (obj_idx, amount) = (
+                        victim.inventory[idx].obj_index,
+                        victim.inventory[idx].amount,
+                    );
                     // VB6: 5-10% of stack, min 1
                     let pct = random_number(5, 10) as f64 / 100.0;
                     let steal_amount = ((amount as f64 * pct).floor() as i32).max(1);
@@ -83,8 +90,8 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
                         let new_amt = v.inventory[idx].amount - steal_amount;
                         if new_amt <= 0 {
                             v.inventory[idx].obj_index = 0;
-        v.inventory[idx].amount = 0;
-        v.inventory[idx].equipped = false;
+                            v.inventory[idx].amount = 0;
+                            v.inventory[idx].equipped = false;
                         } else {
                             v.inventory[idx].amount = new_amt;
                         }
@@ -97,9 +104,23 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
                         send_inventory_slot(state, conn_id, s).await;
                     }
 
-                    let obj_name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_default();
-                    let victim_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-                    state.send_console(conn_id, &format!("Has robado {} {} a {}!", steal_amount, obj_name, victim_name), font_index::FIGHT);
+                    let obj_name = state
+                        .get_object(obj_idx)
+                        .map(|o| o.name.clone())
+                        .unwrap_or_default();
+                    let victim_name = state
+                        .users
+                        .get(&target_conn)
+                        .map(|u| u.char_name.clone())
+                        .unwrap_or_default();
+                    state.send_console(
+                        conn_id,
+                        &format!(
+                            "Has robado {} {} a {}!",
+                            steal_amount, obj_name, victim_name
+                        ),
+                        font_index::FIGHT,
+                    );
                     stolen_something = true;
                 }
             }
@@ -108,7 +129,9 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
             }
         } else {
             // VB6: Gold theft — amount based on level and class
-            let has_gloves = state.users.get(&conn_id)
+            let has_gloves = state
+                .users
+                .get(&conn_id)
                 .map(|u| {
                     if u.equip.ring > 0 && u.equip.ring <= MAX_INVENTORY_SLOTS {
                         u.inventory[u.equip.ring - 1].obj_index == 873 // GUANTE_HURTO
@@ -137,7 +160,11 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
                     thief.gold = (thief.gold + stolen).min(MAX_GOLD);
                 }
 
-                let victim_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+                let victim_name = state
+                    .users
+                    .get(&target_conn)
+                    .map(|u| u.char_name.clone())
+                    .unwrap_or_default();
                 state.send_msg_id(conn_id, 816, &format!("{}@{}", stolen, victim_name));
 
                 send_stats_gold(state, conn_id).await;
@@ -148,7 +175,11 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
         }
 
         // VB6: Notify victim on success
-        let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        let thief_name = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
         state.send_msg_id(target_conn, 819, &thief_name);
 
         // VB6: SubirSkill on success
@@ -157,9 +188,17 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
         }
     } else {
         // Fail — notify victim
-        let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        let thief_name = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
         state.send_msg_id(conn_id, 818, "");
-        state.send_console(target_conn, &format!("{} ha intentado robarte!", thief_name), font_index::FIGHT);
+        state.send_console(
+            target_conn,
+            &format!("{} ha intentado robarte!", thief_name),
+            font_index::FIGHT,
+        );
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 2, false);
@@ -170,16 +209,25 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
 pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
     let (map, x, y, skill, class, char_index, already_hidden, is_invisible, navigating) =
         match state.users.get(&conn_id) {
-            Some(u) if u.logged && !u.dead => {
-                (u.pos_map, u.pos_x, u.pos_y, u.skills.get(7).copied().unwrap_or(0),
-                 u.class, u.char_index, u.hidden, u.invisible && !u.admin_invisible,
-                 u.navigating)
-            }
+            Some(u) if u.logged && !u.dead => (
+                u.pos_map,
+                u.pos_x,
+                u.pos_y,
+                u.skills.get(7).copied().unwrap_or(0),
+                u.class,
+                u.char_index,
+                u.hidden,
+                u.invisible && !u.admin_invisible,
+                u.navigating,
+            ),
             _ => return,
         };
 
     // Blocked on special maps (VB6: OcultarSinEfecto)
-    let ocultar_blocked = state.game_data.maps.get(map as usize)
+    let ocultar_blocked = state
+        .game_data
+        .maps
+        .get(map as usize)
         .and_then(|m| m.as_ref())
         .map(|m| m.info.ocultar_sin_efecto)
         .unwrap_or(false);
@@ -234,7 +282,11 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
 
         // Bandits hide for half time
         let is_bandit = class == PlayerClass::Bandido;
-        let counter = if is_bandit { (duration / 2.0) as i32 } else { duration as i32 };
+        let counter = if is_bandit {
+            (duration / 2.0) as i32
+        } else {
+            duration as i32
+        };
 
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.hidden = true;
@@ -245,7 +297,11 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             let ci = char_index.0 as i16;
             let nover = binary_packets::write_set_invisible(ci, true, 0);
             let bp_remove = binary_packets::write_character_remove(ci);
-            let (px, py) = state.users.get(&conn_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((1, 1));
+            let (px, py) = state
+                .users
+                .get(&conn_id)
+                .map(|u| (u.pos_x, u.pos_y))
+                .unwrap_or((1, 1));
             let area_users = state.get_area_users(map, px, py, conn_id);
             for other_id in area_users {
                 if same_clan(state, conn_id, other_id) {
@@ -276,14 +332,18 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
 /// VB6: Trabajo.bas DoPermanecerOculto — decrements TiempoOculto each tick.
 /// Hunter with skill>90 + special armor stays hidden indefinitely.
 pub(crate) fn check_permanecer_oculto(user: &mut UserState) -> bool {
-    if !user.hidden { return false; }
+    if !user.hidden {
+        return false;
+    }
 
     // Hunter with skill>90 and specific armor stays hidden indefinitely
     let skill = user.skills.get(7).copied().unwrap_or(0);
     if user.class == PlayerClass::Cazador && skill > 90 {
         let armor_obj = if user.equip.armor >= 1 && user.equip.armor <= user.inventory.len() {
             user.inventory[user.equip.armor - 1].obj_index
-        } else { 0 };
+        } else {
+            0
+        };
         if armor_obj == 648 || armor_obj == 360 {
             return true;
         }

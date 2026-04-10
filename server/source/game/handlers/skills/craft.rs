@@ -1,17 +1,17 @@
 //! Crafting skills: smithing, carpentry, smelting, upgrades, construction.
 
-use crate::net::ConnectionId;
-use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS};
-use crate::protocol::{font_index, binary_packets};
+use super::{
+    equipped_weapon_obj, grant_crafting_rep, has_items, mod_carpinteria, mod_fundicion,
+    mod_herreria, remove_items, skill_id, try_level_skill, try_level_skill_with_hit,
+};
 use crate::data::objects::ObjType;
+use crate::game::class_race::PlayerClass;
+use crate::game::constants::*;
 use crate::game::handlers::common::*;
 use crate::game::handlers::send_inventory_slot;
-use crate::game::constants::*;
-use super::{skill_id, grant_crafting_rep,
-    has_items, remove_items, try_level_skill, try_level_skill_with_hit, equipped_weapon_obj,
-    mod_herreria, mod_carpinteria, mod_fundicion,
-};
+use crate::game::types::{GameState, MAX_INVENTORY_SLOTS, SendTarget};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
 
 pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy) = match state.users.get(&conn_id) {
@@ -25,11 +25,15 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     }
 
     // Check target is an anvil (ObjType::Anvil = 27)
-    let is_anvil = state.world.grid(map)
+    let is_anvil = state
+        .world
+        .grid(map)
         .and_then(|g| g.tile(tx, ty))
         .and_then(|t| {
             if t.ground_item.obj_index > 0 {
-                state.get_object(t.ground_item.obj_index).map(|o| o.obj_type == ObjType::Anvil)
+                state
+                    .get_object(t.ground_item.obj_index)
+                    .map(|o| o.obj_type == ObjType::Anvil)
             } else {
                 None
             }
@@ -37,22 +41,27 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
         .unwrap_or(false);
 
     // Also check map static obj
-    let is_anvil = is_anvil || state.game_data.maps.get(map as usize)
-        .and_then(|m| m.as_ref())
-        .map(|m| {
-            if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
-                if tile.obj.obj_index > 0 {
-                    state.get_object(tile.obj.obj_index as i32)
-                        .map(|o| o.obj_type == ObjType::Anvil)
-                        .unwrap_or(false)
+    let is_anvil = is_anvil
+        || state
+            .game_data
+            .maps
+            .get(map as usize)
+            .and_then(|m| m.as_ref())
+            .map(|m| {
+                if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
+                    if tile.obj.obj_index > 0 {
+                        state
+                            .get_object(tile.obj.obj_index as i32)
+                            .map(|o| o.obj_type == ObjType::Anvil)
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 }
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false);
+            })
+            .unwrap_or(false);
 
     if !is_anvil {
         state.send_msg_id(conn_id, 263, "");
@@ -60,7 +69,9 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     }
 
     // Send buildable items lists (VB6 13.3 binary format)
-    let (skill_herreria, class) = state.users.get(&conn_id)
+    let (skill_herreria, class) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.skills[15], u.class))
         .unwrap_or((0, PlayerClass::Guerrero)); // Herreria = 15 (1-based 16)
     let effective_skill = (skill_herreria as f32 / mod_herreria(class)) as i32;
@@ -110,7 +121,9 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
 /// Carpenter (open UI — sends buildable items list + ShowCarpenterForm).
 /// VB6: triggered by double-clicking equipped serrucho.
 pub(crate) async fn do_carpinteria(state: &mut GameState, conn_id: ConnectionId) {
-    let (skill_carpinteria, class) = state.users.get(&conn_id)
+    let (skill_carpinteria, class) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.skills[14], u.class))
         .unwrap_or((0, PlayerClass::Guerrero)); // Carpinteria=14 (1-based 15)
     let effective_skill = (skill_carpinteria as f32 / mod_carpinteria(class)) as i32;
@@ -143,21 +156,19 @@ pub(crate) async fn do_carpinteria(state: &mut GameState, conn_id: ConnectionId)
 pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     // Find mineral in inventory
     let mineral_slot = match state.users.get(&conn_id) {
-        Some(u) => {
-            u.inventory.iter().enumerate().find_map(|(i, slot)| {
-                if slot.obj_index > 0 {
-                    state.get_object(slot.obj_index).and_then(|o| {
-                        if o.obj_type == ObjType::Mineral {
-                            Some((i, slot.obj_index, slot.amount, o.lingote_index))
-                        } else {
-                            None
-                        }
-                    })
-                } else {
-                    None
-                }
-            })
-        }
+        Some(u) => u.inventory.iter().enumerate().find_map(|(i, slot)| {
+            if slot.obj_index > 0 {
+                state.get_object(slot.obj_index).and_then(|o| {
+                    if o.obj_type == ObjType::Mineral {
+                        Some((i, slot.obj_index, slot.amount, o.lingote_index))
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        }),
         None => return,
     };
 
@@ -170,15 +181,24 @@ pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     };
 
     // VB6 13.3: Check mining skill with class modifier (ModFundicion)
-    let (skill_mineria, class) = state.users.get(&conn_id)
+    let (skill_mineria, class) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.skills[13], u.class))
         .unwrap_or((0, PlayerClass::Guerrero)); // Mineria=13 (1-based 14)
     let effective_skill = (skill_mineria as f32 / mod_fundicion(class)) as i32;
 
     // VB6: ObjData(mineral).MinSkill <= Skills(Mineria) / ModFundicion(clase)
-    let min_skill = state.get_object(mineral_obj).map(|o| o.min_skill).unwrap_or(0);
+    let min_skill = state
+        .get_object(mineral_obj)
+        .map(|o| o.min_skill)
+        .unwrap_or(0);
     if effective_skill < min_skill {
-        state.send_console(conn_id, "No tienes suficiente habilidad de minería para fundir esto.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No tienes suficiente habilidad de minería para fundir esto.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -191,11 +211,20 @@ pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     };
 
     if amount < minerals_needed {
-        state.send_console(conn_id, &format!("No tienes suficientes minerales (necesitas {})", minerals_needed), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!(
+                "No tienes suficientes minerales (necesitas {})",
+                minerals_needed
+            ),
+            font_index::INFO,
+        );
         return;
     }
 
-    let ingot = if lingote_idx > 0 { lingote_idx } else {
+    let ingot = if lingote_idx > 0 {
+        lingote_idx
+    } else {
         match mineral_obj {
             HIERRO_CRUDO => LINGOTE_HIERRO,
             PLATA_CRUDA => LINGOTE_PLATA,
@@ -232,14 +261,17 @@ pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
 /// Returns 10-25% of the original crafting materials (LingH/LingP/LingO).
 /// Requires: Blacksmith Hammer equipped, weapon in target slot, sufficient Herrería skill.
 pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId, inv_slot: usize) {
-    if inv_slot == 0 || inv_slot > MAX_INVENTORY_SLOTS { return; }
+    if inv_slot == 0 || inv_slot > MAX_INVENTORY_SLOTS {
+        return;
+    }
     let slot_idx = inv_slot - 1;
 
     // Check weapon equipped is Blacksmith Hammer
     let has_hammer = match state.users.get(&conn_id) {
         Some(u) => {
-            if u.equip.weapon == 0 || u.equip.weapon > MAX_INVENTORY_SLOTS { false }
-            else {
+            if u.equip.weapon == 0 || u.equip.weapon > MAX_INVENTORY_SLOTS {
+                false
+            } else {
                 let w_idx = u.inventory[u.equip.weapon - 1].obj_index;
                 w_idx == MARTILLO_HERRERO
             }
@@ -247,7 +279,11 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
         None => return,
     };
     if !has_hammer {
-        state.send_console(conn_id, "Necesitas equipar un martillo de herrero.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Necesitas equipar un martillo de herrero.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -255,10 +291,19 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
     let item_data = match state.users.get(&conn_id) {
         Some(u) => {
             let item = &u.inventory[slot_idx];
-            if item.obj_index <= 0 || item.amount <= 0 { None }
-            else {
+            if item.obj_index <= 0 || item.amount <= 0 {
+                None
+            } else {
                 state.get_object(item.obj_index).map(|o| {
-                    (o.obj_type, o.ling_h, o.ling_p, o.ling_o, o.sk_herreria, item.equipped, o.name.clone())
+                    (
+                        o.obj_type,
+                        o.ling_h,
+                        o.ling_p,
+                        o.ling_o,
+                        o.sk_herreria,
+                        item.equipped,
+                        o.name.clone(),
+                    )
                 })
             }
         }
@@ -268,7 +313,11 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
     let (obj_type, ling_h, ling_p, ling_o, sk_needed, is_equipped, item_name) = match item_data {
         Some(d) => d,
         None => {
-            state.send_console(conn_id, "No hay ningún objeto en ese slot.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No hay ningún objeto en ese slot.",
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -286,12 +335,18 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
     }
 
     // Check Herrería skill (VB6: skill / ModHerreria)
-    let (user_skill, class) = state.users.get(&conn_id)
+    let (user_skill, class) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.skills[15], u.class))
         .unwrap_or((0, PlayerClass::Guerrero)); // SK16 = Herreria
     let effective_skill = (user_skill as f32 / mod_herreria(class)) as i32;
     if effective_skill < sk_needed {
-        state.send_console(conn_id, &format!("Necesitas {} de herrería para fundir esto.", sk_needed), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("Necesitas {} de herrería para fundir esto.", sk_needed),
+            font_index::INFO,
+        );
         return;
     }
 
@@ -306,7 +361,9 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
     // Unequip if equipped
     if is_equipped {
         if let Some(u) = state.users.get_mut(&conn_id) {
-            if u.equip.weapon as usize == inv_slot { u.equip.weapon = 0; }
+            if u.equip.weapon as usize == inv_slot {
+                u.equip.weapon = 0;
+            }
         }
     }
 
@@ -340,7 +397,14 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
     // Play sound + message
     let snd = binary_packets::write_play_wave(SND_HERRERO as u8, 0, 0);
     state.send_bytes(conn_id, &snd);
-    state.send_console(conn_id, &format!("Has fundido {} y obtenido el {}% de los lingotes.", item_name, pct), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!(
+            "Has fundido {} y obtenido el {}% de los lingotes.",
+            item_name, pct
+        ),
+        font_index::INFO,
+    );
 
     // Skill gain + reputation
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -354,56 +418,111 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
 /// Requires materials (difference between upgraded and original item, scaled).
 /// Two paths: Herrería (hammer) for weapons/shields/helmets/armor, Carpintería (saw) for arrows/bows/boats.
 pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv_slot: usize) {
-    if inv_slot == 0 || inv_slot > MAX_INVENTORY_SLOTS { return; }
+    if inv_slot == 0 || inv_slot > MAX_INVENTORY_SLOTS {
+        return;
+    }
     let slot_idx = inv_slot - 1;
 
     // Get item and its upgrade target
     let item_data = match state.users.get(&conn_id) {
         Some(u) => {
             let item = &u.inventory[slot_idx];
-            if item.obj_index <= 0 || item.amount <= 0 { None }
-            else {
+            if item.obj_index <= 0 || item.amount <= 0 {
+                None
+            } else {
                 state.get_object(item.obj_index).map(|o| {
-                    (item.obj_index, o.upgrade, o.obj_type, o.ling_h, o.ling_p, o.ling_o,
-                     o.madera, o.piedras, o.name.clone(), item.equipped)
+                    (
+                        item.obj_index,
+                        o.upgrade,
+                        o.obj_type,
+                        o.ling_h,
+                        o.ling_p,
+                        o.ling_o,
+                        o.madera,
+                        o.piedras,
+                        o.name.clone(),
+                        item.equipped,
+                    )
                 })
             }
         }
         None => return,
     };
 
-    let (_item_idx, upgrade_idx, obj_type, cur_ling_h, cur_ling_p, cur_ling_o,
-         cur_madera, _cur_piedras, item_name, is_equipped) = match item_data {
+    let (
+        _item_idx,
+        upgrade_idx,
+        obj_type,
+        cur_ling_h,
+        cur_ling_p,
+        cur_ling_o,
+        cur_madera,
+        _cur_piedras,
+        item_name,
+        is_equipped,
+    ) = match item_data {
         Some(d) => d,
         None => {
-            state.send_console(conn_id, "No hay ningún objeto en ese slot.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No hay ningún objeto en ese slot.",
+                font_index::INFO,
+            );
             return;
         }
     };
 
     if upgrade_idx <= 0 {
-        state.send_console(conn_id, "Este objeto no se puede mejorar.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Este objeto no se puede mejorar.",
+            font_index::INFO,
+        );
         return;
     }
 
     // Get upgrade target data
     let upgrade_data = match state.get_object(upgrade_idx) {
-        Some(o) => (o.ling_h, o.ling_p, o.ling_o, o.madera, o.piedras,
-                    o.sk_herreria, o.sk_carpinteria, o.name.clone()),
+        Some(o) => (
+            o.ling_h,
+            o.ling_p,
+            o.ling_o,
+            o.madera,
+            o.piedras,
+            o.sk_herreria,
+            o.sk_carpinteria,
+            o.name.clone(),
+        ),
         None => {
-            state.send_console(conn_id, "Error: objeto mejorado no existe.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "Error: objeto mejorado no existe.",
+                font_index::INFO,
+            );
             return;
         }
     };
-    let (up_ling_h, up_ling_p, up_ling_o, up_madera, up_piedras,
-         up_sk_herreria, up_sk_carpinteria, upgrade_name) = upgrade_data;
+    let (
+        up_ling_h,
+        up_ling_p,
+        up_ling_o,
+        up_madera,
+        up_piedras,
+        up_sk_herreria,
+        up_sk_carpinteria,
+        upgrade_name,
+    ) = upgrade_data;
 
     // Determine path: Herrería or Carpintería
-    let weapon_idx = state.users.get(&conn_id)
+    let weapon_idx = state
+        .users
+        .get(&conn_id)
         .and_then(|u| {
             if u.equip.weapon > 0 && u.equip.weapon <= MAX_INVENTORY_SLOTS {
                 Some(u.inventory[u.equip.weapon - 1].obj_index)
-            } else { None }
+            } else {
+                None
+            }
         })
         .unwrap_or(0);
 
@@ -411,7 +530,11 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
     let is_carp = weapon_idx == SERRUCHO_CARPINTERO;
 
     if !is_smith && !is_carp {
-        state.send_console(conn_id, "Necesitas equipar un martillo de herrero o un serrucho.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Necesitas equipar un martillo de herrero o un serrucho.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -420,12 +543,18 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
 
     if is_smith {
         // Herrería path: weapons, shields, helmets, armor (VB6: skill / ModHerreria)
-        let (user_skill, class) = state.users.get(&conn_id)
+        let (user_skill, class) = state
+            .users
+            .get(&conn_id)
             .map(|u| (u.skills[15], u.class))
             .unwrap_or((0, PlayerClass::Guerrero));
         let effective_skill = (user_skill as f32 / mod_herreria(class)) as i32;
         if effective_skill < up_sk_herreria {
-            state.send_console(conn_id, &format!("Necesitas {} de herrería.", up_sk_herreria), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Necesitas {} de herrería.", up_sk_herreria),
+                font_index::INFO,
+            );
             return;
         }
 
@@ -436,8 +565,13 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         // Check materials
         if !has_items(state, conn_id, LINGOTE_HIERRO, need_h)
             || !has_items(state, conn_id, LINGOTE_PLATA, need_p)
-            || !has_items(state, conn_id, LINGOTE_ORO, need_o) {
-            state.send_console(conn_id, "No tienes suficientes lingotes para la mejora.", font_index::INFO);
+            || !has_items(state, conn_id, LINGOTE_ORO, need_o)
+        {
+            state.send_console(
+                conn_id,
+                "No tienes suficientes lingotes para la mejora.",
+                font_index::INFO,
+            );
             return;
         }
 
@@ -454,12 +588,18 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         }
     } else {
         // Carpintería path: arrows, weapons (wood), boats (VB6: skill / ModCarpinteria)
-        let (user_skill, class) = state.users.get(&conn_id)
+        let (user_skill, class) = state
+            .users
+            .get(&conn_id)
             .map(|u| (u.skills[14], u.class))
             .unwrap_or((0, PlayerClass::Guerrero));
         let effective_skill = (user_skill as f32 / mod_carpinteria(class)) as i32;
         if effective_skill < up_sk_carpinteria {
-            state.send_console(conn_id, &format!("Necesitas {} de carpintería.", up_sk_carpinteria), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Necesitas {} de carpintería.", up_sk_carpinteria),
+                font_index::INFO,
+            );
             return;
         }
 
@@ -467,11 +607,19 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         let need_stones = (up_piedras as f64).max(0.0) as i32;
 
         if !has_items(state, conn_id, LENA_OBJ, need_wood) {
-            state.send_console(conn_id, "No tienes suficiente madera para la mejora.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tienes suficiente madera para la mejora.",
+                font_index::INFO,
+            );
             return;
         }
         if need_stones > 0 && !has_items(state, conn_id, PIEDRA_OBJ, need_stones) {
-            state.send_console(conn_id, "No tienes suficientes piedras para la mejora.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tienes suficientes piedras para la mejora.",
+                font_index::INFO,
+            );
             return;
         }
 
@@ -492,10 +640,26 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
     if is_equipped {
         if let Some(u) = state.users.get_mut(&conn_id) {
             match obj_type {
-                ObjType::Weapon => { if u.equip.weapon as usize == inv_slot { u.equip.weapon = 0; } }
-                ObjType::Shield => { if u.equip.shield as usize == inv_slot { u.equip.shield = 0; } }
-                ObjType::Helmet => { if u.equip.helmet as usize == inv_slot { u.equip.helmet = 0; } }
-                ObjType::Armor => { if u.equip.armor as usize == inv_slot { u.equip.armor = 0; } }
+                ObjType::Weapon => {
+                    if u.equip.weapon as usize == inv_slot {
+                        u.equip.weapon = 0;
+                    }
+                }
+                ObjType::Shield => {
+                    if u.equip.shield as usize == inv_slot {
+                        u.equip.shield = 0;
+                    }
+                }
+                ObjType::Helmet => {
+                    if u.equip.helmet as usize == inv_slot {
+                        u.equip.helmet = 0;
+                    }
+                }
+                ObjType::Armor => {
+                    if u.equip.armor as usize == inv_slot {
+                        u.equip.armor = 0;
+                    }
+                }
                 _ => {}
             }
         }
@@ -511,7 +675,9 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
     send_inventory_slot(state, conn_id, slot_idx).await;
 
     // Stamina cost
-    let is_worker = state.users.get(&conn_id)
+    let is_worker = state
+        .users
+        .get(&conn_id)
         .map(|u| u.class.is_recolector())
         .unwrap_or(false);
     let sta_cost = if is_worker { 2 } else { 6 };
@@ -519,7 +685,11 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         u.min_sta = (u.min_sta - sta_cost).max(0);
     }
 
-    state.send_console(conn_id, &format!("Has mejorado {} a {}.", item_name, upgrade_name), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Has mejorado {} a {}.", item_name, upgrade_name),
+        font_index::INFO,
+    );
     send_stats_sta(state, conn_id).await;
 
     // Crafting reputation
@@ -528,29 +698,49 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
     }
 }
 
-pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: ConnectionId, item_index: i32) {
+pub(crate) async fn handle_construct_smith(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    item_index: i32,
+) {
     // VB6: must have MARTILLO_HERRERO or MARTILLO_HERRERO_NEWBIE equipped
-    let weapon_idx = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
+    let weapon_idx = state
+        .users
+        .get(&conn_id)
+        .map(|u| equipped_weapon_obj(u))
+        .unwrap_or(0);
     if weapon_idx != MARTILLO_HERRERO && weapon_idx != MARTILLO_HERRERO_NEWBIE {
-        state.send_console(conn_id, "Necesitas un martillo de herrero equipado.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Necesitas un martillo de herrero equipado.",
+            font_index::INFO,
+        );
         return;
     }
 
     let obj_index: i32 = item_index;
-    if obj_index < 1 { return; }
+    if obj_index < 1 {
+        return;
+    }
 
     let obj = match state.get_object(obj_index) {
         Some(o) => o.clone(),
         None => return,
     };
 
-    if obj.sk_herreria <= 0 { return; }
+    if obj.sk_herreria <= 0 {
+        return;
+    }
 
     // VB6: Validate item is in ArmasHerrero or ArmadurasHerrero list
-    if !state.game_data.crafting.is_smith_item(obj_index) { return; }
+    if !state.game_data.crafting.is_smith_item(obj_index) {
+        return;
+    }
 
     // Check skill (VB6: skill / ModHerreria)
-    let (skill, class) = state.users.get(&conn_id)
+    let (skill, class) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.skills[15], u.class))
         .unwrap_or((0, PlayerClass::Guerrero)); // Herreria=15 (1-based 16)
     let effective_skill = (skill as f32 / mod_herreria(class)) as i32;
@@ -560,14 +750,22 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     }
 
     // Check materials (iron, silver, gold ingots)
-    let has_materials = check_has_items(state, conn_id, &[
-        (LINGOTE_HIERRO, obj.ling_h),
-        (LINGOTE_PLATA, obj.ling_p),
-        (LINGOTE_ORO, obj.ling_o),
-    ]);
+    let has_materials = check_has_items(
+        state,
+        conn_id,
+        &[
+            (LINGOTE_HIERRO, obj.ling_h),
+            (LINGOTE_PLATA, obj.ling_p),
+            (LINGOTE_ORO, obj.ling_o),
+        ],
+    );
 
     if !has_materials {
-        state.send_console(conn_id, "No tienes los materiales necesarios", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No tienes los materiales necesarios",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -583,11 +781,19 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     }
 
     // Play sound
-    let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
+    let (map, x, y) = state
+        .users
+        .get(&conn_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+        .unwrap_or((0, 0, 0));
     let snd = binary_packets::write_play_wave(SND_HERRERO as u8, x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
-    state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Has construido {}", obj.name),
+        font_index::INFO,
+    );
 
     if let Some(u) = state.users.get_mut(&conn_id) {
         try_level_skill(u, 16);
@@ -596,29 +802,49 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
 }
 
 /// CNC — Construct carpentry item.
-pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: ConnectionId, item_index: i32) {
+pub(crate) async fn handle_construct_carp(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    item_index: i32,
+) {
     let obj_index: i32 = item_index;
-    if obj_index < 1 { return; }
+    if obj_index < 1 {
+        return;
+    }
 
     let obj = match state.get_object(obj_index) {
         Some(o) => o.clone(),
         None => return,
     };
 
-    if obj.sk_carpinteria <= 0 { return; }
+    if obj.sk_carpinteria <= 0 {
+        return;
+    }
 
     // VB6: Validate item is in ObjCarpintero list
-    if !state.game_data.crafting.is_carpenter_item(obj_index) { return; }
+    if !state.game_data.crafting.is_carpenter_item(obj_index) {
+        return;
+    }
 
     // VB6: SERRUCHO_CARPINTERO or SERRUCHO_CARPINTERO_NEWBIE must be equipped
-    let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
+    let weapon = state
+        .users
+        .get(&conn_id)
+        .map(|u| equipped_weapon_obj(u))
+        .unwrap_or(0);
     if weapon != SERRUCHO_CARPINTERO && weapon != SERRUCHO_CARPINTERO_NEWBIE {
-        state.send_console(conn_id, "Necesitas un serrucho de carpintero", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Necesitas un serrucho de carpintero",
+            font_index::INFO,
+        );
         return;
     }
 
     // Check skill (VB6: skill / ModCarpinteria)
-    let (skill, class) = state.users.get(&conn_id)
+    let (skill, class) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.skills[14], u.class))
         .unwrap_or((0, PlayerClass::Guerrero)); // Carpinteria=14 (1-based 15)
     let effective_skill = (skill as f32 / mod_carpinteria(class)) as i32;
@@ -629,14 +855,22 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
 
     // Check materials (wood + elven wood + stones)
     // VB6: CarpinteroQuitarMateriales — consumes Madera, MaderaElfica, and Piedras
-    let has_materials = check_has_items(state, conn_id, &[
-        (LENA_OBJ, obj.madera),
-        (LENA_ELFICA, obj.madera_elfica),
-        (PIEDRA_OBJ, obj.piedras),
-    ]);
+    let has_materials = check_has_items(
+        state,
+        conn_id,
+        &[
+            (LENA_OBJ, obj.madera),
+            (LENA_ELFICA, obj.madera_elfica),
+            (PIEDRA_OBJ, obj.piedras),
+        ],
+    );
 
     if !has_materials {
-        state.send_console(conn_id, "No tienes los materiales necesarios", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No tienes los materiales necesarios",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -654,11 +888,19 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     }
 
     // Play sound
-    let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
+    let (map, x, y) = state
+        .users
+        .get(&conn_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+        .unwrap_or((0, 0, 0));
     let snd = binary_packets::write_play_wave(SND_CARPINTERO as u8, x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
-    state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Has construido {}", obj.name),
+        font_index::INFO,
+    );
 
     if let Some(u) = state.users.get_mut(&conn_id) {
         try_level_skill(u, 15);
@@ -681,44 +923,81 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
 ///   - Success chance based on survival skill level
 pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: ConnectionId) {
     let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.dead, u.pos_map, u.pos_x, u.pos_y,
-            u.target_x, u.target_y,
-            u.skills.get((skill_id::SUPERVIVENCIA - 1) as usize).copied().unwrap_or(0)),
+        Some(u) if u.logged => (
+            u.dead,
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+            u.target_x,
+            u.target_y,
+            u.skills
+                .get((skill_id::SUPERVIVENCIA - 1) as usize)
+                .copied()
+                .unwrap_or(0),
+        ),
         _ => return,
     };
     let (dead, map, ux, uy, tx, ty, skill_surv) = user_data;
 
     if dead {
-        state.send_console(conn_id, "No puedes hacer fogatas estando muerto.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No puedes hacer fogatas estando muerto.",
+            font_index::INFO,
+        );
         return;
     }
 
     // VB6: LegalPos check (implicit — target must be on map)
     if tx <= 0 || ty <= 0 {
-        state.send_console(conn_id, "Necesitas clickear sobre leña para hacer ramitas.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Necesitas clickear sobre leña para hacer ramitas.",
+            font_index::INFO,
+        );
         return;
     }
 
     // VB6: check ground tile has Leña (ObjIndex 58)
-    let ground_lena_amount = state.world.grid(map)
+    let ground_lena_amount = state
+        .world
+        .grid(map)
         .and_then(|g| g.tile(tx, ty))
-        .map(|t| if t.ground_item.obj_index == LENA_FOGATA { t.ground_item.amount } else { 0 })
+        .map(|t| {
+            if t.ground_item.obj_index == LENA_FOGATA {
+                t.ground_item.amount
+            } else {
+                0
+            }
+        })
         .unwrap_or(0);
 
     if ground_lena_amount == 0 {
-        state.send_console(conn_id, "Necesitas clickear sobre leña para hacer ramitas.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Necesitas clickear sobre leña para hacer ramitas.",
+            font_index::INFO,
+        );
         return;
     }
 
     // VB6: Distance check (<= 2)
     if (tx - ux).abs() > 2 || (ty - uy).abs() > 2 {
-        state.send_console(conn_id, "Estás demasiado lejos para prender la fogata.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Estás demasiado lejos para prender la fogata.",
+            font_index::INFO,
+        );
         return;
     }
 
     // VB6: Need at least 3 logs on the ground
     if ground_lena_amount < 3 {
-        state.send_console(conn_id, "Necesitas por lo menos tres troncos para hacer una fogata.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Necesitas por lo menos tres troncos para hacer una fogata.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -748,14 +1027,21 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
         }
 
         // Send visual update to area
-        let grh = state.get_object(FOGATA_OBJ).map(|o| o.grh_index).unwrap_or(0);
+        let grh = state
+            .get_object(FOGATA_OBJ)
+            .map(|o| o.grh_index)
+            .unwrap_or(0);
         let ho_pkt = binary_packets::write_object_create(tx as i16, ty as i16, grh as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: tx, y: ty }, &ho_pkt);
 
         // Add to cleanup list
         clean_world_add_item(state, map, tx, ty, 180, FOGATA_OBJ);
 
-        state.send_console(conn_id, &format!("Has hecho {} fogatas.", campfire_count), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("Has hecho {} fogatas.", campfire_count),
+            font_index::INFO,
+        );
 
         // XP gain on success
         if let Some(u) = state.users.get_mut(&conn_id) {
@@ -773,8 +1059,14 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
 
 /// VB6: Get health status text based on survival skill level.
 /// Used when looking at NPCs/players — gives more detail with higher skill.
-pub(crate) fn health_status_text(current_hp: i32, max_hp: i32, survival_skill: i32) -> &'static str {
-    if max_hp <= 0 { return "Dudoso"; }
+pub(crate) fn health_status_text(
+    current_hp: i32,
+    max_hp: i32,
+    survival_skill: i32,
+) -> &'static str {
+    if max_hp <= 0 {
+        return "Dudoso";
+    }
     let pct = (current_hp as f64 / max_hp as f64 * 100.0) as i32;
 
     if survival_skill <= 10 {
@@ -782,20 +1074,40 @@ pub(crate) fn health_status_text(current_hp: i32, max_hp: i32, survival_skill: i
     } else if survival_skill <= 20 {
         if pct < 50 { "Herido" } else { "Sano" }
     } else if survival_skill <= 30 {
-        if pct < 25 { "Malherido" } else if pct < 75 { "Herido" } else { "Sano" }
+        if pct < 25 {
+            "Malherido"
+        } else if pct < 75 {
+            "Herido"
+        } else {
+            "Sano"
+        }
     } else if survival_skill <= 40 {
-        if pct < 15 { "Muy malherido" } else if pct < 50 { "Herido" }
-        else if pct < 85 { "Levemente herido" } else { "Sano" }
+        if pct < 15 {
+            "Muy malherido"
+        } else if pct < 50 {
+            "Herido"
+        } else if pct < 85 {
+            "Levemente herido"
+        } else {
+            "Sano"
+        }
     } else {
-        if pct < 5 { "Agonizando" }
-        else if pct < 15 { "Casi muerto" }
-        else if pct < 30 { "Muy malherido" }
-        else if pct < 50 { "Herido" }
-        else if pct < 75 { "Levemente herido" }
-        else if pct < 95 { "Sano" }
-        else { "Intacto" }
+        if pct < 5 {
+            "Agonizando"
+        } else if pct < 15 {
+            "Casi muerto"
+        } else if pct < 30 {
+            "Muy malherido"
+        } else if pct < 50 {
+            "Herido"
+        } else if pct < 75 {
+            "Levemente herido"
+        } else if pct < 95 {
+            "Sano"
+        } else {
+            "Intacto"
+        }
     }
 }
 
 // find_or_add_inv_slot, check_has_items, remove_items_from_inv — moved to common.rs
-

@@ -1,12 +1,12 @@
 //! Offensive and damage spell helpers: info packets, property effects, status effects.
 
-use crate::net::ConnectionId;
+use super::super::common::*;
+use super::super::{check_user_level, npc_die, revive_user, user_die};
+use crate::data::experience::MAX_LEVEL;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget};
-use crate::protocol::{font_index, binary_packets};
-use crate::data::experience::MAX_LEVEL;
-use super::super::common::*;
-use super::super::{user_die, npc_die, check_user_level, revive_user};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
 
 // =====================================================================
 // Item-index constants (shared with spell_support.rs via pub(super))
@@ -23,11 +23,17 @@ pub(super) const LAUDMAGICO: i32 = 696;
 
 /// Get the obj_index of the item equipped in a given slot (0 if none).
 pub(super) fn get_equipped_obj_index(state: &GameState, conn_id: ConnectionId, slot: usize) -> i32 {
-    state.users.get(&conn_id).map(|u| {
-        if slot > 0 && slot <= u.inventory.len() {
-            u.inventory[slot - 1].obj_index
-        } else { 0 }
-    }).unwrap_or(0)
+    state
+        .users
+        .get(&conn_id)
+        .map(|u| {
+            if slot > 0 && slot <= u.inventory.len() {
+                u.inventory[slot - 1].obj_index
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0)
 }
 
 /// VB6 Porcentaje: (total * porc) / 100
@@ -37,7 +43,11 @@ pub(super) fn porcentaje(total: i32, porc: i32) -> i32 {
 
 /// Calculate spell damage with VB6 13.3 formula (modHechizos.bas lines 1890-1918).
 /// Used for user→user and user→NPC.
-pub(super) fn calc_spell_damage(state: &GameState, caster_id: ConnectionId, spell: &crate::data::spells::SpellData) -> i32 {
+pub(super) fn calc_spell_damage(
+    state: &GameState,
+    caster_id: ConnectionId,
+    spell: &crate::data::spells::SpellData,
+) -> i32 {
     let mut damage = rand_range(spell.min_hp, spell.max_hp);
 
     // Level scaling: damage + damage * (3 * caster_level / 100)
@@ -46,13 +56,25 @@ pub(super) fn calc_spell_damage(state: &GameState, caster_id: ConnectionId, spel
 
     // Staff damage bonus for Mages (VB6: StaffAffected check)
     if spell.staff_affected {
-        let class = state.users.get(&caster_id).map(|u| u.class).unwrap_or_default();
+        let class = state
+            .users
+            .get(&caster_id)
+            .map(|u| u.class)
+            .unwrap_or_default();
         if class == PlayerClass::Mago {
-            let weapon_slot = state.users.get(&caster_id).map(|u| u.equip.weapon).unwrap_or(0);
+            let weapon_slot = state
+                .users
+                .get(&caster_id)
+                .map(|u| u.equip.weapon)
+                .unwrap_or(0);
             let weapon_obj = get_equipped_obj_index(state, caster_id, weapon_slot);
             if weapon_obj > 0 {
-                let staff_bonus = state.game_data.objects.get(weapon_obj as usize)
-                    .map(|o| o.staff_damage_bonus).unwrap_or(0);
+                let staff_bonus = state
+                    .game_data
+                    .objects
+                    .get(weapon_obj as usize)
+                    .map(|o| o.staff_damage_bonus)
+                    .unwrap_or(0);
                 damage = (damage as i64 * (staff_bonus as i64 + 70) / 100) as i32;
             } else {
                 // No staff = 70% damage
@@ -62,7 +84,11 @@ pub(super) fn calc_spell_damage(state: &GameState, caster_id: ConnectionId, spel
     }
 
     // Bard/Druid lute bonus: +4% with Laud Élfico or Flauta Élfica
-    let ring_slot = state.users.get(&caster_id).map(|u| u.equip.ring).unwrap_or(0);
+    let ring_slot = state
+        .users
+        .get(&caster_id)
+        .map(|u| u.equip.ring)
+        .unwrap_or(0);
     let ring_obj = get_equipped_obj_index(state, caster_id, ring_slot);
     if ring_obj == LAUDELFICO || ring_obj == FLAUTAELFICA {
         damage = (damage as f64 * 1.04) as i32;
@@ -72,7 +98,11 @@ pub(super) fn calc_spell_damage(state: &GameState, caster_id: ConnectionId, spel
 }
 
 /// Calculate spell heal with VB6 13.3 formula (modHechizos.bas lines 1864-1866).
-pub(super) fn calc_spell_heal(state: &GameState, caster_id: ConnectionId, spell: &crate::data::spells::SpellData) -> i32 {
+pub(super) fn calc_spell_heal(
+    state: &GameState,
+    caster_id: ConnectionId,
+    spell: &crate::data::spells::SpellData,
+) -> i32 {
     let mut heal = rand_range(spell.min_hp, spell.max_hp);
     let level = state.users.get(&caster_id).map(|u| u.level).unwrap_or(1);
     heal += porcentaje(heal, 3 * level);
@@ -80,8 +110,14 @@ pub(super) fn calc_spell_heal(state: &GameState, caster_id: ConnectionId, spell:
 }
 
 /// Subtract magic defense from equipped helmet + ring (VB6: DefensaMagicaMin/Max).
-pub(super) fn subtract_magic_defense(state: &GameState, target_id: ConnectionId, damage: i32) -> i32 {
-    let (helmet_slot, ring_slot) = state.users.get(&target_id)
+pub(super) fn subtract_magic_defense(
+    state: &GameState,
+    target_id: ConnectionId,
+    damage: i32,
+) -> i32 {
+    let (helmet_slot, ring_slot) = state
+        .users
+        .get(&target_id)
         .map(|u| (u.equip.helmet, u.equip.ring))
         .unwrap_or((0, 0));
     let mut d = damage;
@@ -111,42 +147,94 @@ pub(super) fn subtract_magic_defense(state: &GameState, target_id: ConnectionId,
 // =====================================================================
 
 /// VB6: InfoHechizo — Send FX, sound, and chat messages for a spell cast on a USER.
-pub(super) async fn send_spell_info_user(state: &mut GameState, caster_id: ConnectionId,
-                               target_id: ConnectionId,
-                               spell: &crate::data::spells::SpellData,
-                               caster_ci: crate::game::world::CharIndex) {
-    let caster_name = state.users.get(&caster_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    let (map, x, y) = state.users.get(&caster_id)
-        .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
+pub(super) async fn send_spell_info_user(
+    state: &mut GameState,
+    caster_id: ConnectionId,
+    target_id: ConnectionId,
+    spell: &crate::data::spells::SpellData,
+    caster_ci: crate::game::world::CharIndex,
+) {
+    let caster_name = state
+        .users
+        .get(&caster_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    let (map, x, y) = state
+        .users
+        .get(&caster_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+        .unwrap_or((0, 0, 0));
 
     // Magic words (overhead yellow text)
     if !spell.palabras_magicas.is_empty() {
-        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &spell.palabras_magicas, caster_ci.0 as i16, 16776960);
+        state.send_chat_over_head_to(
+            SendTarget::ToArea { map, x, y },
+            &spell.palabras_magicas,
+            caster_ci.0 as i16,
+            16776960,
+        );
     }
 
     // Target char_index for FX
-    let target_ci = state.users.get(&target_id).map(|u| u.char_index.0).unwrap_or(caster_ci.0);
-    let (fx_map, fx_x, fx_y) = state.users.get(&target_id)
-        .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((map, x, y));
+    let target_ci = state
+        .users
+        .get(&target_id)
+        .map(|u| u.char_index.0)
+        .unwrap_or(caster_ci.0);
+    let (fx_map, fx_x, fx_y) = state
+        .users
+        .get(&target_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+        .unwrap_or((map, x, y));
 
     // FX + Sound
     if spell.fx_grh > 0 {
-        let fx_pkt = binary_packets::write_create_fx(target_ci as i16, spell.fx_grh as i16, spell.loops as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt);
+        let fx_pkt = binary_packets::write_create_fx(
+            target_ci as i16,
+            spell.fx_grh as i16,
+            spell.loops as i16,
+        );
+        state.send_data_bytes(
+            SendTarget::ToArea {
+                map: fx_map,
+                x: fx_x,
+                y: fx_y,
+            },
+            &fx_pkt,
+        );
     }
     if spell.wav > 0 {
         let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as i16, fx_y as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt);
+        state.send_data_bytes(
+            SendTarget::ToArea {
+                map: fx_map,
+                x: fx_x,
+                y: fx_y,
+            },
+            &snd_pkt,
+        );
     }
 
     // Console messages (red font)
     if target_id != caster_id {
-        let target_name = state.users.get(&target_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        let target_name = state
+            .users
+            .get(&target_id)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
         if !spell.hechizero_msg.is_empty() {
-            state.send_console(caster_id, &format!("{} {}", spell.hechizero_msg, target_name), font_index::FIGHT);
+            state.send_console(
+                caster_id,
+                &format!("{} {}", spell.hechizero_msg, target_name),
+                font_index::FIGHT,
+            );
         }
         if !spell.target_msg.is_empty() {
-            state.send_console(target_id, &format!("{} {}", caster_name, spell.target_msg), font_index::FIGHT);
+            state.send_console(
+                target_id,
+                &format!("{} {}", caster_name, spell.target_msg),
+                font_index::FIGHT,
+            );
         }
     } else {
         if !spell.propio_msg.is_empty() {
@@ -156,35 +244,67 @@ pub(super) async fn send_spell_info_user(state: &mut GameState, caster_id: Conne
 }
 
 /// VB6: InfoHechizo — Send FX, sound, and chat messages for a spell cast on an NPC.
-pub(super) async fn send_spell_info_npc(state: &mut GameState, caster_id: ConnectionId,
-                              npc_idx: usize,
-                              spell: &crate::data::spells::SpellData,
-                              caster_ci: crate::game::world::CharIndex) {
-    let (map, x, y) = state.users.get(&caster_id)
-        .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
+pub(super) async fn send_spell_info_npc(
+    state: &mut GameState,
+    caster_id: ConnectionId,
+    npc_idx: usize,
+    spell: &crate::data::spells::SpellData,
+    caster_ci: crate::game::world::CharIndex,
+) {
+    let (map, x, y) = state
+        .users
+        .get(&caster_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+        .unwrap_or((0, 0, 0));
 
     // Magic words (overhead yellow text)
     if !spell.palabras_magicas.is_empty() {
-        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &spell.palabras_magicas, caster_ci.0 as i16, 16776960);
+        state.send_chat_over_head_to(
+            SendTarget::ToArea { map, x, y },
+            &spell.palabras_magicas,
+            caster_ci.0 as i16,
+            16776960,
+        );
     }
 
     // NPC char_index for FX
     let npc_ci = state.get_npc(npc_idx).map(|n| n.char_index.0).unwrap_or(0);
-    let (fx_map, fx_x, fx_y) = state.get_npc(npc_idx)
-        .map(|n| (n.map, n.x, n.y)).unwrap_or((map, x, y));
+    let (fx_map, fx_x, fx_y) = state
+        .get_npc(npc_idx)
+        .map(|n| (n.map, n.x, n.y))
+        .unwrap_or((map, x, y));
 
     if spell.fx_grh > 0 {
-        let fx_pkt = binary_packets::write_create_fx(npc_ci as i16, spell.fx_grh as i16, spell.loops as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt);
+        let fx_pkt =
+            binary_packets::write_create_fx(npc_ci as i16, spell.fx_grh as i16, spell.loops as i16);
+        state.send_data_bytes(
+            SendTarget::ToArea {
+                map: fx_map,
+                x: fx_x,
+                y: fx_y,
+            },
+            &fx_pkt,
+        );
     }
     if spell.wav > 0 {
         let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as i16, fx_y as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt);
+        state.send_data_bytes(
+            SendTarget::ToArea {
+                map: fx_map,
+                x: fx_x,
+                y: fx_y,
+            },
+            &snd_pkt,
+        );
     }
 
     // Console message (red font)
     if !spell.hechizero_msg.is_empty() {
-        state.send_console(caster_id, &format!("{} la criatura.", spell.hechizero_msg), font_index::FIGHT);
+        state.send_console(
+            caster_id,
+            &format!("{} la criatura.", spell.hechizero_msg),
+            font_index::FIGHT,
+        );
     }
 }
 
@@ -221,15 +341,30 @@ pub(super) async fn apply_spell_properties_npc(
     damage = (damage - npc_def_m).max(0);
 
     // Get NPC data for damage number display and exp calculation
-    let npc_data = state.get_npc(npc_idx).map(|n| (n.char_index.0, n.map, n.x, n.y, n.give_exp, n.max_hp));
+    let npc_data = state
+        .get_npc(npc_idx)
+        .map(|n| (n.char_index.0, n.map, n.x, n.y, n.give_exp, n.max_hp));
     let (npc_ci, npc_map, npc_x, npc_y, npc_give_exp, npc_max_hp) = match npc_data {
         Some(d) => d,
         None => return,
     };
 
     // Send damage number over NPC head (VB6: N| vbYellow°-<damage>°<npc_charindex>)
-    let caster_map = state.users.get(&caster_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((npc_map, npc_x, npc_y));
-    state.send_chat_over_head_to(SendTarget::ToArea { map: caster_map.0, x: caster_map.1, y: caster_map.2 }, &format!("-{}", damage), npc_ci as i16, 65535);
+    let caster_map = state
+        .users
+        .get(&caster_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+        .unwrap_or((npc_map, npc_x, npc_y));
+    state.send_chat_over_head_to(
+        SendTarget::ToArea {
+            map: caster_map.0,
+            x: caster_map.1,
+            y: caster_map.2,
+        },
+        &format!("-{}", damage),
+        npc_ci as i16,
+        65535,
+    );
 
     // Send damage console message to caster: ||850@<damage>
     state.send_msg_id(caster_id, 850, &format!("{}", damage));
@@ -241,7 +376,10 @@ pub(super) async fn apply_spell_properties_npc(
     }
 
     // Detect death synchronously (before any await — prevents double-death race)
-    let npc_is_dead = state.get_npc(npc_idx).map(|n| n.min_hp < 1).unwrap_or(false);
+    let npc_is_dead = state
+        .get_npc(npc_idx)
+        .map(|n| n.min_hp < 1)
+        .unwrap_or(false);
     if npc_is_dead {
         // Mark as dead immediately to prevent race with concurrent casters
         if let Some(npc) = state.get_npc_mut(npc_idx) {
@@ -252,9 +390,12 @@ pub(super) async fn apply_spell_properties_npc(
     // Per-hit EXP (VB6: CalcularDarExp — proportional exp on every hit)
     if npc_give_exp > 0 && npc_max_hp > 0 {
         let exp_mult = state.multiplicador_exp;
-        let exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
+        let exp_award =
+            ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
 
-        let can_level = state.users.get(&caster_id)
+        let can_level = state
+            .users
+            .get(&caster_id)
             .map(|u| u.logged && u.level < MAX_LEVEL as i32)
             .unwrap_or(false);
 
@@ -270,9 +411,19 @@ pub(super) async fn apply_spell_properties_npc(
 
     // Execute death after exp (NPC already marked dead above — safe from race)
     if npc_is_dead {
-        let death_data = state.get_npc(npc_idx).map(|n| (n.give_exp, n.give_gld_min, n.give_gld_max));
+        let death_data = state
+            .get_npc(npc_idx)
+            .map(|n| (n.give_exp, n.give_gld_min, n.give_gld_max));
         if let Some((give_exp, give_gld_min, give_gld_max)) = death_data {
-            npc_die(state, npc_idx, caster_id, give_exp, give_gld_min, give_gld_max).await;
+            npc_die(
+                state,
+                npc_idx,
+                caster_id,
+                give_exp,
+                give_gld_min,
+                give_gld_max,
+            )
+            .await;
         }
     }
 }
@@ -289,7 +440,10 @@ pub(super) async fn apply_spell_status_npc(
 
     // VB6: Elementals are immune to paralysis/immobilize (modHechizos.bas line 993)
     if spell.paraliza {
-        let npc_num = state.get_npc(npc_idx).map(|n| n.npc_number as i32).unwrap_or(0);
+        let npc_num = state
+            .get_npc(npc_idx)
+            .map(|n| n.npc_number as i32)
+            .unwrap_or(0);
         if npc_num == ELEMENTAL_AGUA || npc_num == ELEMENTAL_FUEGO || npc_num == ELEMENTAL_TIERRA {
             state.send_msg_id(caster_id, 846, ""); // Immune
             return;
@@ -321,10 +475,13 @@ pub(super) async fn apply_spell_status_npc(
     // OR NPC is GuardiasCaos and caster is Caos.
     if spell.remover_paralisis {
         use crate::data::npcs::NpcType;
-        let (npc_paralyzed, npc_maestro, npc_type) = state.get_npc(npc_idx)
+        let (npc_paralyzed, npc_maestro, npc_type) = state
+            .get_npc(npc_idx)
             .map(|n| (n.paralyzed, n.maestro_user, n.npc_type))
             .unwrap_or((false, None, NpcType::Common));
-        let (caster_armada, caster_caos) = state.users.get(&caster_id)
+        let (caster_armada, caster_caos) = state
+            .users
+            .get(&caster_id)
             .map(|u| (u.armada_real, u.fuerzas_caos))
             .unwrap_or((false, false));
         let allowed = npc_maestro == Some(caster_id)
@@ -336,12 +493,13 @@ pub(super) async fn apply_spell_status_npc(
                 npc.counter_paralisis = 0;
             }
         } else if npc_paralyzed && !allowed {
-            state.send_console(caster_id,
+            state.send_console(
+                caster_id,
                 "Solo puedes remover la parálisis de los NPCs que te consideren su amo.",
-                font_index::INFO);
+                font_index::INFO,
+            );
         } else {
-            state.send_console(caster_id, "Este NPC no está paralizado",
-                font_index::INFO);
+            state.send_console(caster_id, "Este NPC no está paralizado", font_index::INFO);
         }
     }
 }
@@ -359,7 +517,9 @@ pub(super) async fn apply_spell_properties(
     spell: &crate::data::spells::SpellData,
 ) {
     // Capture target info for floating damage before mutable borrow
-    let target_info = state.users.get(&target_id)
+    let target_info = state
+        .users
+        .get(&target_id)
         .map(|u| (u.char_index.0, u.pos_map, u.pos_x, u.pos_y));
 
     let mut damage_dealt = 0i32;
@@ -426,7 +586,12 @@ pub(super) async fn apply_spell_properties(
     // VB6: floating yellow damage number above target for damage spells
     if damage_dealt > 0 {
         if let Some((ci, map, tx, ty)) = target_info {
-            state.send_chat_over_head_to(SendTarget::ToArea { map, x: tx, y: ty }, &format!("-{}", damage_dealt), ci as i16, 65535);
+            state.send_chat_over_head_to(
+                SendTarget::ToArea { map, x: tx, y: ty },
+                &format!("-{}", damage_dealt),
+                ci as i16,
+                65535,
+            );
         }
     }
 
@@ -467,17 +632,29 @@ pub(super) async fn apply_spell_status(
     // VB6: Super Anillo (700) blocks paralysis, immobilize, stun, blindness only
     // Does NOT block poison (envenena) or curse (maldicion)
     if spell.paraliza || spell.inmoviliza || spell.estupidez || spell.ceguera {
-        let ring_slot = state.users.get(&target_id).map(|u| u.equip.ring).unwrap_or(0);
+        let ring_slot = state
+            .users
+            .get(&target_id)
+            .map(|u| u.equip.ring)
+            .unwrap_or(0);
         let ring_obj = get_equipped_obj_index(state, target_id, ring_slot);
         if ring_obj == SUPERANILLO {
-            state.send_console(caster_id, "El Super Anillo rechaza el hechizo.", font_index::INFO);
+            state.send_console(
+                caster_id,
+                "El Super Anillo rechaza el hechizo.",
+                font_index::INFO,
+            );
             return;
         }
     }
 
     // Pre-read target state for validation checks
     let target_dead = state.users.get(&target_id).map(|u| u.dead).unwrap_or(false);
-    let target_navigating = state.users.get(&target_id).map(|u| u.navigating).unwrap_or(false);
+    let target_navigating = state
+        .users
+        .get(&target_id)
+        .map(|u| u.navigating)
+        .unwrap_or(false);
     let target_map = state.users.get(&target_id).map(|u| u.pos_map).unwrap_or(0);
 
     // VB6: Cure poison — can't cure dead users
@@ -492,17 +669,25 @@ pub(super) async fn apply_spell_status(
     }
     // Zone-aware invisibility check (Zone > Map)
     if spell.invisibilidad {
-        let (tx, ty) = state.users.get(&target_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((0, 0));
+        let (tx, ty) = state
+            .users
+            .get(&target_id)
+            .map(|u| (u.pos_x, u.pos_y))
+            .unwrap_or((0, 0));
         if is_invi_blocked_at(state, target_map, tx, ty) {
-            state.send_console(caster_id, "La invisibilidad no funciona aqui.", font_index::INFO);
+            state.send_console(
+                caster_id,
+                "La invisibilidad no funciona aqui.",
+                font_index::INFO,
+            );
             return;
         }
     }
 
     // Track what we need to send after dropping the mutable borrow
-    let mut send_paradok_on = false;   // paralysis applied → send PARADOK + PU
-    let mut send_paradok_off = false;  // paralysis removed → send PARADOK
-    let mut send_invis = false;        // invisibility applied → send BP + SetInvisible
+    let mut send_paradok_on = false; // paralysis applied → send PARADOK + PU
+    let mut send_paradok_off = false; // paralysis removed → send PARADOK
+    let mut send_invis = false; // invisibility applied → send BP + SetInvisible
 
     if let Some(target) = state.users.get_mut(&target_id) {
         if spell.cura_veneno {
@@ -611,8 +796,16 @@ pub(super) async fn apply_spell_status(
     // Resurrection spell — VB6 13.3: all classes resurrect immediately
     if spell.revivir {
         let target_dead = state.users.get(&target_id).map(|u| u.dead).unwrap_or(false);
-        let target_seguro_resu = state.users.get(&target_id).map(|u| u.seguro_resu).unwrap_or(false);
-        let target_time_revivir = state.users.get(&target_id).map(|u| u.time_revivir).unwrap_or(0);
+        let target_seguro_resu = state
+            .users
+            .get(&target_id)
+            .map(|u| u.seguro_resu)
+            .unwrap_or(false);
+        let target_time_revivir = state
+            .users
+            .get(&target_id)
+            .map(|u| u.time_revivir)
+            .unwrap_or(0);
 
         if target_dead {
             // Check resurrection safety (target opted out)
@@ -626,36 +819,58 @@ pub(super) async fn apply_spell_status(
                 return;
             }
 
-            let caster_class = state.users.get(&caster_id)
+            let caster_class = state
+                .users
+                .get(&caster_id)
                 .map(|u| u.class)
                 .unwrap_or_default();
-            let caster_name = state.users.get(&caster_id)
+            let caster_name = state
+                .users
+                .get(&caster_id)
                 .map(|u| u.char_name.clone())
                 .unwrap_or_default();
 
             // VB6 13.3: Caster must have full stamina to resurrect
-            let (caster_min_sta, caster_max_sta) = state.users.get(&caster_id)
+            let (caster_min_sta, caster_max_sta) = state
+                .users
+                .get(&caster_id)
                 .map(|u| (u.min_sta, u.max_sta))
                 .unwrap_or((0, 1));
             if caster_min_sta != caster_max_sta {
-                state.send_console(caster_id, "Necesitas tener toda tu energia para resucitar.", font_index::INFO);
+                state.send_console(
+                    caster_id,
+                    "Necesitas tener toda tu energia para resucitar.",
+                    font_index::INFO,
+                );
                 return;
             }
 
             // VB6 13.3: Instrument check — Bardo needs LAUDELFICO or LAUDMAGICO,
             // Druida needs FLAUTAELFICA or FLAUTAMAGICA equipped as ring
-            let ring_slot = state.users.get(&caster_id).map(|u| u.equip.ring).unwrap_or(0);
+            let ring_slot = state
+                .users
+                .get(&caster_id)
+                .map(|u| u.equip.ring)
+                .unwrap_or(0);
             let ring_obj = get_equipped_obj_index(state, caster_id, ring_slot);
             const FLAUTAMAGICA: i32 = 208;
 
             if caster_class == PlayerClass::Bardo {
                 if ring_obj != LAUDELFICO && ring_obj != LAUDMAGICO {
-                    state.send_console(caster_id, "Necesitas un laúd para resucitar.", font_index::INFO);
+                    state.send_console(
+                        caster_id,
+                        "Necesitas un laúd para resucitar.",
+                        font_index::INFO,
+                    );
                     return;
                 }
             } else if caster_class == PlayerClass::Druida {
                 if ring_obj != FLAUTAELFICA && ring_obj != FLAUTAMAGICA {
-                    state.send_console(caster_id, "Necesitas una flauta para resucitar.", font_index::INFO);
+                    state.send_console(
+                        caster_id,
+                        "Necesitas una flauta para resucitar.",
+                        font_index::INFO,
+                    );
                     return;
                 }
             }
@@ -669,7 +884,11 @@ pub(super) async fn apply_spell_status(
             let caster_hp = state.users.get(&caster_id).map(|u| u.min_hp).unwrap_or(0);
             let new_caster_hp = ((caster_hp as f64) * (1.0 - target_level as f64 * 0.015)) as i32;
             if new_caster_hp <= 0 {
-                state.send_console(caster_id, "No tienes suficiente vida para lanzar este hechizo.", font_index::INFO);
+                state.send_console(
+                    caster_id,
+                    "No tienes suficiente vida para lanzar este hechizo.",
+                    font_index::INFO,
+                );
                 return;
             }
 
@@ -688,13 +907,21 @@ pub(super) async fn apply_spell_status(
 
             // VB6: +500 Noble rep if target is not criminal and not self-res
             if caster_id != target_id {
-                let target_criminal = state.users.get(&target_id).map(|u| u.criminal).unwrap_or(false);
+                let target_criminal = state
+                    .users
+                    .get(&target_id)
+                    .map(|u| u.criminal)
+                    .unwrap_or(false);
                 if !target_criminal {
                     const MAX_REP: i32 = 6_000_000;
                     if let Some(caster) = state.users.get_mut(&caster_id) {
                         caster.rep_noble = (caster.rep_noble + 500).min(MAX_REP);
                     }
-                    state.send_console(caster_id, "Los Dioses te sonrien, has ganado 500 puntos de nobleza!", font_index::INFO);
+                    state.send_console(
+                        caster_id,
+                        "Los Dioses te sonrien, has ganado 500 puntos de nobleza!",
+                        font_index::INFO,
+                    );
                 }
             }
 

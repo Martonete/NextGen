@@ -1,10 +1,10 @@
 //! PvP-specific combat helpers: armor absorption for player vs player.
 //! Extracted from combat.rs.
 
-use crate::net::ConnectionId;
-use crate::game::types::{GameState, MAX_INVENTORY_SLOTS};
 use super::super::common::rand_range;
 use crate::game::constants::BODY_PART_HEAD;
+use crate::game::types::{GameState, MAX_INVENTORY_SLOTS};
+use crate::net::ConnectionId;
 
 // =====================================================================
 // VB6 13.3: Criminal status recalculation
@@ -15,8 +15,10 @@ use crate::game::constants::BODY_PART_HEAD;
 /// criminal = L < 0
 pub(super) fn recalc_criminal(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(user) = state.users.get_mut(&conn_id) {
-        let l = (-user.rep_asesino - user.rep_bandido + user.rep_burgues
-                 - user.rep_ladrones + user.rep_noble + user.rep_plebe) / 6;
+        let l = (-user.rep_asesino - user.rep_bandido + user.rep_burgues - user.rep_ladrones
+            + user.rep_noble
+            + user.rep_plebe)
+            / 6;
         user.criminal = l < 0;
     }
 }
@@ -28,7 +30,11 @@ pub(super) fn recalc_criminal(state: &mut GameState, conn_id: ConnectionId) {
 /// VB6: PvP armor absorption — separate from NPC combat.
 /// Head hits use helmet only, body hits use armor + shield.
 /// Returns (head_defense, body_defense).
-pub(super) fn calc_pvp_armor_absorption(state: &GameState, victim_id: ConnectionId, lugar: i32) -> (i32, i32) {
+pub(super) fn calc_pvp_armor_absorption(
+    state: &GameState,
+    victim_id: ConnectionId,
+    lugar: i32,
+) -> (i32, i32) {
     let user = match state.users.get(&victim_id) {
         Some(u) => u,
         None => return (0, 0),

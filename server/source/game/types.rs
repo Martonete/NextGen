@@ -3,15 +3,15 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use super::class_race::{PlayerClass, PlayerRace};
+use super::npc::{NpcIndex, NpcState};
+use super::world::{self, CharIndex, WorldState};
 use crate::config::ServerConfig;
-use crate::db::bans::BanList;
 use crate::data::GameData;
-use sqlx::PgPool;
+use crate::db::bans::BanList;
 use crate::net::ConnectionId;
 use crate::net::connection::ConnectionWriter;
-use super::class_race::{PlayerClass, PlayerRace};
-use super::world::{self, CharIndex, WorldState};
-use super::npc::{NpcState, NpcIndex};
+use sqlx::PgPool;
 
 /// Maximum possible inventory slots (VB6 13.3: MAX_INVENTORY_SLOTS = 30 with backpack).
 pub const MAX_INVENTORY_SLOTS: usize = 30;
@@ -28,7 +28,7 @@ pub const MAX_BANK_SLOTS: usize = 40;
 /// An inventory slot — object index, amount, and equipped flag.
 #[derive(Debug, Clone, Default)]
 pub struct InventorySlot {
-    pub obj_index: i32,  // 0 = empty
+    pub obj_index: i32, // 0 = empty
     pub amount: i32,
     pub equipped: bool,
 }
@@ -75,7 +75,6 @@ pub struct UserState {
     pub heading: i32,
     pub char_index: CharIndex,
 
-
     // Character appearance (for CC packet)
     pub body: i32,
     pub head: i32,
@@ -90,11 +89,11 @@ pub struct UserState {
     pub saved_privileges: i32,
 
     // Auras (VB6: Char.AuraA/W/E/R/C — set from equipped item CreaAura by type)
-    pub aura_a: i32,     // Armor aura
-    pub aura_w: i32,     // Weapon aura
-    pub aura_e: i32,     // Shield aura
-    pub aura_r: i32,     // Ring/Tool aura
-    pub aura_c: i32,     // Helmet aura
+    pub aura_a: i32, // Armor aura
+    pub aura_w: i32, // Weapon aura
+    pub aura_e: i32, // Shield aura
+    pub aura_r: i32, // Ring/Tool aura
+    pub aura_c: i32, // Helmet aura
 
     // Stats
     pub class: PlayerClass,
@@ -116,10 +115,10 @@ pub struct UserState {
     pub min_ham: i32,
     pub attributes: [i32; 5], // Str, Agi, Int, Cha, Con
     pub skills: [i32; 22],
-    pub exp_skills: [i32; 22],  // VB6: ExpSkills — current XP per skill
-    pub elu_skills: [i32; 22],  // VB6: EluSkills — XP needed to level each skill
-    pub skill_pts_libres: i32,  // Free skill points to distribute
-    pub skills_asignados: i32,  // VB6: Counters.AsignedSkills — total skill points assigned
+    pub exp_skills: [i32; 22], // VB6: ExpSkills — current XP per skill
+    pub elu_skills: [i32; 22], // VB6: EluSkills — XP needed to level each skill
+    pub skill_pts_libres: i32, // Free skill points to distribute
+    pub skills_asignados: i32, // VB6: Counters.AsignedSkills — total skill points assigned
     pub reputation: i32,
     // VB6 13.3: Individual reputations (6 fields, reputation = average)
     pub rep_asesino: i32,
@@ -144,7 +143,7 @@ pub struct UserState {
     pub dead: bool,
     pub hidden: bool,
     pub paralyzed: bool,
-    pub immobilized: bool,    // VB6 flags.Inmovilizado — separate from paralyzed
+    pub immobilized: bool, // VB6 flags.Inmovilizado — separate from paralyzed
     pub meditating: bool,
     pub poisoned: bool,
     pub invisible: bool,
@@ -156,10 +155,10 @@ pub struct UserState {
     pub counter_blind: i32, // Ticks remaining for blindness
     pub safe_toggle: bool,  // PvP safety (SEG)
     pub criminal: bool,
-    pub navigating: bool,   // On a boat
-    pub gender: i32,        // 1=Male, 2=Female (from charfile Genero)
-    pub comerciando: bool,  // In NPC commerce window
-    pub target_npc: usize,  // NPC runtime index for commerce/interaction
+    pub navigating: bool,  // On a boat
+    pub gender: i32,       // 1=Male, 2=Female (from charfile Genero)
+    pub comerciando: bool, // In NPC commerce window
+    pub target_npc: usize, // NPC runtime index for commerce/interaction
 
     // Bank (40 slots, stored in account file)
     pub bank: Vec<InventorySlot>,
@@ -168,28 +167,28 @@ pub struct UserState {
     // Player trading
     pub trading: bool,
     pub trade_partner: Option<ConnectionId>,
-    pub trade_offered: bool,    // Has offered items
-    pub trade_accepted: bool,   // Has accepted
-    pub trade_gold: i64,        // Gold being offered
+    pub trade_offered: bool,             // Has offered items
+    pub trade_accepted: bool,            // Has accepted
+    pub trade_gold: i64,                 // Gold being offered
     pub trade_items: Vec<InventorySlot>, // Items being offered (max 20)
 
     // Guild
-    pub guild_index: i32,       // 0 = no guild
-    pub guild_name: String,     // Cached clan name (empty if no guild)
+    pub guild_index: i32,              // 0 = no guild
+    pub guild_name: String,            // Cached clan name (empty if no guild)
     pub guild_creating_alignment: i32, // Temp: alignment during guild creation flow
-    pub seguro_clan: bool,      // Clan safe toggle — prevents attacking clanmates
-    pub guild_bank_open: bool,  // Currently interacting with guild bank
-    pub can_withdraw_items: bool, // Permission: withdraw items from guild bank
-    pub can_withdraw_gold: bool,  // Permission: withdraw gold from guild bank
+    pub seguro_clan: bool,             // Clan safe toggle — prevents attacking clanmates
+    pub guild_bank_open: bool,         // Currently interacting with guild bank
+    pub can_withdraw_items: bool,      // Permission: withdraw items from guild bank
+    pub can_withdraw_gold: bool,       // Permission: withdraw gold from guild bank
 
     // Factions
-    pub armada_real: bool,       // In Royal Army
-    pub fuerzas_caos: bool,      // In Chaos Forces
-    pub criminales_matados: i32, // Criminal kill count
-    pub ciudadanos_matados: i32, // Citizen kill count
-    pub recompensas_real: i32,   // Royal reward tier (0-5)
-    pub recompensas_caos: i32,   // Chaos reward tier (0-5)
-    pub reenlistadas: bool,      // Can only enlist once per character
+    pub armada_real: bool,        // In Royal Army
+    pub fuerzas_caos: bool,       // In Chaos Forces
+    pub criminales_matados: i32,  // Criminal kill count
+    pub ciudadanos_matados: i32,  // Citizen kill count
+    pub recompensas_real: i32,    // Royal reward tier (0-5)
+    pub recompensas_caos: i32,    // Chaos reward tier (0-5)
+    pub reenlistadas: bool,       // Can only enlist once per character
     pub last_crim_matado: String, // Kill dedup: last criminal killed by name
     pub last_ciud_matado: String, // Kill dedup: last citizen killed by name
     // VB6 13.3: Extended faction fields
@@ -203,61 +202,61 @@ pub struct UserState {
     pub next_recompensa: i32,
 
     // Party
-    pub party_index: i32,        // 0 = no party
-    pub party_pending: i32,      // Party index of pending invite (0 = none)
+    pub party_index: i32,   // 0 = no party
+    pub party_pending: i32, // Party index of pending invite (0 = none)
 
     // Quests
     // Pets/Summons
-    pub nro_mascotas: i32,              // Active pet count (max 3)
-    pub mascotas_index: [usize; 3],     // NPC runtime indices of pets
-    pub mascotas_type: [i32; 3],        // NPC type numbers of pets
+    pub nro_mascotas: i32,          // Active pet count (max 3)
+    pub mascotas_index: [usize; 3], // NPC runtime indices of pets
+    pub mascotas_type: [i32; 3],    // NPC type numbers of pets
 
     // Druid Elementals (VB6: flags.EleDeFuego/EleDeAgua/EleDeTierra)
-    pub ele_de_fuego: bool,             // Has active Fire Elemental (NPC 93)
-    pub ele_de_agua: bool,              // Has active Water Elemental (NPC 92)
-    pub ele_de_tierra: bool,            // Has active Earth Elemental (NPC 94)
+    pub ele_de_fuego: bool,  // Has active Fire Elemental (NPC 93)
+    pub ele_de_agua: bool,   // Has active Water Elemental (NPC 92)
+    pub ele_de_tierra: bool, // Has active Earth Elemental (NPC 94)
 
     // Buff/Potion system
-    pub duracion_efecto: i32,           // Buff ticks remaining (0 = no buff)
-    pub tomo_pocion: bool,              // Currently under a buff effect
-    pub attributes_backup: [i32; 5],    // Stat backup for buff expiry restoration
+    pub duracion_efecto: i32,        // Buff ticks remaining (0 = no buff)
+    pub tomo_pocion: bool,           // Currently under a buff effect
+    pub attributes_backup: [i32; 5], // Stat backup for buff expiry restoration
 
     // Resurrection
-    pub seguro_resu: bool,              // Resurrection safety (opt-out of being rezzed)
-    pub time_revivir: i32,              // Cooldown ticks after death before rezzing allowed
-    pub segundos_para_revivir: i32,     // Delayed resurrection countdown (non-cleric)
+    pub seguro_resu: bool, // Resurrection safety (opt-out of being rezzed)
+    pub time_revivir: i32, // Cooldown ticks after death before rezzing allowed
+    pub segundos_para_revivir: i32, // Delayed resurrection countdown (non-cleric)
 
     // Target tracking (for ranged attacks, spells, and GM teleport)
-    pub target_user: ConnectionId,      // Last targeted user
-    pub target_npc_idx: usize,          // Last targeted NPC (runtime index)
-    pub target_x: i32,                  // Last left-click X (for /TELEPLOC)
-    pub target_y: i32,                  // Last left-click Y (for /TELEPLOC)
-    pub target_map: i32,                // Last left-click map (for /TELEPLOC)
-    pub target_obj: i32,                // VB6: flags.TargetObj (ObjIndex of last right-clicked obj)
-    pub target_obj_map: i32,            // VB6: flags.TargetObjMap
-    pub target_obj_x: i32,              // VB6: flags.TargetObjX
-    pub target_obj_y: i32,              // VB6: flags.TargetObjY
-    pub pending_spell: usize,           // VB6 flags.Hechizo — spell slot selected via LH, cast on next RC click
-    pub counter_paralisis: i32,         // VB6 Counters.Paralisis — countdown to auto-remove paralysis
+    pub target_user: ConnectionId,          // Last targeted user
+    pub target_npc_idx: usize,              // Last targeted NPC (runtime index)
+    pub target_x: i32,                      // Last left-click X (for /TELEPLOC)
+    pub target_y: i32,                      // Last left-click Y (for /TELEPLOC)
+    pub target_map: i32,                    // Last left-click map (for /TELEPLOC)
+    pub target_obj: i32, // VB6: flags.TargetObj (ObjIndex of last right-clicked obj)
+    pub target_obj_map: i32, // VB6: flags.TargetObjMap
+    pub target_obj_x: i32, // VB6: flags.TargetObjX
+    pub target_obj_y: i32, // VB6: flags.TargetObjY
+    pub pending_spell: usize, // VB6 flags.Hechizo — spell slot selected via LH, cast on next RC click
+    pub counter_paralisis: i32, // VB6 Counters.Paralisis — countdown to auto-remove paralysis
     pub paralyzed_by: Option<ConnectionId>, // VB6 parity #16: who cast the paralysis (None = unknown/NPC)
     pub paralyzed_by_npc: Option<usize>, // VB6: flags.ParalizedByNpcIndex — NPC runtime index that paralyzed this user
-    pub counter_invisible: i32,         // VB6 Counters.Invisibilidad — counts up to IntervaloInvisible
-    pub counter_oculto: i32,            // VB6 Counters.TiempoOculto — counts down to 0 (hide duration)
+    pub counter_invisible: i32, // VB6 Counters.Invisibilidad — counts up to IntervaloInvisible
+    pub counter_oculto: i32,    // VB6 Counters.TiempoOculto — counts down to 0 (hide duration)
 
     // Timer counters (incremented each game tick, reset when action fires)
-    pub counter_hunger: i32,   // Hunger drain counter
-    pub counter_thirst: i32,   // Thirst drain counter
-    pub counter_stamina: i32,  // Stamina regen counter
-    pub counter_poison: i32,   // Poison damage counter
-    pub counter_hp_regen: i32, // HP regen counter (VB6: Sanar)
-    pub counter_remo: i32,     // Remo potion cooldown (VB6: usoPotaRemo, 3 rounds)
-    pub counter_frio: i32,     // VB6 Counters.Frio — cold damage counter (naked on snow/non-snow)
-    pub counter_lava: i32,     // VB6 Counters.Lava — lava damage counter
+    pub counter_hunger: i32,        // Hunger drain counter
+    pub counter_thirst: i32,        // Thirst drain counter
+    pub counter_stamina: i32,       // Stamina regen counter
+    pub counter_poison: i32,        // Poison damage counter
+    pub counter_hp_regen: i32,      // HP regen counter (VB6: Sanar)
+    pub counter_remo: i32,          // Remo potion cooldown (VB6: usoPotaRemo, 3 rounds)
+    pub counter_frio: i32, // VB6 Counters.Frio — cold damage counter (naked on snow/non-snow)
+    pub counter_lava: i32, // VB6 Counters.Lava — lava damage counter
     pub counter_mimetismo: i32, // VB6 Counters.Mimetismo — mimicry duration (counts up to IntervaloInvisible)
-    pub resting: bool,         // VB6 flags.Descansar — resting (DOK) for faster HP/STA regen
-    pub mimetizado: bool,      // VB6 flags.Mimetizado — disguised via Druid mimicry spell
-    pub ignorado: bool,        // VB6 flags.Ignorado — ignored by NPCs (during mimicry)
-    pub en_consulta: bool,     // VB6 flags.EnConsulta — being attended by GM, NPCs skip
+    pub resting: bool,          // VB6 flags.Descansar — resting (DOK) for faster HP/STA regen
+    pub mimetizado: bool,       // VB6 flags.Mimetizado — disguised via Druid mimicry spell
+    pub ignorado: bool,         // VB6 flags.Ignorado — ignored by NPCs (during mimicry)
+    pub en_consulta: bool,      // VB6 flags.EnConsulta — being attended by GM, NPCs skip
     pub no_puede_ser_atacado: bool, // VB6 flags.NoPuedeSerAtacado — invulnerable to NPC aggro
     // Backup of original char appearance before mimicry
     pub char_mimetizado_body: i32,
@@ -267,92 +266,92 @@ pub struct UserState {
     pub char_mimetizado_helmet: i32,
 
     // Area system (VB6 ModAreas — 9x9 tile zones for visibility updates)
-    pub area_id: i32,        // (x/9+1)*(y/9+1), 0 = uninitialized
-    pub area_min_x: i32,     // Left edge of current 27-wide area
-    pub area_min_y: i32,     // Top edge of current 27-tall area
+    pub area_id: i32,    // (x/9+1)*(y/9+1), 0 = uninitialized
+    pub area_min_x: i32, // Left edge of current 27-wide area
+    pub area_min_y: i32, // Top edge of current 27-tall area
 
     // Anti-cheat cooldown counters (decremented each tick, 0 = action allowed)
-    pub interval_golpe: i32,     // Melee attack cooldown
-    pub interval_flechas: i32,   // Arrow shot cooldown
-    pub interval_casteo: i32,    // Spell cast cooldown
-    pub interval_poteo: i32,     // Potion use cooldown
-    pub interval_click: i32,     // Click action cooldown
-    pub interval_trabajar: i32,  // Work/skill cooldown
-    pub interval_pu: i32,        // Position update cooldown
+    pub interval_golpe: i32,    // Melee attack cooldown
+    pub interval_flechas: i32,  // Arrow shot cooldown
+    pub interval_casteo: i32,   // Spell cast cooldown
+    pub interval_poteo: i32,    // Potion use cooldown
+    pub interval_click: i32,    // Click action cooldown
+    pub interval_trabajar: i32, // Work/skill cooldown
+    pub interval_pu: i32,       // Position update cooldown
 
     // Admin / moderation flags
-    pub admin_invisible: bool,    // GM invisible mode (body=0, head=0)
-    pub gm_show_name: bool,       // GM name visible to players (VB6: /SHOWNAME toggle)
-    pub old_body: i32,            // Saved body before going invisible
-    pub old_head: i32,            // Saved head before going invisible
-    pub silenced: bool,           // Muted by GM
-    pub silence_timer: i32,       // Mute countdown in seconds (0 = permanent until toggled)
-    pub jail_timer: i32,          // Jail countdown in seconds (0 = not jailed)
-    pub warnings: i32,            // Warning count (advertencias)
-    pub hogar: String,            // Home city (Thir, Inthak, Ruvendel, etc.)
-    pub traveling: bool,           // VB6: Traveling — dead user teleporting home via /HOGAR
-    pub counter_go_home: i32,      // VB6: GoHome counter — counts up to 250 ticks (10s at 40ms) then teleport
-    pub current_zone_id: u16,      // Zone system: current zone ID (0 = wilderness)
+    pub admin_invisible: bool, // GM invisible mode (body=0, head=0)
+    pub gm_show_name: bool,    // GM name visible to players (VB6: /SHOWNAME toggle)
+    pub old_body: i32,         // Saved body before going invisible
+    pub old_head: i32,         // Saved head before going invisible
+    pub silenced: bool,        // Muted by GM
+    pub silence_timer: i32,    // Mute countdown in seconds (0 = permanent until toggled)
+    pub jail_timer: i32,       // Jail countdown in seconds (0 = not jailed)
+    pub warnings: i32,         // Warning count (advertencias)
+    pub hogar: String,         // Home city (Thir, Inthak, Ruvendel, etc.)
+    pub traveling: bool,       // VB6: Traveling — dead user teleporting home via /HOGAR
+    pub counter_go_home: i32, // VB6: GoHome counter — counts up to 250 ticks (10s at 40ms) then teleport
+    pub current_zone_id: u16, // Zone system: current zone ID (0 = wilderness)
 
     // Navigation — barco_slot is the inventory slot (1-based) holding the equipped boat (VB6 BarcoSlot)
     pub barco_slot: usize,
 
     // SOS/Consultation system
-    pub consulta_enviada: bool,    // Has pending consultation
-    pub numero_consulta: i32,      // SOS message index
+    pub consulta_enviada: bool, // Has pending consultation
+    pub numero_consulta: i32,   // SOS message index
 
     // Macro detection
-    pub tiene_macro: i32,          // Macro detection counter
+    pub tiene_macro: i32, // Macro detection counter
 
     // Private messages toggle
-    pub msj_privados: bool,        // Receive private messages
+    pub msj_privados: bool, // Receive private messages
 
     // Montado (mounted)
-    pub montado: bool,             // Is currently mounted
-    pub montado_body: i32,         // Original body before mounting
-    pub levitando: bool,           // Flying mount levitation
+    pub montado: bool,     // Is currently mounted
+    pub montado_body: i32, // Original body before mounting
+    pub levitando: bool,   // Flying mount levitation
 
     // Description
-    pub desc: String,                // User description (/DESC)
+    pub desc: String, // User description (/DESC)
 
     // Marriage (VB6: Pareja)
-    pub pareja: String,              // Name of spouse (empty = not married)
+    pub pareja: String, // Name of spouse (empty = not married)
 
     // Duel system (VB6: AtacablePor)
-    pub atacable_por: ConnectionId,  // 0 = no duel, >0 = can be attacked by this player only
-    pub duel_pending: ConnectionId,  // Pending duel challenge from this player
-    pub counter_atacable: i32,       // VB6: 60-second timeout for atacable_por (counts up to 1500 at 40ms/tick)
-    pub warp_immunity_ticks: i32,    // Ticks after warp where NPCs won't target this user (prevents phantom sounds)
+    pub atacable_por: ConnectionId, // 0 = no duel, >0 = can be attacked by this player only
+    pub duel_pending: ConnectionId, // Pending duel challenge from this player
+    pub counter_atacable: i32, // VB6: 60-second timeout for atacable_por (counts up to 1500 at 40ms/tick)
+    pub warp_immunity_ticks: i32, // Ticks after warp where NPCs won't target this user (prevents phantom sounds)
 
     // Timbero (gambling) stats
-    pub timbero_target_npc: usize,   // Currently interacting with gambler NPC
+    pub timbero_target_npc: usize, // Currently interacting with gambler NPC
 
     // Council membership (VB6: PlayerType.RoyalCouncil / ChaosCouncil)
-    pub royal_council: bool,         // Member of Royal Army council
-    pub chaos_council: bool,         // Member of Chaos Legion council
+    pub royal_council: bool, // Member of Royal Army council
+    pub chaos_council: bool, // Member of Chaos Legion council
 
     // ShareNpc (VB6: flags.ShareNpcWith)
     pub share_npc_with: ConnectionId, // 0 = not sharing, >0 = sharing pets with this user
 
     // Centinela anti-bot system
-    pub centinela_number: i32,       // Number the player must type (0 = no active check)
-    pub centinela_timer: i32,        // Ticks remaining to answer (0 = inactive)
-    pub centinela_fails: i32,        // Number of failed attempts
+    pub centinela_number: i32, // Number the player must type (0 = no active check)
+    pub centinela_timer: i32,  // Ticks remaining to answer (0 = inactive)
+    pub centinela_fails: i32,  // Number of failed attempts
 
     // SOS help request (/GM)
-    pub gm_request_pending: bool,    // Has pending /GM request
+    pub gm_request_pending: bool, // Has pending /GM request
 
     // VB6 13.3: Kill counters (MUERTES section)
-    pub usuarios_matados: i32,       // Total users killed
-    pub npcs_muertos: i32,           // Total NPCs killed
+    pub usuarios_matados: i32, // Total users killed
+    pub npcs_muertos: i32,     // Total NPCs killed
 
     // VB6 13.3: Misc persisted fields
-    pub counter_pena: i32,           // COUNTERS.Pena (jail/penalty ticks)
-    pub last_map: i32,               // FLAGS.LastMap
-    pub uptime: i64,                 // INIT.UpTime (seconds played)
+    pub counter_pena: i32, // COUNTERS.Pena (jail/penalty ticks)
+    pub last_map: i32,     // FLAGS.LastMap
+    pub uptime: i64,       // INIT.UpTime (seconds played)
 
     // Meditation concentration delay (VB6: 2-second warmup before regen starts)
-    pub meditation_start_tick: i32,   // Countdown ticks (40ms each); regen skipped while > 0
+    pub meditation_start_tick: i32, // Countdown ticks (40ms each); regen skipped while > 0
 
     // Rate limiting for character deletion
     pub last_delete_attempt: Option<std::time::Instant>,
@@ -434,7 +433,9 @@ impl UserState {
             rep_ladrones: 0,
             rep_noble: 0,
             rep_plebe: 0,
-            inventory: (0..MAX_INVENTORY_SLOTS).map(|_| InventorySlot::default()).collect(),
+            inventory: (0..MAX_INVENTORY_SLOTS)
+                .map(|_| InventorySlot::default())
+                .collect(),
             equip: EquipSlots::default(),
             current_inventory_slots: MAX_NORMAL_INVENTORY_SLOTS,
             backpack_slot: 0,
@@ -458,7 +459,9 @@ impl UserState {
             gender: 1,
             comerciando: false,
             target_npc: 0,
-            bank: (0..MAX_BANK_SLOTS).map(|_| InventorySlot::default()).collect(),
+            bank: (0..MAX_BANK_SLOTS)
+                .map(|_| InventorySlot::default())
+                .collect(),
             bank_gold: 0,
             trading: false,
             trade_partner: None,
@@ -617,7 +620,8 @@ impl UserState {
             self.weapon_anim as i16,
             self.shield_anim as i16,
             self.casco_anim as i16,
-            0, 0, // fx_index, fx_loops
+            0,
+            0, // fx_index, fx_loops
             &display_name,
             nick_color,
             self.privileges as u8,
@@ -631,9 +635,21 @@ pub enum SendTarget {
     ToIndex(ConnectionId),
     ToAll,
     ToMap(i32),
-    ToArea { map: i32, x: i32, y: i32 },
-    ToAreaButIndex { conn_id: ConnectionId, map: i32, x: i32, y: i32 },
-    ToMapButIndex { conn_id: ConnectionId, map: i32 },
+    ToArea {
+        map: i32,
+        x: i32,
+        y: i32,
+    },
+    ToAreaButIndex {
+        conn_id: ConnectionId,
+        map: i32,
+        x: i32,
+        y: i32,
+    },
+    ToMapButIndex {
+        conn_id: ConnectionId,
+        map: i32,
+    },
     ToGuildMembers(i32), // Send to all online members of guild_index
     ToAdmins,            // Send to all GMs (privileges > 0)
 }
@@ -660,37 +676,37 @@ pub mod privilege_level {
 /// Configured in milliseconds, converted to ticks (/40, rounded) at load time.
 pub struct IntervalSettings {
     // Status effect durations (ticks)
-    pub paralizado: i32,      // Paralysis duration
-    pub invisible: i32,       // Spell invisibility duration
-    pub oculto: i32,          // Hide duration base
-    pub npc_ai_ms: u64,       // NPC AI tick interval (ms, used directly)
+    pub paralizado: i32, // Paralysis duration
+    pub invisible: i32,  // Spell invisibility duration
+    pub oculto: i32,     // Hide duration base
+    pub npc_ai_ms: u64,  // NPC AI tick interval (ms, used directly)
 
     // Anti-cheat cooldowns (ticks)
-    pub golpe: i32,           // Melee attack cooldown
-    pub flechas: i32,         // Arrow shot cooldown
-    pub lanzar_hechizo: i32,  // Spell cast cooldown
-    pub magia_golpe: i32,     // Delay after spell before melee
-    pub golpe_magia: i32,     // Delay after melee before spell
-    pub poteo_u: i32,         // Potion use cooldown
-    pub poteo_click: i32,     // Click action cooldown
-    pub work: i32,            // Work/skill cooldown
+    pub golpe: i32,          // Melee attack cooldown
+    pub flechas: i32,        // Arrow shot cooldown
+    pub lanzar_hechizo: i32, // Spell cast cooldown
+    pub magia_golpe: i32,    // Delay after spell before melee
+    pub golpe_magia: i32,    // Delay after melee before spell
+    pub poteo_u: i32,        // Potion use cooldown
+    pub poteo_click: i32,    // Click action cooldown
+    pub work: i32,           // Work/skill cooldown
 }
 
 impl Default for IntervalSettings {
     fn default() -> Self {
         Self {
-            paralizado: 500,     // 20000ms / 40
-            invisible: 500,      // 20000ms / 40
-            oculto: 500,         // 20000ms / 40
+            paralizado: 500, // 20000ms / 40
+            invisible: 500,  // 20000ms / 40
+            oculto: 500,     // 20000ms / 40
             npc_ai_ms: 1300,
-            golpe: 38,           // 1520ms / 40
-            flechas: 35,         // 1400ms / 40
-            lanzar_hechizo: 35,  // 1400ms / 40
-            magia_golpe: 50,     // 2000ms / 40
-            golpe_magia: 50,     // 2000ms / 40
-            poteo_u: 30,         // 1200ms / 40
-            poteo_click: 6,      //  240ms / 40
-            work: 18,            //  720ms / 40
+            golpe: 38,          // 1520ms / 40
+            flechas: 35,        // 1400ms / 40
+            lanzar_hechizo: 35, // 1400ms / 40
+            magia_golpe: 50,    // 2000ms / 40
+            golpe_magia: 50,    // 2000ms / 40
+            poteo_u: 30,        // 1200ms / 40
+            poteo_click: 6,     //  240ms / 40
+            work: 18,           //  720ms / 40
         }
     }
 }
@@ -703,7 +719,7 @@ pub struct CleanWorldEntry {
     pub map: i32,
     pub x: i32,
     pub y: i32,
-    pub tiempo: i32,      // Countdown ticks until removal
+    pub tiempo: i32, // Countdown ticks until removal
     pub obj_index: i32,
 }
 
@@ -760,16 +776,16 @@ pub struct GameState {
     // IP security (SecurityIp.bas) — rate limiting + max connections per IP
     pub ip_last_connect: HashMap<String, std::time::Instant>, // Last connect time per IP
     pub ip_connection_count: HashMap<String, u32>,            // Active connections per IP
-    pub ip_max_connections: u32,                               // Max connections per IP (default 10)
-    pub ip_min_interval_ms: u64,                               // Min ms between connections (default 500)
-    pub flood_strike_limit: u32,                               // Strikes before disconnect (default 3)
+    pub ip_max_connections: u32,                              // Max connections per IP (default 10)
+    pub ip_min_interval_ms: u64, // Min ms between connections (default 500)
+    pub flood_strike_limit: u32, // Strikes before disconnect (default 3)
 
-    pub chat_global: bool,              // Global chat enabled (toggled by /NOGLOBAL)
+    pub chat_global: bool, // Global chat enabled (toggled by /NOGLOBAL)
 
     // Timbero (gambling) stats — VB6: tAPuestas, persisted in apuestas.dat
-    pub timbero_ganancias: i64,         // Total player losses (house winnings)
-    pub timbero_perdidas: i64,          // Total player winnings (house losses)
-    pub timbero_jugadas: i64,           // Total bets placed
+    pub timbero_ganancias: i64, // Total player losses (house winnings)
+    pub timbero_perdidas: i64,  // Total player winnings (house losses)
+    pub timbero_jugadas: i64,   // Total bets placed
 
     // Guild diplomacy — runtime cache of guild relations
     // Key: (guild_a, guild_b) where guild_a < guild_b → value: -1=war, 0=peace, 1=alliance
@@ -778,21 +794,21 @@ pub struct GameState {
     pub guild_proposals: HashMap<(i32, i32), i32>,
 
     // Praetorian system (praetorians.bas)
-    pub pretoriano_clan: Vec<usize>,      // NPC runtime indices in praetorian clan (up to 8)
+    pub pretoriano_clan: Vec<usize>, // NPC runtime indices in praetorian clan (up to 8)
     pub pretoriano_activo: bool,
-    pub pretoriano_faccion: i32,          // 1=real, 2=caos
-    pub pretoriano_alcoba: i32,           // Current alcoba state (0-4)
+    pub pretoriano_faccion: i32, // 1=real, 2=caos
+    pub pretoriano_alcoba: i32,  // Current alcoba state (0-4)
 
     // Multipliers (set by GM commands)
-    pub multiplicador_exp: i32,    // /EXP multiplier (default from config)
-    pub multiplicador_oro: i32,    // /GLD multiplier
-    pub multiplicador_drop: i32,   // /DROP multiplier
+    pub multiplicador_exp: i32,  // /EXP multiplier (default from config)
+    pub multiplicador_oro: i32,  // /GLD multiplier
+    pub multiplicador_drop: i32, // /DROP multiplier
 
     // Automatic broadcast message (/LMSG)
     pub auto_msg_active: bool,
     pub auto_msg_text: String,
-    pub auto_msg_interval: i32,    // Minutes between broadcasts
-    pub auto_msg_counter: i32,     // Seconds counter
+    pub auto_msg_interval: i32, // Minutes between broadcasts
+    pub auto_msg_counter: i32,  // Seconds counter
 
     // SOS/Consultation system
     pub sos_messages: Vec<SosMessage>,
@@ -801,7 +817,7 @@ pub struct GameState {
     pub poll_active: bool,
     pub poll_options: [String; 5],
     pub poll_votes: [i32; 5],
-    pub poll_voters: Vec<String>,  // Names who already voted
+    pub poll_voters: Vec<String>, // Names who already voted
 
     // Forum system (VB6: modForum.bas)
     pub forums: HashMap<String, ForumData>,
@@ -814,7 +830,7 @@ pub struct GameState {
 
     // Auction system (VB6: modSubastas)
     // Countdown system (VB6: /CONT)
-    pub countdown_seconds: i32,           // 0 = inactive
+    pub countdown_seconds: i32, // 0 = inactive
 
     // Role overrides from server.ini (VB6: EsAdministrador, EsDios, etc.)
     // Maps lowercase character name → privilege level. Loaded at startup, reloaded with /RELOADSINI.
@@ -845,14 +861,14 @@ pub struct GameState {
 
     // Rain system (VB6: Lloviendo)
     pub raining: bool,
-    pub rain_counter: i32,  // Tick counter for rain STA drain (incremented each 40ms tick)
+    pub rain_counter: i32, // Tick counter for rain STA drain (incremented each 40ms tick)
 
     // GM forced night mode (VB6: /NOCHE toggle)
     pub forced_night: bool,
 
     // Server shutdown/restart countdown (VB6: /APAGAR, /REINICIAR)
-    pub shutdown_countdown: i32,     // Seconds remaining until shutdown (0 = inactive)
-    pub shutdown_restart: bool,      // true = restart, false = shutdown
+    pub shutdown_countdown: i32, // Seconds remaining until shutdown (0 = inactive)
+    pub shutdown_restart: bool,  // true = restart, false = shutdown
 
     // Auth rate limiting — brute-force protection
     // Maps IP → (failure_count, first_failure_time).
@@ -893,8 +909,8 @@ pub const MAX_FORUM_STICKIES: usize = 5;
 
 #[derive(Debug, Clone, Default)]
 pub struct ForumData {
-    pub posts: Vec<ForumPost>,     // Newest first, max 30
-    pub stickies: Vec<ForumPost>,  // Newest first, max 5
+    pub posts: Vec<ForumPost>,    // Newest first, max 30
+    pub stickies: Vec<ForumPost>, // Newest first, max 5
 }
 
 /// Party runtime state (matches VB6 tParty)
@@ -910,7 +926,13 @@ pub struct PartyState {
 }
 
 impl GameState {
-    pub fn new(config: ServerConfig, base_path: PathBuf, game_data: GameData, pool: PgPool, bans: BanList) -> Self {
+    pub fn new(
+        config: ServerConfig,
+        base_path: PathBuf,
+        game_data: GameData,
+        pool: PgPool,
+        bans: BanList,
+    ) -> Self {
         let notice = config.notice.clone();
         let exp_mult = config.exp_multiplier as i32;
         let security_code = format!("{}", rand_simple());
@@ -930,7 +952,8 @@ impl GameState {
         let mut zone_registry = crate::game::zones::load_zone_overrides(&base_path);
         // Auto-populate from legacy .dat MapInfo for zones not in zones.ini
         for map in game_data.maps.iter().flatten() {
-            zone_registry.entry(map.info.num as i32)
+            zone_registry
+                .entry(map.info.num as i32)
                 .or_insert_with(|| crate::game::zones::ZoneProperties::from_map_info(&map.info));
         }
 
@@ -940,7 +963,9 @@ impl GameState {
             if let Some(map) = map_opt {
                 let w = map.tiles.width as i32;
                 let h = map.tiles.height as i32;
-                world.grids.insert(i as i32, crate::game::world::MapGrid::with_size(w, h, 9));
+                world
+                    .grids
+                    .insert(i as i32, crate::game::world::MapGrid::with_size(w, h, 9));
                 tracing::info!("Map {} grid: {}x{}", i, w, h);
             }
         }
@@ -1027,9 +1052,10 @@ impl GameState {
     /// Remove a connection and clean up world state.
     pub fn remove_connection(&mut self, conn_id: ConnectionId) {
         // Cancel active trade before removing user (VB6: FinComerciarUsu on disconnect)
-        let trade_partner = self.users.get(&conn_id).and_then(|u| {
-            if u.trading { u.trade_partner } else { None }
-        });
+        let trade_partner = self
+            .users
+            .get(&conn_id)
+            .and_then(|u| if u.trading { u.trade_partner } else { None });
         if let Some(partner) = trade_partner {
             // Clear partner's trade state
             if let Some(p) = self.users.get_mut(&partner) {
@@ -1071,7 +1097,9 @@ impl GameState {
                     }
                     if dissolve {
                         // Clear all members' party_index
-                        let members: Vec<ConnectionId> = self.parties.get(pi)
+                        let members: Vec<ConnectionId> = self
+                            .parties
+                            .get(pi)
                             .and_then(|p| p.as_ref())
                             .map(|p| p.members.clone())
                             .unwrap_or_default();
@@ -1104,7 +1132,11 @@ impl GameState {
 
     /// Check if any other character from the same account is online.
     /// Takes the list of character names from the already-loaded account.
-    pub fn is_account_char_online(&self, characters: &[String], exclude_name: &str) -> Option<String> {
+    pub fn is_account_char_online(
+        &self,
+        characters: &[String],
+        exclude_name: &str,
+    ) -> Option<String> {
         for pj in characters {
             if !pj.is_empty()
                 && pj.to_uppercase() != exclude_name.to_uppercase()
@@ -1132,7 +1164,9 @@ impl GameState {
                 self.send_bytes(conn_id, data);
             }
             SendTarget::ToAll => {
-                let ids: Vec<ConnectionId> = self.users.values()
+                let ids: Vec<ConnectionId> = self
+                    .users
+                    .values()
                     .filter(|u| u.logged)
                     .map(|u| u.conn_id)
                     .collect();
@@ -1141,7 +1175,9 @@ impl GameState {
                 }
             }
             SendTarget::ToMap(map) => {
-                let ids: Vec<ConnectionId> = self.users.values()
+                let ids: Vec<ConnectionId> = self
+                    .users
+                    .values()
                     .filter(|u| u.logged && u.pos_map == map)
                     .map(|u| u.conn_id)
                     .collect();
@@ -1172,7 +1208,9 @@ impl GameState {
                 }
             }
             SendTarget::ToMapButIndex { conn_id, map } => {
-                let ids: Vec<ConnectionId> = self.users.values()
+                let ids: Vec<ConnectionId> = self
+                    .users
+                    .values()
                     .filter(|u| u.logged && u.pos_map == map && u.conn_id != conn_id)
                     .map(|u| u.conn_id)
                     .collect();
@@ -1182,7 +1220,9 @@ impl GameState {
             }
             SendTarget::ToGuildMembers(guild_index) => {
                 if guild_index > 0 {
-                    let ids: Vec<ConnectionId> = self.users.values()
+                    let ids: Vec<ConnectionId> = self
+                        .users
+                        .values()
                         .filter(|u| u.logged && u.guild_index == guild_index)
                         .map(|u| u.conn_id)
                         .collect();
@@ -1192,7 +1232,9 @@ impl GameState {
                 }
             }
             SendTarget::ToAdmins => {
-                let ids: Vec<ConnectionId> = self.users.values()
+                let ids: Vec<ConnectionId> = self
+                    .users
+                    .values()
                     .filter(|u| u.logged && u.privileges > privilege_level::USER)
                     .map(|u| u.conn_id)
                     .collect();
@@ -1204,7 +1246,13 @@ impl GameState {
     }
 
     /// Get all user connection IDs in the area around (x,y) on a map, excluding `exclude_id`.
-    pub fn get_area_users(&self, map: i32, x: i32, y: i32, exclude_id: ConnectionId) -> Vec<ConnectionId> {
+    pub fn get_area_users(
+        &self,
+        map: i32,
+        x: i32,
+        y: i32,
+        exclude_id: ConnectionId,
+    ) -> Vec<ConnectionId> {
         if let Some(grid) = self.world.grid(map) {
             world::get_users_in_area(grid, x, y)
                 .into_iter()
@@ -1286,13 +1334,25 @@ impl GameState {
     }
 
     /// Send chat-over-head to a target group.
-    pub fn send_chat_over_head_to(&mut self, target: SendTarget, msg: &str, char_index: i16, color: i32) {
+    pub fn send_chat_over_head_to(
+        &mut self,
+        target: SendTarget,
+        msg: &str,
+        char_index: i16,
+        color: i32,
+    ) {
         let pkt = crate::protocol::binary_packets::write_chat_over_head(msg, char_index, color);
         self.send_data_bytes(target, &pkt);
     }
 
     /// Send area talk chat.
-    pub fn send_chat_talk_to(&mut self, target: SendTarget, char_index: i16, msg: &str, color: i32) {
+    pub fn send_chat_talk_to(
+        &mut self,
+        target: SendTarget,
+        char_index: i16,
+        msg: &str,
+        color: i32,
+    ) {
         let pkt = crate::protocol::binary_packets::write_chat_talk(char_index, msg, color);
         self.send_data_bytes(target, &pkt);
     }
@@ -1342,7 +1402,7 @@ impl GameState {
                     || (g >= 30762 && g <= 30777)           // Agua azul — 4×4
                     || (g >= 32498 && g <= 32513)           // Agua celeste — 4×4
                     || (g >= 44520 && g <= 44711)           // Agua v2 — 16×12
-                    || (g >= 53678 && g <= 53869);          // Agua v3 — 16×12
+                    || (g >= 53678 && g <= 53869); // Agua v3 — 16×12
                 is_water
             } else {
                 false
@@ -1351,7 +1411,6 @@ impl GameState {
             false
         }
     }
-
 
     pub fn get_object(&self, obj_index: i32) -> Option<&crate::data::objects::ObjData> {
         if obj_index >= 1 {
@@ -1373,7 +1432,11 @@ impl GameState {
     /// Get experience needed for next level.
     pub fn exp_for_level(&self, level: i32) -> i64 {
         if level >= 1 {
-            self.game_data.experience.get((level - 1) as usize).copied().unwrap_or(0)
+            self.game_data
+                .experience
+                .get((level - 1) as usize)
+                .copied()
+                .unwrap_or(0)
         } else {
             0
         }
@@ -1444,7 +1507,12 @@ impl GameState {
                     for x in 0..game_map.tiles.width {
                         let npc_idx = game_map.tiles.get(x, y).map(|t| t.npc_index).unwrap_or(0);
                         if npc_idx > 0 {
-                            spawns.push((npc_idx as usize, map_idx as i32, (x + 1) as i32, (y + 1) as i32));
+                            spawns.push((
+                                npc_idx as usize,
+                                map_idx as i32,
+                                (x + 1) as i32,
+                                (y + 1) as i32,
+                            ));
                         }
                     }
                 }
@@ -1479,8 +1547,10 @@ impl GameState {
                                 SpawnMode::Random => {
                                     if let Some(z) = zone {
                                         // Pick random position within zone bounds
-                                        let rx = crate::game::handlers::common::rand_range(z.x1, z.x2);
-                                        let ry = crate::game::handlers::common::rand_range(z.y1, z.y2);
+                                        let rx =
+                                            crate::game::handlers::common::rand_range(z.x1, z.x2);
+                                        let ry =
+                                            crate::game::handlers::common::rand_range(z.y1, z.y2);
                                         (rx, ry)
                                     } else {
                                         (spawn.spawn_x, spawn.spawn_y)
@@ -1488,7 +1558,13 @@ impl GameState {
                                 }
                             };
                             if sx > 0 && sy > 0 {
-                                spawns_to_create.push((spawn.npc_index as usize, map_num, sx, sy, spawn.zone_id));
+                                spawns_to_create.push((
+                                    spawn.npc_index as usize,
+                                    map_num,
+                                    sx,
+                                    sy,
+                                    spawn.zone_id,
+                                ));
                             }
                         }
                     }
@@ -1522,14 +1598,18 @@ impl GameState {
                 let map_num = map_idx as i32;
                 for y in 0..game_map.tiles.height {
                     for x in 0..game_map.tiles.width {
-                        let obj = match game_map.tiles.get(x, y) { Some(t) => &t.obj, None => continue };
+                        let obj = match game_map.tiles.get(x, y) {
+                            Some(t) => &t.obj,
+                            None => continue,
+                        };
                         if obj.obj_index > 0 {
                             let tile_x = (x + 1) as i32;
                             let tile_y = (y + 1) as i32;
                             let grid = self.world.grid_mut(map_num);
                             if let Some(tile) = grid.tile_mut(tile_x, tile_y) {
                                 tile.ground_item.obj_index = obj.obj_index as i32;
-                                tile.ground_item.amount = if obj.amount > 0 { obj.amount as i32 } else { 1 };
+                                tile.ground_item.amount =
+                                    if obj.amount > 0 { obj.amount as i32 } else { 1 };
                             }
                             count += 1;
                         }
@@ -1575,14 +1655,20 @@ impl GameState {
     /// Respawn an NPC at its original position.
     pub fn respawn_npc(&mut self, npc_idx: NpcIndex) -> bool {
         let (orig_map, orig_x, orig_y, max_hp, _npc_number) = match self.get_npc(npc_idx) {
-            Some(npc) if !npc.active && npc.respawn => {
-                (npc.orig_map, npc.orig_x, npc.orig_y, npc.max_hp, npc.npc_number)
-            }
+            Some(npc) if !npc.active && npc.respawn => (
+                npc.orig_map,
+                npc.orig_x,
+                npc.orig_y,
+                npc.max_hp,
+                npc.npc_number,
+            ),
             _ => return false,
         };
 
         // Check if original tile is free
-        let tile_free = self.world.grid(orig_map)
+        let tile_free = self
+            .world
+            .grid(orig_map)
             .and_then(|g| g.tile(orig_x, orig_y))
             .map(|t| t.npc_index == 0 && t.user_conn.is_none())
             .unwrap_or(false);
@@ -1652,12 +1738,14 @@ fn load_intervals(base: &std::path::Path) -> IntervalSettings {
         Ok(ini) => {
             // Values in INI are milliseconds — convert to ticks (/40, rounded)
             let get_ms = |key: &str, default_ms: i32| -> i32 {
-                let ms: i32 = ini.get("INTERVALOS", key)
+                let ms: i32 = ini
+                    .get("INTERVALOS", key)
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(default_ms);
                 ms_to_ticks(ms)
             };
-            let npc_ai_ms: u64 = ini.get("INTERVALOS", "IntervaloNpcAI")
+            let npc_ai_ms: u64 = ini
+                .get("INTERVALOS", "IntervaloNpcAI")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(1300);
             let settings = IntervalSettings {
@@ -1676,8 +1764,13 @@ fn load_intervals(base: &std::path::Path) -> IntervalSettings {
             };
             tracing::info!(
                 "Intervals loaded (ms→ticks): paralizado={}, invisible={}, oculto={}, npc_ai={}ms, golpe={}, flechas={}, hechizo={}",
-                settings.paralizado, settings.invisible, settings.oculto, settings.npc_ai_ms,
-                settings.golpe, settings.flechas, settings.lanzar_hechizo
+                settings.paralizado,
+                settings.invisible,
+                settings.oculto,
+                settings.npc_ai_ms,
+                settings.golpe,
+                settings.flechas,
+                settings.lanzar_hechizo
             );
             settings
         }

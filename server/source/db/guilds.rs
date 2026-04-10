@@ -2,8 +2,8 @@
 //
 // Replaces data/guilds.rs (INI file I/O).
 
-use std::collections::HashMap;
 use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::HashMap;
 
 pub const MAX_GUILDS: i32 = 1000;
 pub const MAX_CODEX_LINES: usize = 8;
@@ -97,14 +97,12 @@ pub struct GuildBankSlot {
 
 /// Internal DB ID for a guild.
 async fn get_guild_db_id(pool: &PgPool, guild_number: i32) -> Option<i32> {
-    sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE guild_number = $1 AND NOT dissolved"
-    )
-    .bind(guild_number)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
+    sqlx::query_scalar::<_, i32>("SELECT id FROM guilds WHERE guild_number = $1 AND NOT dissolved")
+        .bind(guild_number)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
 }
 
 /// Get total number of guilds.
@@ -124,7 +122,7 @@ pub async fn load_guild(pool: &PgPool, guild_num: i32) -> Option<GuildInfo> {
                 leader, sub_lider1, sub_lider2, url, description, news,
                 codex, nivel_clan, puntos_clan, cvc_wins, cvc_losses,
                 castle_sieges, reputation, elecciones_abiertas
-         FROM guilds WHERE guild_number = $1 AND NOT dissolved"
+         FROM guilds WHERE guild_number = $1 AND NOT dissolved",
     )
     .bind(guild_num)
     .fetch_optional(pool)
@@ -159,7 +157,7 @@ pub async fn load_guild(pool: &PgPool, guild_num: i32) -> Option<GuildInfo> {
 /// Find guild number by name.
 pub async fn find_guild_by_name(pool: &PgPool, name: &str) -> Option<i32> {
     sqlx::query_scalar::<_, i32>(
-        "SELECT guild_number FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
+        "SELECT guild_number FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
     )
     .bind(name)
     .fetch_optional(pool)
@@ -171,14 +169,18 @@ pub async fn find_guild_by_name(pool: &PgPool, name: &str) -> Option<i32> {
 /// Load guild members.
 pub async fn load_members(pool: &PgPool, guild_name: &str) -> Vec<String> {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return Vec::new(),
     };
 
     sqlx::query_scalar::<_, String>(
-        "SELECT char_name FROM guild_members WHERE guild_id = $1 ORDER BY char_name"
+        "SELECT char_name FROM guild_members WHERE guild_id = $1 ORDER BY char_name",
     )
     .bind(db_id)
     .fetch_all(pool)
@@ -189,21 +191,26 @@ pub async fn load_members(pool: &PgPool, guild_name: &str) -> Vec<String> {
 /// Load guild applicants.
 pub async fn load_applicants(pool: &PgPool, guild_name: &str) -> Vec<GuildApplicant> {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return Vec::new(),
     };
 
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT char_name, detail FROM guild_applicants WHERE guild_id = $1"
-    )
-    .bind(db_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT char_name, detail FROM guild_applicants WHERE guild_id = $1")
+            .bind(db_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
 
-    rows.into_iter().map(|(name, detail)| GuildApplicant { name, detail }).collect()
+    rows.into_iter()
+        .map(|(name, detail)| GuildApplicant { name, detail })
+        .collect()
 }
 
 /// Save guild info.
@@ -215,17 +222,27 @@ pub async fn save_guild(pool: &PgPool, guild: &GuildInfo) {
             description = $11, news = $12, codex = $13,
             nivel_clan = $14, puntos_clan = $15, cvc_wins = $16, cvc_losses = $17,
             castle_sieges = $18, reputation = $19, elecciones_abiertas = $20
-         WHERE guild_number = $1"
+         WHERE guild_number = $1",
     )
     .bind(guild.guild_number)
-    .bind(&guild.name).bind(&guild.founder).bind(&guild.date)
-    .bind(guild.alignment).bind(guild.antifaccion)
-    .bind(&guild.leader).bind(&guild.sub_lider1).bind(&guild.sub_lider2)
-    .bind(&guild.url).bind(&guild.desc).bind(&guild.news)
+    .bind(&guild.name)
+    .bind(&guild.founder)
+    .bind(&guild.date)
+    .bind(guild.alignment)
+    .bind(guild.antifaccion)
+    .bind(&guild.leader)
+    .bind(&guild.sub_lider1)
+    .bind(&guild.sub_lider2)
+    .bind(&guild.url)
+    .bind(&guild.desc)
+    .bind(&guild.news)
     .bind(&guild.codex)
-    .bind(guild.nivel_clan).bind(guild.puntos_clan)
-    .bind(guild.cvc_wins).bind(guild.cvc_losses)
-    .bind(guild.castle_sieges).bind(guild.reputation)
+    .bind(guild.nivel_clan)
+    .bind(guild.puntos_clan)
+    .bind(guild.cvc_wins)
+    .bind(guild.cvc_losses)
+    .bind(guild.castle_sieges)
+    .bind(guild.reputation)
     .bind(guild.elecciones_abiertas)
     .execute(pool)
     .await
@@ -261,15 +278,22 @@ async fn save_members_tx(
 /// Save members list (replace all).
 pub async fn save_members(pool: &PgPool, guild_name: &str, members: &[String]) {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return,
     };
 
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
-        Err(e) => { tracing::error!("Guild DB error: {e}"); return; }
+        Err(e) => {
+            tracing::error!("Guild DB error: {e}");
+            return;
+        }
     };
 
     if let Err(e) = save_members_tx(&mut tx, db_id, members).await {
@@ -285,18 +309,24 @@ pub async fn save_members(pool: &PgPool, guild_name: &str, members: &[String]) {
 /// Add member.
 pub async fn add_member(pool: &PgPool, guild_name: &str, char_name: &str) {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return,
     };
 
     if let Err(e) = sqlx::query(
         "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)
-         ON CONFLICT DO NOTHING"
+         ON CONFLICT DO NOTHING",
     )
-    .bind(db_id).bind(char_name)
-    .execute(pool).await
+    .bind(db_id)
+    .bind(char_name)
+    .execute(pool)
+    .await
     {
         tracing::error!("Guild DB error: {e}");
     }
@@ -305,17 +335,23 @@ pub async fn add_member(pool: &PgPool, guild_name: &str, char_name: &str) {
 /// Remove member.
 pub async fn remove_member(pool: &PgPool, guild_name: &str, char_name: &str) {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return,
     };
 
     if let Err(e) = sqlx::query(
-        "DELETE FROM guild_members WHERE guild_id = $1 AND UPPER(char_name) = UPPER($2)"
+        "DELETE FROM guild_members WHERE guild_id = $1 AND UPPER(char_name) = UPPER($2)",
     )
-    .bind(db_id).bind(char_name)
-    .execute(pool).await
+    .bind(db_id)
+    .bind(char_name)
+    .execute(pool)
+    .await
     {
         tracing::error!("Guild DB error: {e}");
     }
@@ -348,15 +384,22 @@ async fn save_applicants_tx(
 /// Save applicants (replace all).
 pub async fn save_applicants(pool: &PgPool, guild_name: &str, applicants: &[GuildApplicant]) {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return,
     };
 
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
-        Err(e) => { tracing::error!("Guild DB error: {e}"); return; }
+        Err(e) => {
+            tracing::error!("Guild DB error: {e}");
+            return;
+        }
     };
 
     if let Err(e) = save_applicants_tx(&mut tx, db_id, applicants).await {
@@ -372,19 +415,22 @@ pub async fn save_applicants(pool: &PgPool, guild_name: &str, applicants: &[Guil
 /// Add applicant.
 pub async fn add_applicant(pool: &PgPool, guild_name: &str, char_name: &str, detail: &str) -> bool {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return false,
     };
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM guild_applicants WHERE guild_id = $1"
-    )
-    .bind(db_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM guild_applicants WHERE guild_id = $1")
+            .bind(db_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
 
     if count >= MAX_ASPIRANTES as i64 {
         return false;
@@ -392,9 +438,11 @@ pub async fn add_applicant(pool: &PgPool, guild_name: &str, char_name: &str, det
 
     sqlx::query(
         "INSERT INTO guild_applicants (guild_id, char_name, detail) VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING"
+         ON CONFLICT DO NOTHING",
     )
-    .bind(db_id).bind(char_name).bind(detail)
+    .bind(db_id)
+    .bind(char_name)
+    .bind(detail)
     .execute(pool)
     .await
     .is_ok()
@@ -403,17 +451,23 @@ pub async fn add_applicant(pool: &PgPool, guild_name: &str, char_name: &str, det
 /// Remove applicant.
 pub async fn remove_applicant(pool: &PgPool, guild_name: &str, char_name: &str) {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return,
     };
 
     if let Err(e) = sqlx::query(
-        "DELETE FROM guild_applicants WHERE guild_id = $1 AND UPPER(char_name) = UPPER($2)"
+        "DELETE FROM guild_applicants WHERE guild_id = $1 AND UPPER(char_name) = UPPER($2)",
     )
-    .bind(db_id).bind(char_name)
-    .execute(pool).await
+    .bind(db_id)
+    .bind(char_name)
+    .execute(pool)
+    .await
     {
         tracing::error!("Guild DB error: {e}");
     }
@@ -422,7 +476,7 @@ pub async fn remove_applicant(pool: &PgPool, guild_name: &str, char_name: &str) 
 /// Load guild bank gold.
 pub async fn load_bank_gold(pool: &PgPool, guild_name: &str) -> i64 {
     sqlx::query_scalar::<_, i64>(
-        "SELECT bank_gold FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
+        "SELECT bank_gold FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
     )
     .bind(guild_name)
     .fetch_optional(pool)
@@ -435,10 +489,12 @@ pub async fn load_bank_gold(pool: &PgPool, guild_name: &str) -> i64 {
 /// Save guild bank gold.
 pub async fn save_bank_gold(pool: &PgPool, guild_name: &str, gold: i64) {
     if let Err(e) = sqlx::query(
-        "UPDATE guilds SET bank_gold = $1 WHERE UPPER(name) = UPPER($2) AND NOT dissolved"
+        "UPDATE guilds SET bank_gold = $1 WHERE UPPER(name) = UPPER($2) AND NOT dissolved",
     )
-    .bind(gold).bind(guild_name)
-    .execute(pool).await
+    .bind(gold)
+    .bind(guild_name)
+    .execute(pool)
+    .await
     {
         tracing::error!("Guild DB error: {e}");
     }
@@ -447,15 +503,23 @@ pub async fn save_bank_gold(pool: &PgPool, guild_name: &str, gold: i64) {
 /// Load guild bank items.
 pub async fn load_bank_items(pool: &PgPool, guild_name: &str) -> Vec<GuildBankSlot> {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
-        _ => return (0..MAX_GUILD_BANK_SLOTS).map(|_| GuildBankSlot::default()).collect(),
+        _ => {
+            return (0..MAX_GUILD_BANK_SLOTS)
+                .map(|_| GuildBankSlot::default())
+                .collect();
+        }
     };
 
     let rows: Vec<(i16, i32, i32)> = sqlx::query_as(
         "SELECT slot, obj_index, amount FROM guild_bank_items
-         WHERE guild_id = $1 ORDER BY slot"
+         WHERE guild_id = $1 ORDER BY slot",
     )
     .bind(db_id)
     .fetch_all(pool)
@@ -506,15 +570,22 @@ async fn save_bank_items_tx(
 /// Save guild bank items.
 pub async fn save_bank_items(pool: &PgPool, guild_name: &str, items: &[GuildBankSlot]) {
     let db_id = match sqlx::query_scalar::<_, i32>(
-        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved"
-    ).bind(guild_name).fetch_optional(pool).await {
+        "SELECT id FROM guilds WHERE UPPER(name) = UPPER($1) AND NOT dissolved",
+    )
+    .bind(guild_name)
+    .fetch_optional(pool)
+    .await
+    {
         Ok(Some(id)) => id,
         _ => return,
     };
 
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
-        Err(e) => { tracing::error!("Guild DB error: {e}"); return; }
+        Err(e) => {
+            tracing::error!("Guild DB error: {e}");
+            return;
+        }
     };
 
     if let Err(e) = save_bank_items_tx(&mut tx, db_id, items).await {
@@ -537,11 +608,9 @@ async fn create_guild_tx(
     url: &str,
     codex: &[String],
 ) -> Result<i32, sqlx::Error> {
-    let max_num: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(guild_number), 0) FROM guilds"
-    )
-    .fetch_one(&mut **tx)
-    .await?;
+    let max_num: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(guild_number), 0) FROM guilds")
+        .fetch_one(&mut **tx)
+        .await?;
 
     let guild_num = (max_num + 1) as i32;
 
@@ -564,13 +633,11 @@ async fn create_guild_tx(
     .await?;
 
     // Add founder as first member — within the same transaction.
-    sqlx::query(
-        "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)",
-    )
-    .bind(db_id)
-    .bind(founder)
-    .execute(&mut **tx)
-    .await?;
+    sqlx::query("INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)")
+        .bind(db_id)
+        .bind(founder)
+        .execute(&mut **tx)
+        .await?;
 
     Ok(guild_num)
 }
@@ -587,7 +654,10 @@ pub async fn create_guild(
 ) -> i32 {
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,
-        Err(e) => { tracing::error!("Guild DB error: {e}"); return 0; }
+        Err(e) => {
+            tracing::error!("Guild DB error: {e}");
+            return 0;
+        }
     };
 
     match create_guild_tx(&mut tx, name, founder, alignment, desc, url, &codex).await {
@@ -608,10 +678,11 @@ pub async fn create_guild(
 /// Dissolve a guild.
 pub async fn dissolve_guild(pool: &PgPool, guild_num: i32) {
     if let Err(e) = sqlx::query(
-        "UPDATE guilds SET dissolved = TRUE, leader = '', founder = '' WHERE guild_number = $1"
+        "UPDATE guilds SET dissolved = TRUE, leader = '', founder = '' WHERE guild_number = $1",
     )
     .bind(guild_num)
-    .execute(pool).await
+    .execute(pool)
+    .await
     {
         tracing::error!("Guild DB error: {e}");
     }
@@ -619,12 +690,11 @@ pub async fn dissolve_guild(pool: &PgPool, guild_num: i32) {
 
 /// Load all non-peace guild relations into a HashMap keyed by normalized (smaller, larger) pair.
 pub async fn load_all_guild_relations(pool: &PgPool) -> HashMap<(i32, i32), i32> {
-    let rows: Vec<(i32, i32, i32)> = sqlx::query_as(
-        "SELECT guild_a, guild_b, relation FROM guild_relations"
-    )
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let rows: Vec<(i32, i32, i32)> =
+        sqlx::query_as("SELECT guild_a, guild_b, relation FROM guild_relations")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
 
     let mut map = HashMap::new();
     for (a, b, rel) in rows {
@@ -636,22 +706,30 @@ pub async fn load_all_guild_relations(pool: &PgPool) -> HashMap<(i32, i32), i32>
 
 /// Persist a guild relation. Deletes the row when relation is peace (0 = default).
 pub async fn save_guild_relation(pool: &PgPool, guild_a: i32, guild_b: i32, relation: i32) {
-    let (a, b) = if guild_a <= guild_b { (guild_a, guild_b) } else { (guild_b, guild_a) };
+    let (a, b) = if guild_a <= guild_b {
+        (guild_a, guild_b)
+    } else {
+        (guild_b, guild_a)
+    };
     if relation == 0 {
-        if let Err(e) = sqlx::query(
-            "DELETE FROM guild_relations WHERE guild_a = $1 AND guild_b = $2"
-        )
-        .bind(a).bind(b)
-        .execute(pool).await
+        if let Err(e) =
+            sqlx::query("DELETE FROM guild_relations WHERE guild_a = $1 AND guild_b = $2")
+                .bind(a)
+                .bind(b)
+                .execute(pool)
+                .await
         {
             tracing::error!("Guild relation DB error: {e}");
         }
     } else if let Err(e) = sqlx::query(
         "INSERT INTO guild_relations (guild_a, guild_b, relation) VALUES ($1, $2, $3)
-         ON CONFLICT (guild_a, guild_b) DO UPDATE SET relation = $3"
+         ON CONFLICT (guild_a, guild_b) DO UPDATE SET relation = $3",
     )
-    .bind(a).bind(b).bind(relation)
-    .execute(pool).await
+    .bind(a)
+    .bind(b)
+    .bind(relation)
+    .execute(pool)
+    .await
     {
         tracing::error!("Guild relation DB error: {e}");
     }
@@ -661,7 +739,7 @@ pub async fn save_guild_relation(pool: &PgPool, guild_a: i32, guild_b: i32, rela
 pub async fn list_guilds(pool: &PgPool) -> Vec<(i32, String, i32, i32)> {
     sqlx::query_as::<_, (i32, String, i32, i32)>(
         "SELECT guild_number, name, alignment, nivel_clan
-         FROM guilds WHERE NOT dissolved ORDER BY guild_number"
+         FROM guilds WHERE NOT dissolved ORDER BY guild_number",
     )
     .fetch_all(pool)
     .await

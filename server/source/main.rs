@@ -1,11 +1,11 @@
-mod net;
-mod protocol;
 mod config;
 mod data;
 mod db;
 mod game;
+mod net;
+mod protocol;
 
-use tracing::{debug, info, error};
+use tracing::{debug, error, info};
 
 use config::ServerConfig;
 use game::types::GameState;
@@ -28,7 +28,8 @@ async fn main() {
 
     // Determine base path (where server.ini and data folders are)
     // Accept optional CLI arg, default to ./server relative to CWD
-    let base_path = std::env::args().nth(1)
+    let base_path = std::env::args()
+        .nth(1)
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("./server"));
     let base_path = if base_path.is_relative() {
@@ -47,15 +48,27 @@ async fn main() {
             info!("  Port: {}", cfg.port);
             info!("  Max users: {}", cfg.max_users);
             info!("  Version: {}", cfg.version);
-            info!("  Start position: Map {} ({}, {})", cfg.start_map, cfg.start_x, cfg.start_y);
+            info!(
+                "  Start position: Map {} ({}, {})",
+                cfg.start_map, cfg.start_x, cfg.start_y
+            );
             info!("  EXP multiplier: {}x", cfg.exp_multiplier);
             info!("  Can create characters: {}", cfg.can_create_characters);
-            info!("  Multi-login: {}", if cfg.allow_multi_logins { "allowed" } else { "blocked" });
-            info!("  Security: max_pkt/s={}, ip_max_conn={}, ip_min_ms={}, flood_strikes={}",
+            info!(
+                "  Multi-login: {}",
+                if cfg.allow_multi_logins {
+                    "allowed"
+                } else {
+                    "blocked"
+                }
+            );
+            info!(
+                "  Security: max_pkt/s={}, ip_max_conn={}, ip_min_ms={}, flood_strikes={}",
                 cfg.max_packets_per_second.unwrap_or(60),
                 cfg.ip_max_connections.unwrap_or(10),
                 cfg.ip_min_interval_ms.unwrap_or(500),
-                cfg.flood_strike_limit.unwrap_or(3));
+                cfg.flood_strike_limit.unwrap_or(3)
+            );
             cfg
         }
         Err(e) => {
@@ -107,18 +120,17 @@ async fn main() {
     // Spawn NPCs from map data + zone definitions
     let npc_count = state.spawn_map_npcs();
     let zone_npc_count = state.spawn_zone_npcs();
-    info!("Spawned {} NPCs from maps + {} from zones", npc_count, zone_npc_count);
+    info!(
+        "Spawned {} NPCs from maps + {} from zones",
+        npc_count, zone_npc_count
+    );
 
     // Load static map objects (doors, items from .inf files) into world grid
     let obj_count = state.load_map_objects();
     info!("Loaded {} static map objects (doors, items)", obj_count);
 
     // Start TCP server
-    let mut events = match net::TcpServer::start(
-        "0.0.0.0",
-        config.port,
-        config.max_users,
-    ).await {
+    let mut events = match net::TcpServer::start("0.0.0.0", config.port, config.max_users).await {
         Ok(rx) => rx,
         Err(e) => {
             error!("Failed to start TCP server: {}", e);
@@ -133,8 +145,9 @@ async fn main() {
         let ctrl_c = tokio::signal::ctrl_c();
         #[cfg(unix)]
         {
-            let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("Failed to register SIGTERM handler");
+            let mut sigterm =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("Failed to register SIGTERM handler");
             tokio::select! {
                 _ = ctrl_c => {},
                 _ = sigterm.recv() => {},
@@ -152,7 +165,8 @@ async fn main() {
     // Load NPC AI interval from Intervalos.ini (needed before GameState)
     let ai_interval_ms = {
         let ini_path = base_path.join("dat").join("Intervalos.ini");
-        crate::config::IniFile::load(&ini_path).ok()
+        crate::config::IniFile::load(&ini_path)
+            .ok()
             .and_then(|ini| ini.get("INTERVALOS", "IntervaloNpcAI"))
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(1300)

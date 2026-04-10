@@ -1,14 +1,14 @@
 //! Event system handlers — Pretoriano, meditation, /REGRESAR, pathfinding.
 
-use tracing::info;
-use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, privilege_level};
-use crate::protocol::{font_index, binary_packets};
 use super::common::*;
 use super::world;
+use crate::game::types::{GameState, SendTarget, privilege_level};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
+use tracing::info;
 
 // Functions from parent module (mod.rs)
-use super::{warp_user, move_npc};
+use super::{move_npc, warp_user};
 
 /// /REGRESAR — Return to home city (die and respawn at home).
 pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: ConnectionId) {
@@ -22,7 +22,11 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
         return;
     }
     if level < 10 {
-        state.send_console(conn_id, "Debes ser nivel 10 o superior para usar /REGRESAR.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Debes ser nivel 10 o superior para usar /REGRESAR.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -42,7 +46,14 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
         if let Some(user) = state.users.get(&conn_id) {
             let cc = user.build_cc_binary();
             let (m, ux, uy) = (user.pos_map, user.pos_x, user.pos_y);
-            state.send_data_bytes(SendTarget::ToArea { map: m, x: ux, y: uy }, &cc);
+            state.send_data_bytes(
+                SendTarget::ToArea {
+                    map: m,
+                    x: ux,
+                    y: uy,
+                },
+                &cc,
+            );
         }
     }
 
@@ -79,7 +90,11 @@ pub(super) async fn handle_slash_descansar(state: &mut GameState, conn_id: Conne
         state.send_bytes(conn_id, &binary_packets::write_rest_ok());
 
         if !resting {
-            state.send_console(conn_id, "Te acomodás junto a la fogata y comienzas a descansar.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "Te acomodás junto a la fogata y comienzas a descansar.",
+                font_index::INFO,
+            );
         } else {
             state.send_console(conn_id, "Te levantás.", font_index::INFO);
         }
@@ -96,7 +111,11 @@ pub(super) async fn handle_slash_descansar(state: &mut GameState, conn_id: Conne
                 user.resting = false;
             }
         } else {
-            state.send_console(conn_id, "No hay ninguna fogata junto a la cual descansar.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No hay ninguna fogata junto a la cual descansar.",
+                font_index::INFO,
+            );
         }
     }
 }
@@ -107,7 +126,12 @@ fn hay_obj_area(state: &GameState, map: i32, cx: i32, cy: i32, obj_index: i16) -
     const RANGE_X: i32 = 8;
     const RANGE_Y: i32 = 6;
 
-    let game_map = match state.game_data.maps.get(map as usize).and_then(|m| m.as_ref()) {
+    let game_map = match state
+        .game_data
+        .maps
+        .get(map as usize)
+        .and_then(|m| m.as_ref())
+    {
         Some(m) => m,
         None => return false,
     };
@@ -160,50 +184,76 @@ const PF_MAX_STEPS: usize = 30;
 /// BFS pathfinding — find path from (sx,sy) to (tx,ty) on the given map.
 /// Returns a Vec of (x,y) positions from start to target (excluding start).
 /// Uses 4-directional adjacency on a 100x100 grid.
-pub(super) fn pathfind_bfs(state: &GameState, map: i32, sx: i32, sy: i32, tx: i32, ty: i32) -> Vec<(i32, i32)> {
-    if sx == tx && sy == ty { return Vec::new(); }
+pub(super) fn pathfind_bfs(
+    state: &GameState,
+    map: i32,
+    sx: i32,
+    sy: i32,
+    tx: i32,
+    ty: i32,
+) -> Vec<(i32, i32)> {
+    if sx == tx && sy == ty {
+        return Vec::new();
+    }
     let (grid_w, grid_h) = state.grid_dimensions(map);
-    if sx < 1 || sx > grid_w || sy < 1 || sy > grid_h { return Vec::new(); }
-    if tx < 1 || tx > grid_w || ty < 1 || ty > grid_h { return Vec::new(); }
+    if sx < 1 || sx > grid_w || sy < 1 || sy > grid_h {
+        return Vec::new();
+    }
+    if tx < 1 || tx > grid_w || ty < 1 || ty > grid_h {
+        return Vec::new();
+    }
 
     let mut visited = vec![vec![0u8; (grid_w + 2) as usize]; (grid_h + 2) as usize];
-    let mut queue: std::collections::VecDeque<(i32, i32, usize)> = std::collections::VecDeque::new();
+    let mut queue: std::collections::VecDeque<(i32, i32, usize)> =
+        std::collections::VecDeque::new();
 
     visited[sy as usize][sx as usize] = 5;
     queue.push_back((sx, sy, 0));
 
-    let dirs: [(i32, i32, u8); 4] = [
-        (0, -1, 1),
-        (1, 0, 2),
-        (0, 1, 3),
-        (-1, 0, 4),
-    ];
+    let dirs: [(i32, i32, u8); 4] = [(0, -1, 1), (1, 0, 2), (0, 1, 3), (-1, 0, 4)];
 
     let mut found = false;
 
     while let Some((cx, cy, depth)) = queue.pop_front() {
-        if depth >= PF_MAX_STEPS { continue; }
-        if cx == tx && cy == ty { found = true; break; }
+        if depth >= PF_MAX_STEPS {
+            continue;
+        }
+        if cx == tx && cy == ty {
+            found = true;
+            break;
+        }
 
         for &(dx, dy, dir_code) in &dirs {
             let nx = cx + dx;
             let ny = cy + dy;
-            if nx < 1 || nx > grid_w || ny < 1 || ny > grid_h { continue; }
-            if visited[ny as usize][nx as usize] != 0 { continue; }
+            if nx < 1 || nx > grid_w || ny < 1 || ny > grid_h {
+                continue;
+            }
+            if visited[ny as usize][nx as usize] != 0 {
+                continue;
+            }
 
-            if state.is_tile_blocked(map, nx, ny) { continue; }
-            let has_npc = state.world.grid(map)
+            if state.is_tile_blocked(map, nx, ny) {
+                continue;
+            }
+            let has_npc = state
+                .world
+                .grid(map)
                 .and_then(|g| g.tile(nx, ny))
                 .map(|t| t.npc_index > 0)
                 .unwrap_or(false);
-            if has_npc && !(nx == tx && ny == ty) { continue; }
+            if has_npc && !(nx == tx && ny == ty) {
+                continue;
+            }
 
             visited[ny as usize][nx as usize] = dir_code;
             queue.push_back((nx, ny, depth + 1));
         }
     }
 
-    if !found { return Vec::new(); }
+    if !found {
+        return Vec::new();
+    }
 
     let mut path = Vec::new();
     let mut cx = tx;
@@ -219,7 +269,9 @@ pub(super) fn pathfind_bfs(state: &GameState, map: i32, sx: i32, sy: i32, tx: i3
             4 => cx += 1,
             _ => break,
         }
-        if path.len() > PF_MAX_STEPS { break; }
+        if path.len() > PF_MAX_STEPS {
+            break;
+        }
     }
 
     path.reverse();
@@ -230,22 +282,33 @@ pub(super) fn pathfind_bfs(state: &GameState, map: i32, sx: i32, sy: i32, tx: i3
 pub(super) fn heading_from_step(cx: i32, cy: i32, nx: i32, ny: i32) -> i32 {
     let dx = nx - cx;
     let dy = ny - cy;
-    if dy < 0 { world::HEADING_NORTH }
-    else if dy > 0 { world::HEADING_SOUTH }
-    else if dx > 0 { world::HEADING_EAST }
-    else if dx < 0 { world::HEADING_WEST }
-    else { world::HEADING_SOUTH }
+    if dy < 0 {
+        world::HEADING_NORTH
+    } else if dy > 0 {
+        world::HEADING_SOUTH
+    } else if dx > 0 {
+        world::HEADING_EAST
+    } else if dx < 0 {
+        world::HEADING_WEST
+    } else {
+        world::HEADING_SOUTH
+    }
 }
 
 /// Execute one pathfinding step for an NPC — moves to next step in path.
 /// Returns (moved, optional ghost push data).
-pub(super) fn npc_pathfind_step(state: &mut GameState, npc_idx: usize) -> (bool, Option<super::npcs::GhostPush>) {
+pub(super) fn npc_pathfind_step(
+    state: &mut GameState,
+    npc_idx: usize,
+) -> (bool, Option<super::npcs::GhostPush>) {
     let (step, path_len, _map, x, y) = match state.get_npc(npc_idx) {
         Some(n) => (n.pf_step, n.pf_path.len(), n.map, n.x, n.y),
         None => return (false, None),
     };
 
-    if step >= path_len { return (false, None); }
+    if step >= path_len {
+        return (false, None);
+    }
 
     let (nx, ny) = match state.get_npc(npc_idx) {
         Some(n) => n.pf_path[step],
@@ -283,7 +346,13 @@ const PRETORIANO_REY: usize = 904;
 const MAX_PRETORIANOS_CLAN: usize = 8;
 
 /// Create a praetorian clan at a given location.
-pub(super) async fn crear_clan_pretoriano(state: &mut GameState, map: i32, x: i32, y: i32, faccion: i32) {
+pub(super) async fn crear_clan_pretoriano(
+    state: &mut GameState,
+    map: i32,
+    x: i32,
+    y: i32,
+    faccion: i32,
+) {
     limpiar_clan_pretoriano(state).await;
 
     state.pretoriano_faccion = faccion;
@@ -291,17 +360,25 @@ pub(super) async fn crear_clan_pretoriano(state: &mut GameState, map: i32, x: i3
     state.pretoriano_alcoba = 0;
 
     let positions = [
-        (x - 2, y - 2), (x + 2, y - 2),
-        (x - 2, y + 2), (x + 2, y + 2),
-        (x - 1, y), (x + 1, y),
-        (x, y - 1), (x, y + 1),
+        (x - 2, y - 2),
+        (x + 2, y - 2),
+        (x - 2, y + 2),
+        (x + 2, y + 2),
+        (x - 1, y),
+        (x + 1, y),
+        (x, y - 1),
+        (x, y + 1),
     ];
 
     let npc_types = [
-        PRETORIANO_GUERRERO, PRETORIANO_GUERRERO,
-        PRETORIANO_CAZADOR, PRETORIANO_CAZADOR,
-        PRETORIANO_MAGO, PRETORIANO_MAGO,
-        PRETORIANO_CLERIGO, PRETORIANO_REY,
+        PRETORIANO_GUERRERO,
+        PRETORIANO_GUERRERO,
+        PRETORIANO_CAZADOR,
+        PRETORIANO_CAZADOR,
+        PRETORIANO_MAGO,
+        PRETORIANO_MAGO,
+        PRETORIANO_CLERIGO,
+        PRETORIANO_REY,
     ];
 
     for i in 0..MAX_PRETORIANOS_CLAN {
@@ -319,7 +396,10 @@ pub(super) async fn crear_clan_pretoriano(state: &mut GameState, map: i32, x: i3
         }
     }
 
-    info!("[PRET] Created praetorian clan on map {} at ({},{}) faction {}", map, x, y, faccion);
+    info!(
+        "[PRET] Created praetorian clan on map {} at ({},{}) faction {}",
+        map, x, y, faccion
+    );
 }
 
 /// Remove all praetorian NPCs.
@@ -344,12 +424,15 @@ pub(super) fn es_pretoriano(npc_number: usize) -> bool {
 
 /// Handle praetorian death — check if clan is wiped.
 pub fn pretoriano_check_death(state: &mut GameState, npc_idx: usize) {
-    if !state.pretoriano_activo { return; }
+    if !state.pretoriano_activo {
+        return;
+    }
 
     state.pretoriano_clan.retain(|&idx| idx != npc_idx);
 
     let rey_alive = state.pretoriano_clan.iter().any(|&idx| {
-        state.get_npc(idx)
+        state
+            .get_npc(idx)
             .filter(|n| n.is_alive() && n.npc_number == PRETORIANO_REY)
             .is_some()
     });
@@ -358,9 +441,15 @@ pub fn pretoriano_check_death(state: &mut GameState, npc_idx: usize) {
         state.pretoriano_alcoba += 1;
         if state.pretoriano_alcoba >= 4 {
             state.pretoriano_activo = false;
-            info!("[PRET] Fortress conquered! Faction {}", state.pretoriano_faccion);
+            info!(
+                "[PRET] Fortress conquered! Faction {}",
+                state.pretoriano_faccion
+            );
         } else {
-            info!("[PRET] Alcoba {} cleared, advancing", state.pretoriano_alcoba);
+            info!(
+                "[PRET] Alcoba {} cleared, advancing",
+                state.pretoriano_alcoba
+            );
         }
     }
 }

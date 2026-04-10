@@ -53,8 +53,8 @@ pub struct ZoneData {
     pub sin_invocar: bool,
     pub solo_clanes: bool,
     pub solo_faccion: bool,
-    pub faccion: i32,       // 0=any, 1=real, 2=caos
-    pub combat_zone: bool,  // ring: items don't drop on death
+    pub faccion: i32,      // 0=any, 1=real, 2=caos
+    pub combat_zone: bool, // ring: items don't drop on death
 
     // Level restriction (0 = no limit)
     pub min_level: i32,
@@ -82,7 +82,10 @@ impl Default for ZoneData {
             id: 0,
             name: String::new(),
             zone_type: ZoneType::Neutral,
-            x1: 0, y1: 0, x2: 0, y2: 0,
+            x1: 0,
+            y1: 0,
+            x2: 0,
+            y2: 0,
             segura: false,
             newbie: false,
             sin_magia: false,
@@ -101,9 +104,13 @@ impl Default for ZoneData {
             lluvia: false,
             nieve: false,
             niebla: false,
-            ambient_r: 0, ambient_g: 0, ambient_b: 0,
+            ambient_r: 0,
+            ambient_g: 0,
+            ambient_b: 0,
             terreno: String::new(),
-            salida_map: 0, salida_x: 0, salida_y: 0,
+            salida_map: 0,
+            salida_x: 0,
+            salida_y: 0,
         }
     }
 }
@@ -130,7 +137,7 @@ pub struct NpcSpawnData {
     pub npc_index: i32,
     pub cantidad: i32,
     pub spawn_mode: SpawnMode,
-    pub spawn_x: i32,  // only for Fixed mode
+    pub spawn_x: i32, // only for Fixed mode
     pub spawn_y: i32,
     pub respawn_time: i32, // seconds
 }
@@ -179,11 +186,14 @@ pub fn load_zone_file(base_dir: &str, map_num: i32) -> Option<MapZones> {
                 result.spawns.push(current_spawn.clone());
             }
 
-            current_section = line[1..line.len()-1].to_uppercase();
+            current_section = line[1..line.len() - 1].to_uppercase();
 
             if current_section.starts_with("ZONE") {
                 zone_count += 1;
-                current_zone = ZoneData { id: zone_count, ..Default::default() };
+                current_zone = ZoneData {
+                    id: zone_count,
+                    ..Default::default()
+                };
             } else if current_section.starts_with("SPAWN") {
                 current_spawn = NpcSpawnData::default();
             }
@@ -196,7 +206,7 @@ pub fn load_zone_file(base_dir: &str, map_num: i32) -> Option<MapZones> {
             None => continue,
         };
         let key = line[..eq].trim().to_uppercase();
-        let val = line[eq+1..].trim();
+        let val = line[eq + 1..].trim();
 
         if current_section.starts_with("ZONE") {
             parse_zone_field(&mut current_zone, &key, val);
@@ -212,7 +222,12 @@ pub fn load_zone_file(base_dir: &str, map_num: i32) -> Option<MapZones> {
         result.spawns.push(current_spawn);
     }
 
-    tracing::info!("[ZONES] Map {} loaded: {} zones, {} spawns", map_num, result.zones.len(), result.spawns.len());
+    tracing::info!(
+        "[ZONES] Map {} loaded: {} zones, {} spawns",
+        map_num,
+        result.zones.len(),
+        result.spawns.len()
+    );
     Some(result)
 }
 
@@ -258,7 +273,13 @@ fn parse_spawn_field(spawn: &mut NpcSpawnData, key: &str, val: &str) {
         "ZONE" => spawn.zone_id = val.parse().unwrap_or(0),
         "NPCINDEX" => spawn.npc_index = val.parse().unwrap_or(0),
         "CANTIDAD" => spawn.cantidad = val.parse().unwrap_or(1),
-        "SPAWNMODE" => spawn.spawn_mode = if val == "1" { SpawnMode::Random } else { SpawnMode::Fixed },
+        "SPAWNMODE" => {
+            spawn.spawn_mode = if val == "1" {
+                SpawnMode::Random
+            } else {
+                SpawnMode::Fixed
+            }
+        }
         "SPAWNX" => spawn.spawn_x = val.parse().unwrap_or(0),
         "SPAWNY" => spawn.spawn_y = val.parse().unwrap_or(0),
         "RESPAWNTIME" => spawn.respawn_time = val.parse().unwrap_or(30),
@@ -279,7 +300,10 @@ pub fn save_zone_file(base_dir: &str, map_num: i32, zones: &MapZones) -> Result<
         content.push_str(&format!("[ZONE{}]\n", i + 1));
         content.push_str(&format!("Name={}\n", zone.name));
         content.push_str(&format!("Type={}\n", zone.zone_type as i32));
-        content.push_str(&format!("X1={}\nY1={}\nX2={}\nY2={}\n", zone.x1, zone.y1, zone.x2, zone.y2));
+        content.push_str(&format!(
+            "X1={}\nY1={}\nX2={}\nY2={}\n",
+            zone.x1, zone.y1, zone.x2, zone.y2
+        ));
         content.push_str(&format!("Segura={}\n", zone.segura as i32));
         content.push_str(&format!("Newbie={}\n", zone.newbie as i32));
         content.push_str(&format!("SinMagia={}\n", zone.sin_magia as i32));
@@ -298,9 +322,15 @@ pub fn save_zone_file(base_dir: &str, map_num: i32, zones: &MapZones) -> Result<
         content.push_str(&format!("Lluvia={}\n", zone.lluvia as i32));
         content.push_str(&format!("Nieve={}\n", zone.nieve as i32));
         content.push_str(&format!("Niebla={}\n", zone.niebla as i32));
-        content.push_str(&format!("AmbientR={}\nAmbientG={}\nAmbientB={}\n", zone.ambient_r, zone.ambient_g, zone.ambient_b));
+        content.push_str(&format!(
+            "AmbientR={}\nAmbientG={}\nAmbientB={}\n",
+            zone.ambient_r, zone.ambient_g, zone.ambient_b
+        ));
         content.push_str(&format!("Terreno={}\n", zone.terreno));
-        content.push_str(&format!("SalidaMap={}\nSalidaX={}\nSalidaY={}\n", zone.salida_map, zone.salida_x, zone.salida_y));
+        content.push_str(&format!(
+            "SalidaMap={}\nSalidaX={}\nSalidaY={}\n",
+            zone.salida_map, zone.salida_x, zone.salida_y
+        ));
         content.push('\n');
     }
 
@@ -311,7 +341,10 @@ pub fn save_zone_file(base_dir: &str, map_num: i32, zones: &MapZones) -> Result<
         content.push_str(&format!("Cantidad={}\n", spawn.cantidad));
         content.push_str(&format!("SpawnMode={}\n", spawn.spawn_mode as i32));
         if spawn.spawn_mode == SpawnMode::Fixed {
-            content.push_str(&format!("SpawnX={}\nSpawnY={}\n", spawn.spawn_x, spawn.spawn_y));
+            content.push_str(&format!(
+                "SpawnX={}\nSpawnY={}\n",
+                spawn.spawn_x, spawn.spawn_y
+            ));
         }
         content.push_str(&format!("RespawnTime={}\n", spawn.respawn_time));
         content.push('\n');

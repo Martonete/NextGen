@@ -1,8 +1,8 @@
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, info, error};
+use tracing::{debug, error, info};
 
 use super::connection::{self, ConnectionId, ConnectionWriter};
 
@@ -68,9 +68,8 @@ impl TcpServer {
 
                         debug!("New connection #{} from {}", conn_id, addr);
 
-                        let (mut reader, writer) = connection::split_connection(
-                            conn_id, stream, addr,
-                        );
+                        let (mut reader, writer) =
+                            connection::split_connection(conn_id, stream, addr);
 
                         let event_tx = tx.clone();
 
@@ -109,9 +108,8 @@ impl TcpServer {
                                     None => {
                                         debug!("Connection #{} disconnected", conn_id);
                                         active_clone.fetch_sub(1, Ordering::Relaxed);
-                                        let _ = read_tx
-                                            .send(ServerEvent::Disconnected(conn_id))
-                                            .await;
+                                        let _ =
+                                            read_tx.send(ServerEvent::Disconnected(conn_id)).await;
                                         return;
                                     }
                                 }

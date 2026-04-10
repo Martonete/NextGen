@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 /// Unique identifier for a client connection (maps to VB6 ConnID).
 pub type ConnectionId = u32;
@@ -49,15 +49,19 @@ impl ConnectionReader {
         let read_result = tokio::time::timeout(READ_TIMEOUT, self.reader.read(&mut buf)).await;
 
         let n = match read_result {
-            Ok(Ok(0)) => return None,           // Clean disconnect
-            Ok(Ok(n)) => n,                      // Got data
+            Ok(Ok(0)) => return None, // Clean disconnect
+            Ok(Ok(n)) => n,           // Got data
             Ok(Err(e)) => {
                 tracing::debug!("Read error on connection {}: {}", self.id, e);
                 return None;
             }
             Err(_) => {
                 // Timeout — no data received within READ_TIMEOUT
-                tracing::debug!("Connection #{} idle timeout ({}s)", self.id, READ_TIMEOUT.as_secs());
+                tracing::debug!(
+                    "Connection #{} idle timeout ({}s)",
+                    self.id,
+                    READ_TIMEOUT.as_secs()
+                );
                 return None;
             }
         };
@@ -69,7 +73,9 @@ impl ConnectionReader {
         if self.buffer.len() > MAX_RECV_BUFFER {
             tracing::warn!(
                 "Connection #{} buffer overflow ({} bytes > {}), dropping",
-                self.id, self.buffer.len(), MAX_RECV_BUFFER
+                self.id,
+                self.buffer.len(),
+                MAX_RECV_BUFFER
             );
             return None;
         }

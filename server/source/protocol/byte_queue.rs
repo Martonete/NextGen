@@ -11,7 +11,6 @@
 /// - Single:  4 bytes IEEE 754 (VB6 Single = f32)
 /// - Double:  8 bytes IEEE 754 (VB6 Double = f64)
 /// - String:  2-byte LE length prefix + N bytes ASCII
-
 use std::io;
 
 /// Error raised when not enough data is available to read.
@@ -43,10 +42,7 @@ impl ByteQueue {
 
     /// Create a ByteQueue wrapping existing data (no copy for read-only).
     pub fn wrap(data: Vec<u8>) -> Self {
-        Self {
-            data,
-            read_pos: 0,
-        }
+        Self { data, read_pos: 0 }
     }
 
     /// Number of bytes available to read.
@@ -127,10 +123,13 @@ impl ByteQueue {
     /// Encodes each Unicode char as its Latin-1 byte (codepoint & 0xFF).
     /// This matches the VB6/Windows-1252 encoding used by the client.
     pub fn write_ascii_string(&mut self, val: &str) {
-        let bytes: Vec<u8> = val.chars().map(|c| {
-            let cp = c as u32;
-            if cp <= 0xFF { cp as u8 } else { b'?' }
-        }).collect();
+        let bytes: Vec<u8> = val
+            .chars()
+            .map(|c| {
+                let cp = c as u32;
+                if cp <= 0xFF { cp as u8 } else { b'?' }
+            })
+            .collect();
         let len = bytes.len().min(u16::MAX as usize);
         self.write_integer(len as i16);
         self.data.extend_from_slice(&bytes[..len]);
@@ -138,16 +137,20 @@ impl ByteQueue {
 
     /// Write a fixed-length Latin-1 string (no length prefix, padded/truncated).
     pub fn write_ascii_string_fixed(&mut self, val: &str, len: usize) {
-        let bytes: Vec<u8> = val.chars().map(|c| {
-            let cp = c as u32;
-            if cp <= 0xFF { cp as u8 } else { b'?' }
-        }).collect();
+        let bytes: Vec<u8> = val
+            .chars()
+            .map(|c| {
+                let cp = c as u32;
+                if cp <= 0xFF { cp as u8 } else { b'?' }
+            })
+            .collect();
         if bytes.len() >= len {
             self.data.extend_from_slice(&bytes[..len]);
         } else {
             self.data.extend_from_slice(&bytes);
             // Pad with zeros
-            self.data.extend(std::iter::repeat(0u8).take(len - bytes.len()));
+            self.data
+                .extend(std::iter::repeat(0u8).take(len - bytes.len()));
         }
     }
 
@@ -156,7 +159,10 @@ impl ByteQueue {
     /// Read a single byte.
     pub fn read_byte(&mut self) -> io::Result<u8> {
         if self.available() < 1 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
         let val = self.data[self.read_pos];
         self.read_pos += 1;
@@ -171,12 +177,12 @@ impl ByteQueue {
     /// Read a 16-bit signed integer (little-endian).
     pub fn read_integer(&mut self) -> io::Result<i16> {
         if self.available() < 2 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
-        let val = i16::from_le_bytes([
-            self.data[self.read_pos],
-            self.data[self.read_pos + 1],
-        ]);
+        let val = i16::from_le_bytes([self.data[self.read_pos], self.data[self.read_pos + 1]]);
         self.read_pos += 2;
         Ok(val)
     }
@@ -184,7 +190,10 @@ impl ByteQueue {
     /// Read a 32-bit signed integer (little-endian).
     pub fn read_long(&mut self) -> io::Result<i32> {
         if self.available() < 4 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
         let val = i32::from_le_bytes([
             self.data[self.read_pos],
@@ -199,7 +208,10 @@ impl ByteQueue {
     /// Read a 32-bit float (IEEE 754 little-endian).
     pub fn read_single(&mut self) -> io::Result<f32> {
         if self.available() < 4 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
         let val = f32::from_le_bytes([
             self.data[self.read_pos],
@@ -214,7 +226,10 @@ impl ByteQueue {
     /// Read a 64-bit float (IEEE 754 little-endian).
     pub fn read_double(&mut self) -> io::Result<f64> {
         if self.available() < 8 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
         let val = f64::from_le_bytes([
             self.data[self.read_pos],
@@ -236,7 +251,10 @@ impl ByteQueue {
         if self.available() < len {
             // Rollback the 2-byte length read
             self.read_pos -= 2;
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
         // VB6 uses Latin-1/Windows-1252 — each byte maps to its Unicode codepoint
         let s: String = self.data[self.read_pos..self.read_pos + len]
@@ -250,7 +268,10 @@ impl ByteQueue {
     /// Read a fixed-length ASCII string (no length prefix).
     pub fn read_ascii_string_fixed(&mut self, len: usize) -> io::Result<String> {
         if self.available() < len {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
         let s: String = self.data[self.read_pos..self.read_pos + len]
             .iter()
@@ -265,7 +286,10 @@ impl ByteQueue {
     /// Peek at the next byte without advancing.
     pub fn peek_byte(&self) -> io::Result<u8> {
         if self.available() < 1 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
         Ok(self.data[self.read_pos])
     }
@@ -273,7 +297,10 @@ impl ByteQueue {
     /// Peek at the next 16-bit integer without advancing.
     pub fn peek_integer(&self) -> io::Result<i16> {
         if self.available() < 2 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, NOT_ENOUGH_DATA));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                NOT_ENOUGH_DATA,
+            ));
         }
         Ok(i16::from_le_bytes([
             self.data[self.read_pos],
@@ -403,21 +430,21 @@ mod tests {
     fn mixed_types() {
         // Simulate a CharacterCreate packet (ID 29)
         let mut bq = ByteQueue::new();
-        bq.write_byte(29);         // packet ID
-        bq.write_integer(42);      // charIndex
-        bq.write_integer(100);     // body
-        bq.write_integer(10);      // head
-        bq.write_byte(3);          // heading (South)
-        bq.write_byte(50);         // x
-        bq.write_byte(50);         // y
-        bq.write_integer(0);       // weapon
-        bq.write_integer(0);       // shield
-        bq.write_integer(0);       // helmet
-        bq.write_integer(0);       // fxIndex
-        bq.write_integer(0);       // fxLoops
+        bq.write_byte(29); // packet ID
+        bq.write_integer(42); // charIndex
+        bq.write_integer(100); // body
+        bq.write_integer(10); // head
+        bq.write_byte(3); // heading (South)
+        bq.write_byte(50); // x
+        bq.write_byte(50); // y
+        bq.write_integer(0); // weapon
+        bq.write_integer(0); // shield
+        bq.write_integer(0); // helmet
+        bq.write_integer(0); // fxIndex
+        bq.write_integer(0); // fxLoops
         bq.write_ascii_string("TestPlayer"); // name
-        bq.write_byte(0);          // nickColor
-        bq.write_byte(0);          // privileges
+        bq.write_byte(0); // nickColor
+        bq.write_byte(0); // privileges
 
         let mut reader = ByteQueue::from_bytes(bq.as_bytes());
         assert_eq!(reader.read_byte().unwrap(), 29);

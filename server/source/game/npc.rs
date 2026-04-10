@@ -19,8 +19,8 @@
 //  23 = Cazador Pretoriano (ranged hunter)
 //  24 = Rey Pretoriano (king — heals allies, fights when alone)
 
-use crate::data::npcs::{NpcData, NpcType};
 use super::world::CharIndex;
+use crate::data::npcs::{NpcData, NpcType};
 
 /// Maximum NPC inventory slots (matches VB6 MAX_INVENTORY_SLOTS).
 pub const MAX_NPC_INV_SLOTS: usize = 25;
@@ -95,7 +95,7 @@ pub struct NpcState {
     pub npc_type: NpcType,
     pub can_attack: bool,
     pub target: Option<crate::net::ConnectionId>, // Player target
-    pub target_npc: usize,                         // NPC target (for pet vs NPC combat)
+    pub target_npc: usize,                        // NPC target (for pet vs NPC combat)
 
     // Stats
     pub max_hp: i32,
@@ -103,7 +103,7 @@ pub struct NpcState {
     pub max_hit: i32,
     pub min_hit: i32,
     pub def: i32,
-    pub def_m: i32,             // VB6: DEFm — magic defense vs spells
+    pub def_m: i32, // VB6: DEFm — magic defense vs spells
     pub poder_ataque: i32,
     pub poder_evasion: i32,
     pub alineacion: i32,
@@ -130,13 +130,13 @@ pub struct NpcState {
     pub desc: String,
 
     // Movement constraints (VB6: LegalPosNPC)
-    pub agua_valida: bool,      // Can walk on water tiles
-    pub tierra_invalida: bool,  // Can ONLY walk on water tiles
+    pub agua_valida: bool,     // Can walk on water tiles
+    pub tierra_invalida: bool, // Can ONLY walk on water tiles
 
     // Status effects
-    pub veneno: bool,   // Poisons on hit
+    pub veneno: bool, // Poisons on hit
     pub paralyzed: bool,
-    pub counter_paralisis: i32,  // Ticks remaining (decremented in game tick)
+    pub counter_paralisis: i32, // Ticks remaining (decremented in game tick)
 
     // Spells
     pub lanza_spells: i32,
@@ -150,7 +150,7 @@ pub struct NpcState {
 
     // Pet/summon owner
     pub maestro_user: Option<crate::net::ConnectionId>,
-    pub counter_perdio_npc: i32,  // VB6: Contadores.TiemPerdique — pet inactivity timer (450 ticks = 18s at 40ms)
+    pub counter_perdio_npc: i32, // VB6: Contadores.TiemPerdique — pet inactivity timer (450 ticks = 18s at 40ms)
     pub tiempo_existencia_ms: i64, // VB6: Contadores.TiempoExistencia — elemental lifetime in ms (0 = no expiry)
 
     // Area tracking (9x9 zone visibility — VB6 ModAreas.bas)
@@ -159,18 +159,18 @@ pub struct NpcState {
     pub area_min_y: i32,
 
     // Pathfinding (PathFinding.bas) — BFS path storage
-    pub pf_path: Vec<(i32, i32)>,   // Computed path [(x,y), ...]
-    pub pf_step: usize,             // Current step in path
+    pub pf_path: Vec<(i32, i32)>, // Computed path [(x,y), ...]
+    pub pf_step: usize,           // Current step in path
 
     // Defense AI — saved state before switching to AI_DEFENSE (VB6: NpcAtacado)
-    pub old_movement: i32,          // Original AI movement type to restore
-    pub old_hostile: bool,          // Original hostile flag to restore
-    pub attacked_by: String,        // Name of player who triggered defense mode
+    pub old_movement: i32,   // Original AI movement type to restore
+    pub old_hostile: bool,   // Original hostile flag to restore
+    pub attacked_by: String, // Name of player who triggered defense mode
 
     // Sounds (copied from NpcData on spawn)
-    pub snd1: i32,                  // Attack sound
-    pub snd2: i32,                  // Hit/hurt sound
-    pub snd3: i32,                  // Death sound
+    pub snd1: i32, // Attack sound
+    pub snd2: i32, // Hit/hurt sound
+    pub snd3: i32, // Death sound
 
     // Damage tracking for proportional EXP distribution
     pub damage_received: Vec<(crate::net::ConnectionId, i32)>,
@@ -236,7 +236,11 @@ impl NpcState {
             inventory: {
                 let mut inv: Vec<NpcInvSlot> = Vec::with_capacity(MAX_NPC_INV_SLOTS);
                 for item in &data.items {
-                    inv.push(NpcInvSlot { obj_index: item.obj_index, amount: item.amount, prob_tirar: item.prob_tirar });
+                    inv.push(NpcInvSlot {
+                        obj_index: item.obj_index,
+                        amount: item.amount,
+                        prob_tirar: item.prob_tirar,
+                    });
                 }
                 // Pad to MAX_NPC_INV_SLOTS
                 inv.resize(MAX_NPC_INV_SLOTS, NpcInvSlot::default());
@@ -288,9 +292,11 @@ impl NpcState {
             self.weapon_anim as i16,
             self.shield_anim as i16,
             self.casco_anim as i16,
-            0, 0, // fx_index, fx_loops (NPCs don't use these in CC)
+            0,
+            0,  // fx_index, fx_loops (NPCs don't use these in CC)
             "", // NPCs have no name in CC
-            0, 0, // nick_color, privileges — not used for NPCs
+            0,
+            0, // nick_color, privileges — not used for NPCs
         )
     }
 
@@ -299,9 +305,13 @@ impl NpcState {
         crate::protocol::binary_packets::write_char_data(
             self.char_index.0 as i16,
             0, // color
-            self.aura as i16, 0, 0, 0, 0, // aura_a, aura_w, aura_e, aura_r, aura_c
+            self.aura as i16,
+            0,
+            0,
+            0,
+            0,     // aura_a, aura_w, aura_e, aura_r, aura_c
             false, // levitando
-            0, // ranking
+            0,     // ranking
         )
     }
 

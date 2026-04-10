@@ -14,13 +14,13 @@
 //
 // Accounts, characters, guilds, and bans are handled by the db module (PostgreSQL).
 
-pub mod experience;
-pub mod objects;
-pub mod spells;
-pub mod npcs;
-pub mod maps;
 pub mod balance;
 pub mod crafting;
+pub mod experience;
+pub mod maps;
+pub mod npcs;
+pub mod objects;
+pub mod spells;
 pub mod zones;
 
 use std::path::Path;
@@ -58,12 +58,20 @@ impl GameData {
             let h = game_map.tiles.height;
             for y in 0..h {
                 for x in 0..w {
-                    let oi = game_map.tiles.get(x, y).map(|t| t.obj.obj_index as usize).unwrap_or(0);
+                    let oi = game_map
+                        .tiles
+                        .get(x, y)
+                        .map(|t| t.obj.obj_index as usize)
+                        .unwrap_or(0);
                     if oi >= 1 {
                         if let Some(obj) = objects.get(oi - 1) {
                             // Door type (ObjType 6) with cerrada=0 means open → unblock
-                            let is_blocked = game_map.tiles.get(x, y).map(|t| t.blocked).unwrap_or(false);
-                            if obj.obj_type == objects::ObjType::Door && obj.cerrada == 0 && is_blocked {
+                            let is_blocked =
+                                game_map.tiles.get(x, y).map(|t| t.blocked).unwrap_or(false);
+                            if obj.obj_type == objects::ObjType::Door
+                                && obj.cerrada == 0
+                                && is_blocked
+                            {
                                 if let Some(tile) = game_map.tiles.get_mut(x, y) {
                                     tile.blocked = false;
                                     tile.original_blocked = false;
@@ -75,7 +83,9 @@ impl GameData {
                                     for dx in &[-1i32, 1, 2] {
                                         let nx = x as i32 + dx;
                                         if nx >= 0 && (nx as usize) < w {
-                                            if let Some(adj) = game_map.tiles.get_mut(nx as usize, y) {
+                                            if let Some(adj) =
+                                                game_map.tiles.get_mut(nx as usize, y)
+                                            {
                                                 adj.blocked = false;
                                                 adj.original_blocked = false;
                                             }
@@ -86,7 +96,9 @@ impl GameData {
                                     for dx in &[-2i32, -1, 1, 2] {
                                         let nx = x as i32 + dx;
                                         if nx >= 0 && (nx as usize) < w {
-                                            if let Some(adj) = game_map.tiles.get_mut(nx as usize, y) {
+                                            if let Some(adj) =
+                                                game_map.tiles.get_mut(nx as usize, y)
+                                            {
                                                 adj.blocked = false;
                                                 adj.original_blocked = false;
                                             }
@@ -108,15 +120,30 @@ impl GameData {
             }
         }
         if doors_fixed > 0 {
-            tracing::info!("Fixed {} open door tiles that were incorrectly blocked", doors_fixed);
+            tracing::info!(
+                "Fixed {} open door tiles that were incorrectly blocked",
+                doors_fixed
+            );
         }
 
         let map_count = maps.iter().filter(|m| m.is_some()).count();
         tracing::info!(
             "Game data loaded: {} levels, {} objects, {} spells, {} NPCs, {} maps",
-            experience.len(), objects.len(), spells.len(), npcs.count(), map_count
+            experience.len(),
+            objects.len(),
+            spells.len(),
+            npcs.count(),
+            map_count
         );
 
-        Ok(Self { experience, objects, spells, npcs, maps, balance, crafting })
+        Ok(Self {
+            experience,
+            objects,
+            spells,
+            npcs,
+            maps,
+            balance,
+            crafting,
+        })
     }
 }

@@ -12,108 +12,108 @@
 #[repr(u8)]
 pub enum ClientPacketID {
     // Pre-login (0-9)
-    HardwareCheck = 0,    // Hardware serial check
-    AccountLogin = 1,     // Account login
-    CreateCharacter = 2,  // New character creation + enter world
-    CharacterLogin = 3,   // Character login (select existing char)
-    CharacterSelect = 4,  // Character login (primary, with full validation)
-    CreateAccount = 5,    // New account creation
-    ChangePassword = 6,   // Password change
-    AccountRecovery = 7,  // Account recovery
-    RollDice = 8,         // Roll dice (attributes)
-    DeleteCharacter = 9,  // Delete character
+    HardwareCheck = 0,   // Hardware serial check
+    AccountLogin = 1,    // Account login
+    CreateCharacter = 2, // New character creation + enter world
+    CharacterLogin = 3,  // Character login (select existing char)
+    CharacterSelect = 4, // Character login (primary, with full validation)
+    CreateAccount = 5,   // New account creation
+    ChangePassword = 6,  // Password change
+    AccountRecovery = 7, // Account recovery
+    RollDice = 8,        // Roll dice (attributes)
+    DeleteCharacter = 9, // Delete character
 
     // Movement / Position (10-14)
-    Walk = 10,            // M<1-4> → Walk with heading byte
-    ChangeHeading = 11,   // CHEA<1-4> → change heading
-    RequestPos = 12,      // RPU → request position update
-    SyncPosition = 13,    // ACTUALIZAR → position re-sync
+    Walk = 10,          // M<1-4> → Walk with heading byte
+    ChangeHeading = 11, // CHEA<1-4> → change heading
+    RequestPos = 12,    // RPU → request position update
+    SyncPosition = 13,  // ACTUALIZAR → position re-sync
 
     // Combat (20-24)
-    Attack = 20,          // AT → attack
-    CastSpell = 21,       // LH → cast spell
-    LeftClick = 22,       // LC → left click (target)
-    RightClick = 23,      // RC → right click
-    WorkLeftClick = 24,   // WLC → work left click (skill + target)
+    Attack = 20,        // AT → attack
+    CastSpell = 21,     // LH → cast spell
+    LeftClick = 22,     // LC → left click (target)
+    RightClick = 23,    // RC → right click
+    WorkLeftClick = 24, // WLC → work left click (skill + target)
 
     // Chat (30-35)
-    Talk = 30,            // ; → area chat
-    Yell = 31,            // - → yell
-    Whisper = 32,         // \ → private message
-    SlashCommand = 33,    // / → slash commands (GM, /ONLINE, etc.)
+    Talk = 30,         // ; → area chat
+    Yell = 31,         // - → yell
+    Whisper = 32,      // \ → private message
+    SlashCommand = 33, // / → slash commands (GM, /ONLINE, etc.)
 
     // Items / Inventory (40-49)
-    PickUp = 40,          // AG → grab item
-    DropItem = 41,        // TI → drop item
-    UseItem = 42,         // USA → use item
-    UseItemClick = 43,    // QSA → use item via dblclick
-    EquipItem = 44,       // EQUI → equip item
-    SwapItems = 45,       // SWAP → swap inventory slots
-    MouseDrop = 46,       // TR → drop item via mouse drag
+    PickUp = 40,       // AG → grab item
+    DropItem = 41,     // TI → drop item
+    UseItem = 42,      // USA → use item
+    UseItemClick = 43, // QSA → use item via dblclick
+    EquipItem = 44,    // EQUI → equip item
+    SwapItems = 45,    // SWAP → swap inventory slots
+    MouseDrop = 46,    // TR → drop item via mouse drag
 
     // Skills (50-55)
-    UseSkill = 50,        // UK → use skill
-    SkillSet = 51,        // SKSE → distribute skill points
-    Meditate = 52,        // ME → toggle meditation
-    SafeToggle = 53,      // SEG → toggle PvP safety
-    MacroDetect = 54,     // TENGOMACROS → macro detection
-    LevelBonus = 55,      // BOF → level bonus selection
+    UseSkill = 50,    // UK → use skill
+    SkillSet = 51,    // SKSE → distribute skill points
+    Meditate = 52,    // ME → toggle meditation
+    SafeToggle = 53,  // SEG → toggle PvP safety
+    MacroDetect = 54, // TENGOMACROS → macro detection
+    LevelBonus = 55,  // BOF → level bonus selection
 
     // Spells (60-63)
-    SpellInfo = 60,       // INFS → spell info
-    MoveSpell = 61,       // DESPHE → move spell position
-    CastByName = 62,      // DOWNSI → cast spell by target name
+    SpellInfo = 60,  // INFS → spell info
+    MoveSpell = 61,  // DESPHE → move spell position
+    CastByName = 62, // DOWNSI → cast spell by target name
 
     // Commerce (70-79)
-    CommerceBuy = 70,     // COMP → buy from NPC
-    CommerceSell = 71,    // VEND → sell to NPC
-    CommerceClose = 72,   // FINCOM → close commerce window
-    TradeOfferGold = 73,  // UOR → offer gold in trade
-    TradeOfferItem = 74,  // UOC → offer items in trade
-    TradeResponse = 75,   // TDR → accept/reject/cancel trade
-    TradeCancel = 76,     // TCM → cancel trade
-    TradeChat = 77,       // VHC → trade chat message
+    CommerceBuy = 70,    // COMP → buy from NPC
+    CommerceSell = 71,   // VEND → sell to NPC
+    CommerceClose = 72,  // FINCOM → close commerce window
+    TradeOfferGold = 73, // UOR → offer gold in trade
+    TradeOfferItem = 74, // UOC → offer items in trade
+    TradeResponse = 75,  // TDR → accept/reject/cancel trade
+    TradeCancel = 76,    // TCM → cancel trade
+    TradeChat = 77,      // VHC → trade chat message
 
     // Banking (80-85)
-    BankDeposit = 80,     // DEPO → deposit item to bank
-    BankWithdraw = 81,    // RETI → withdraw item from bank
-    BankClose = 82,       // FINBAN → close bank window
+    BankDeposit = 80,  // DEPO → deposit item to bank
+    BankWithdraw = 81, // RETI → withdraw item from bank
+    BankClose = 82,    // FINBAN → close bank window
 
     // Crafting (90-94)
-    ConstructSmith = 90,  // CNS → construct blacksmith item
-    ConstructCarp = 91,   // CNC → construct carpentry item
-    TrainCreature = 92,   // ENTR → train creature from trainer
+    ConstructSmith = 90, // CNS → construct blacksmith item
+    ConstructCarp = 91,  // CNC → construct carpentry item
+    TrainCreature = 92,  // ENTR → train creature from trainer
 
     // Guild (100-119)
-    GuildInfo = 100,      // GLINFO
-    GuildCreate = 101,    // CIG
+    GuildInfo = 100,        // GLINFO
+    GuildCreate = 101,      // CIG
     GuildUpdateCodex = 102, // DESCOD
-    GuildAccept = 103,    // ACEPTARI
-    GuildReject = 104,    // RECHAZAR
-    GuildExpel = 105,     // ECHARCLA
-    GuildNews = 106,      // ACTGNEWS
-    GuildApply = 107,     // SOLICITUD
-    GuildDetails = 108,   // CLANDETAILS
+    GuildAccept = 103,      // ACEPTARI
+    GuildReject = 104,      // RECHAZAR
+    GuildExpel = 105,       // ECHARCLA
+    GuildNews = 106,        // ACTGNEWS
+    GuildApply = 107,       // SOLICITUD
+    GuildDetails = 108,     // CLANDETAILS
 
     // Forum (123)
-    ForumPost = 123,      // DEMSG — post to forum
+    ForumPost = 123, // DEMSG — post to forum
 
     // Player info (140-149)
-    PlayerInfo = 140,     // DAMINF
-    MiniStats = 141,      // FEST
-    HeadChange = 142,     // CABEZI
-    Rankings = 143,       // RANKIN
+    PlayerInfo = 140, // DAMINF
+    MiniStats = 141,  // FEST
+    HeadChange = 142, // CABEZI
+    Rankings = 143,   // RANKIN
 
     // Misc (150-169)
-    HouseQuery = 150,     // FWO
-    HouseBuy = 151,       // CUC
-    PetRename = 152,      // CNM
-    DragDrop = 160,       // DYDTRA
-    Vote = 161,           // NVOT
-    Report = 162,         // NEWD
-    SosView = 163,        // CONSUL
-    SosSend = 164,        // #
-    SosRespond = 165,     // X
+    HouseQuery = 150, // FWO
+    HouseBuy = 151,   // CUC
+    PetRename = 152,  // CNM
+    DragDrop = 160,   // DYDTRA
+    Vote = 161,       // NVOT
+    Report = 162,     // NEWD
+    SosView = 163,    // CONSUL
+    SosSend = 164,    // #
+    SosRespond = 165, // X
 }
 
 // ── Server → Client ────────────────────────────────────────
@@ -150,7 +150,7 @@ pub enum ServerPacketID {
     ChatOverHead = 23,
     ConsoleMsg = 24,
     GuildChat = 25,
-    ShowMessageBox2 = 26,     // Alias for !! in-game
+    ShowMessageBox2 = 26, // Alias for !! in-game
     UserIndexAlt = 27,
     UserCharIndexAlt = 28,
     CharacterCreate = 29,
@@ -292,7 +292,7 @@ pub enum ServerPacketID {
     CarpItems = 160,
     MeditateOK = 161,
     Navigation = 162,
-    AmbientColor = 164,      // PCR: map ambient RGB color
+    AmbientColor = 164, // PCR: map ambient RGB color
 
     // Bank (legacy)
     InitBankLegacy = 165,

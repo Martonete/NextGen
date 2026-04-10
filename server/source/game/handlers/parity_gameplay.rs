@@ -1,15 +1,12 @@
 //! VB6 13.3 parity features: pet commands, ShareNpc, council messages,
 //! MoveBank, centinela, faction alerts, GM commands, player commands.
 
-use tracing::info;
+use super::{enviar_banco_inv, remove_pet_from_owner};
+use crate::game::npc::{AI_FOLLOW_OWNER, AI_STATIC};
+use crate::game::types::{GameState, MAX_BANK_SLOTS, SendTarget, privilege_level};
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, privilege_level, MAX_BANK_SLOTS};
-use crate::game::npc::{AI_STATIC, AI_FOLLOW_OWNER};
 use crate::protocol::font_index;
-use super::{
-    remove_pet_from_owner,
-    enviar_banco_inv,
-};
+use tracing::info;
 
 // =====================================================================
 // 1. Pet Commands (VB6: /QUIETO, /ACOMPANAR, /LIBERAR)
@@ -48,10 +45,13 @@ pub(super) async fn handle_slash_quieto(state: &mut GameState, conn_id: Connecti
     }
 
     // Must be owner
-    let is_owner = state.get_npc(target_npc)
+    let is_owner = state
+        .get_npc(target_npc)
         .map(|n| n.maestro_user == Some(conn_id))
         .unwrap_or(false);
-    if !is_owner { return; }
+    if !is_owner {
+        return;
+    }
 
     // Set AI to static
     if let Some(Some(npc)) = state.npcs.get_mut(target_npc) {
@@ -92,10 +92,13 @@ pub(super) async fn handle_slash_acompanar(state: &mut GameState, conn_id: Conne
         return;
     }
 
-    let is_owner = state.get_npc(target_npc)
+    let is_owner = state
+        .get_npc(target_npc)
         .map(|n| n.maestro_user == Some(conn_id))
         .unwrap_or(false);
-    if !is_owner { return; }
+    if !is_owner {
+        return;
+    }
 
     // Set AI to follow owner
     if let Some(Some(npc)) = state.npcs.get_mut(target_npc) {
@@ -125,7 +128,8 @@ pub(super) async fn handle_slash_liberarmascota(state: &mut GameState, conn_id: 
         return;
     }
 
-    let is_owner = state.get_npc(target_npc)
+    let is_owner = state
+        .get_npc(target_npc)
         .map(|n| n.maestro_user == Some(conn_id))
         .unwrap_or(false);
     if !is_owner {
@@ -167,7 +171,13 @@ pub(super) async fn handle_slash_liberarmascota(state: &mut GameState, conn_id: 
 /// VB6: HandleShareNpc — faction-restricted sharing.
 pub(super) async fn handle_slash_compartir(state: &mut GameState, conn_id: ConnectionId) {
     let (target_user, my_criminal, _my_armada, my_caos, my_name) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.target_user, u.criminal, u.armada_real, u.fuerzas_caos, u.char_name.clone()),
+        Some(u) if u.logged => (
+            u.target_user,
+            u.criminal,
+            u.armada_real,
+            u.fuerzas_caos,
+            u.char_name.clone(),
+        ),
         _ => return,
     };
 
@@ -181,11 +191,17 @@ pub(super) async fn handle_slash_compartir(state: &mut GameState, conn_id: Conne
     }
 
     // Can't share with GMs
-    let target_is_gm = state.users.get(&target_user)
+    let target_is_gm = state
+        .users
+        .get(&target_user)
         .map(|u| u.privileges > privilege_level::USER)
         .unwrap_or(false);
     if target_is_gm {
-        state.send_console(conn_id, "No puedes compartir NPCs con administradores.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No puedes compartir NPCs con administradores.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -198,7 +214,11 @@ pub(super) async fn handle_slash_compartir(state: &mut GameState, conn_id: Conne
     if my_criminal {
         if my_caos {
             if !target_caos {
-                state.send_console(conn_id, "Solo puedes compartir NPCs con miembros de tu misma faccion.", font_index::INFO);
+                state.send_console(
+                    conn_id,
+                    "Solo puedes compartir NPCs con miembros de tu misma faccion.",
+                    font_index::INFO,
+                );
                 return;
             }
         } else {
@@ -207,20 +227,42 @@ pub(super) async fn handle_slash_compartir(state: &mut GameState, conn_id: Conne
         }
     } else {
         if target_criminal {
-            state.send_console(conn_id, "No puedes compartir NPCs con criminales.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No puedes compartir NPCs con criminales.",
+                font_index::INFO,
+            );
             return;
         }
     }
 
     // Check if already sharing with same target
-    let current_share = state.users.get(&conn_id).map(|u| u.share_npc_with).unwrap_or(0);
-    if current_share == target_user { return; }
+    let current_share = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.share_npc_with)
+        .unwrap_or(0);
+    if current_share == target_user {
+        return;
+    }
 
     // Notify previous share partner
     if current_share != 0 {
-        let prev_name = state.users.get(&current_share).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(current_share, &format!("{} ha dejado de compartir sus NPCs contigo.", my_name), font_index::INFO);
-        state.send_console(conn_id, &format!("Has dejado de compartir tus NPCs con {}.", prev_name), font_index::INFO);
+        let prev_name = state
+            .users
+            .get(&current_share)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
+        state.send_console(
+            current_share,
+            &format!("{} ha dejado de compartir sus NPCs contigo.", my_name),
+            font_index::INFO,
+        );
+        state.send_console(
+            conn_id,
+            &format!("Has dejado de compartir tus NPCs con {}.", prev_name),
+            font_index::INFO,
+        );
     }
 
     // Set new share target
@@ -228,9 +270,21 @@ pub(super) async fn handle_slash_compartir(state: &mut GameState, conn_id: Conne
         u.share_npc_with = target_user;
     }
 
-    let target_name = state.users.get(&target_user).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(target_user, &format!("{} ahora comparte sus NPCs contigo.", my_name), font_index::INFO);
-    state.send_console(conn_id, &format!("Ahora compartes tus NPCs con {}.", target_name), font_index::INFO);
+    let target_name = state
+        .users
+        .get(&target_user)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    state.send_console(
+        target_user,
+        &format!("{} ahora comparte sus NPCs contigo.", my_name),
+        font_index::INFO,
+    );
+    state.send_console(
+        conn_id,
+        &format!("Ahora compartes tus NPCs con {}.", target_name),
+        font_index::INFO,
+    );
 }
 
 /// /NOCOMPARTIR — Stop sharing NPCs.
@@ -242,9 +296,21 @@ pub(super) async fn handle_slash_nocompartir(state: &mut GameState, conn_id: Con
     };
 
     if share_with != 0 {
-        let partner_name = state.users.get(&share_with).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(share_with, &format!("{} ha dejado de compartir sus NPCs contigo.", my_name), font_index::INFO);
-        state.send_console(conn_id, &format!("Has dejado de compartir tus NPCs con {}.", partner_name), font_index::INFO);
+        let partner_name = state
+            .users
+            .get(&share_with)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
+        state.send_console(
+            share_with,
+            &format!("{} ha dejado de compartir sus NPCs contigo.", my_name),
+            font_index::INFO,
+        );
+        state.send_console(
+            conn_id,
+            &format!("Has dejado de compartir tus NPCs con {}.", partner_name),
+            font_index::INFO,
+        );
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.share_npc_with = 0;
@@ -252,13 +318,16 @@ pub(super) async fn handle_slash_nocompartir(state: &mut GameState, conn_id: Con
     }
 }
 
-
 // =====================================================================
 // 4. ConsultasPopulares (Public Polls — VB6: /ENCUESTA, /VOTO)
 // =====================================================================
 
 /// /ENCUESTA <question>@<opt1>@<opt2>@... — Create poll (GM only).
-pub(super) async fn handle_slash_encuesta_crear(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+pub(super) async fn handle_slash_encuesta_crear(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    args: &str,
+) {
     let priv_level = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
     if priv_level < privilege_level::DIOS {
         state.send_console(conn_id, "No tenes permisos.", font_index::INFO);
@@ -267,7 +336,11 @@ pub(super) async fn handle_slash_encuesta_crear(state: &mut GameState, conn_id: 
 
     let parts: Vec<&str> = args.split('@').collect();
     if parts.len() < 3 {
-        state.send_console(conn_id, "Uso: /ENCUESTA pregunta@opcion1@opcion2@...", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Uso: /ENCUESTA pregunta@opcion1@opcion2@...",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -283,8 +356,15 @@ pub(super) async fn handle_slash_encuesta_crear(state: &mut GameState, conn_id: 
         }
     }
 
-    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    let msg = format!("ENCUESTA PUBLICA: {} (Usa /VOTAR para ver opciones, /VOTO <numero> para votar)", parts[0]);
+    let admin_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    let msg = format!(
+        "ENCUESTA PUBLICA: {} (Usa /VOTAR para ver opciones, /VOTO <numero> para votar)",
+        parts[0]
+    );
     state.send_console_to(SendTarget::ToAll, &msg, font_index::GUILD);
     info!("[GM] {} created poll: {}", admin_name, parts[0]);
 }
@@ -292,10 +372,16 @@ pub(super) async fn handle_slash_encuesta_crear(state: &mut GameState, conn_id: 
 /// /CERRARENCUESTA — Close active poll (GM only).
 pub(super) async fn handle_slash_cerrar_encuesta(state: &mut GameState, conn_id: ConnectionId) {
     let priv_level = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
-    if priv_level < privilege_level::DIOS { return; }
+    if priv_level < privilege_level::DIOS {
+        return;
+    }
 
     state.poll_active = false;
-    state.send_console_to(SendTarget::ToAll, "La encuesta ha sido cerrada.", font_index::GUILD);
+    state.send_console_to(
+        SendTarget::ToAll,
+        "La encuesta ha sido cerrada.",
+        font_index::GUILD,
+    );
 }
 
 // =====================================================================
@@ -308,17 +394,25 @@ pub(super) async fn handle_slash_consejo(state: &mut GameState, conn_id: Connect
     let (_is_royal, name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.royal_council => (true, u.char_name.clone()),
         _ => {
-            state.send_console(conn_id, "No eres miembro del consejo real.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No eres miembro del consejo real.",
+                font_index::INFO,
+            );
             return;
         }
     };
 
-    if text.is_empty() { return; }
+    if text.is_empty() {
+        return;
+    }
 
     let msg = format!("(Consejero) {}> {}", name, text);
 
     // Send to all royal council members
-    let targets: Vec<ConnectionId> = state.users.values()
+    let targets: Vec<ConnectionId> = state
+        .users
+        .values()
         .filter(|u| u.logged && u.royal_council)
         .map(|u| u.conn_id)
         .collect();
@@ -328,20 +422,32 @@ pub(super) async fn handle_slash_consejo(state: &mut GameState, conn_id: Connect
 }
 
 /// /CONSEJOCAOS <msg> — Send message to Chaos council members only.
-pub(super) async fn handle_slash_consejocaos(state: &mut GameState, conn_id: ConnectionId, text: &str) {
+pub(super) async fn handle_slash_consejocaos(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    text: &str,
+) {
     let (_is_chaos, name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.chaos_council => (true, u.char_name.clone()),
         _ => {
-            state.send_console(conn_id, "No eres miembro del consejo del caos.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No eres miembro del consejo del caos.",
+                font_index::INFO,
+            );
             return;
         }
     };
 
-    if text.is_empty() { return; }
+    if text.is_empty() {
+        return;
+    }
 
     let msg = format!("(Consejero) {}> {}", name, text);
 
-    let targets: Vec<ConnectionId> = state.users.values()
+    let targets: Vec<ConnectionId> = state
+        .users
+        .values()
         .filter(|u| u.logged && u.chaos_council)
         .map(|u| u.conn_id)
         .collect();
@@ -356,7 +462,11 @@ pub(super) async fn handle_slash_consejocaos(state: &mut GameState, conn_id: Con
 
 /// /MOVEBANK <dir> <slot> — Move bank item up or down.
 /// VB6: dir=1 moves up (swap with slot-1), dir=-1 moves down (swap with slot+1).
-pub(super) async fn handle_slash_movebank(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+pub(super) async fn handle_slash_movebank(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    args: &str,
+) {
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
         return;
@@ -365,7 +475,9 @@ pub(super) async fn handle_slash_movebank(state: &mut GameState, conn_id: Connec
     let dir: i32 = parts[0].parse().unwrap_or(0); // 1=up, -1=down
     let slot: usize = parts[1].parse().unwrap_or(0);
 
-    if slot == 0 || slot > MAX_BANK_SLOTS { return; }
+    if slot == 0 || slot > MAX_BANK_SLOTS {
+        return;
+    }
 
     let slot_idx = slot - 1;
 
@@ -382,4 +494,3 @@ pub(super) async fn handle_slash_movebank(state: &mut GameState, conn_id: Connec
     // Re-send bank inventory
     enviar_banco_inv(state, conn_id).await;
 }
-

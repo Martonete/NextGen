@@ -106,6 +106,7 @@ public class GameState
 	public short CurrentZoneX1, CurrentZoneY1, CurrentZoneX2, CurrentZoneY2;
 	public bool ZoneChanged; // flag consumed by Main._Process to update HUD
 	public bool ZoneLluvia, ZoneNieve, ZoneNiebla;
+	public byte ZoneAmbientR, ZoneAmbientG, ZoneAmbientB; // 0,0,0 = use map ambient
 
 	// User status flags
 	public bool Raining;

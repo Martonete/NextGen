@@ -4,9 +4,9 @@
 // Uses sqlx with PgPool for async connection pooling.
 
 pub mod accounts;
+pub mod bans;
 pub mod charfile;
 pub mod guilds;
-pub mod bans;
 pub mod password;
 
 use sqlx::PgPool;

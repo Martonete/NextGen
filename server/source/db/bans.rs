@@ -3,8 +3,8 @@
 // Bans are loaded into memory at startup for O(1) lookups.
 // Mutations write to both memory and DB.
 
-use std::collections::HashSet;
 use sqlx::PgPool;
+use std::collections::HashSet;
 
 /// Ban list with in-memory cache.
 #[derive(Debug, Clone)]
@@ -26,7 +26,11 @@ impl BanList {
             .await
             .unwrap_or_default();
 
-        tracing::info!("Ban lists loaded: {} HDs, {} IPs", banned_hds.len(), banned_ips.len());
+        tracing::info!(
+            "Ban lists loaded: {} HDs, {} IPs",
+            banned_hds.len(),
+            banned_ips.len()
+        );
 
         Self {
             banned_hds: banned_hds.into_iter().collect(),

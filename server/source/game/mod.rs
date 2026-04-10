@@ -7,8 +7,8 @@
 
 pub mod class_race;
 pub mod constants;
+pub mod handlers;
+pub mod npc;
 pub mod types;
 pub mod world;
-pub mod npc;
 pub mod zones;
-pub mod handlers;

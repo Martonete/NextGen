@@ -4,8 +4,8 @@
 // Each object has variable fields depending on ObjType.
 // 1664 objects in the current database.
 
-use std::path::Path;
 use crate::config::IniFile;
+use std::path::Path;
 
 /// Object type enum matching VB6 eOBJType.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,8 +41,8 @@ pub enum ObjType {
     FullBottle = 34,
     Stain = 35,
     Ram = 36,
-    Backpack = 37,       // otMochilas — expandable inventory backpack
-    FishingSpot = 38,    // otYacimientoPez — fishing spot (VB6 13.3)
+    Backpack = 37,    // otMochilas — expandable inventory backpack
+    FishingSpot = 38, // otYacimientoPez — fishing spot (VB6 13.3)
     GemEarth = 39,
     GemWind = 40,
     StorageBox = 42,
@@ -54,10 +54,10 @@ pub enum ObjType {
     JDHChest = 49,
     ScrollItem = 50,
     Sack = 51,
-    RenounceHorde = 52,   // otRenunciaH — renounce Chaos faction
-    ClanUpgrade6 = 53,    // otSubeClan6 — guild level 5→6
-    ClanUpgrade7 = 54,    // otSubeClan7 — guild level 6→7
-    RenounceRoyal = 55,   // otRenunciaA — renounce Royal faction
+    RenounceHorde = 52, // otRenunciaH — renounce Chaos faction
+    ClanUpgrade6 = 53,  // otSubeClan6 — guild level 5→6
+    ClanUpgrade7 = 54,  // otSubeClan7 — guild level 6→7
+    RenounceRoyal = 55, // otRenunciaA — renounce Royal faction
     Unknown = 255,
 }
 
@@ -124,16 +124,16 @@ pub struct ObjData {
     pub name: String,
     pub obj_type: ObjType,
     pub grh_index: i32,
-    pub valor: i32,          // Item value/price
-    pub agarrable: bool,     // VB6: Agarrable=1 means FIXED (cannot pick up)
+    pub valor: i32,      // Item value/price
+    pub agarrable: bool, // VB6: Agarrable=1 means FIXED (cannot pick up)
 
     // Weapon fields
     pub min_hit: i32,
     pub max_hit: i32,
     pub weapon_anim: i32,
-    pub dos_manos: bool,     // Two-handed
-    pub proyectil: bool,     // Ranged
-    pub municion: i32,       // Ammo type (obj index)
+    pub dos_manos: bool, // Two-handed
+    pub proyectil: bool, // Ranged
+    pub municion: i32,   // Ammo type (obj index)
 
     // Armor/defense fields
     pub min_def: i32,
@@ -143,34 +143,34 @@ pub struct ObjData {
 
     // Door fields
     pub llave: i32,
-    pub cerrada: i32,          // 1=closed, 0=open (VB6: abierta field)
-    pub puerta_doble: i32,     // 1=double door (4-tile width)
-    pub porton: i32,           // 1=grand gate (5-tile width)
-    pub reja_forta: i32,       // 1=fortress gate (guild-owned)
-    pub clave: i32,            // Key code for locked doors
+    pub cerrada: i32,      // 1=closed, 0=open (VB6: abierta field)
+    pub puerta_doble: i32, // 1=double door (4-tile width)
+    pub porton: i32,       // 1=grand gate (5-tile width)
+    pub reja_forta: i32,   // 1=fortress gate (guild-owned)
+    pub clave: i32,        // Key code for locked doors
     pub index_abierta: i32,
     pub index_cerrada: i32,
     // Potion/food fields
-    pub tipo_pocion: i32,    // Potion subtype: 1=agility, 2=strength, 3=HP, 4=mana, 5=cure poison, 6=remo
+    pub tipo_pocion: i32, // Potion subtype: 1=agility, 2=strength, 3=HP, 4=mana, 5=cure poison, 6=remo
     pub min_modificador: i32,
     pub max_modificador: i32,
     pub duracion_efecto: i32,
-    pub min_ham: i32,        // Food restoration
-    pub min_agua: i32,       // Drink restoration
+    pub min_ham: i32,  // Food restoration
+    pub min_agua: i32, // Drink restoration
 
     // Spell item
     pub hechizo_index: i32,
 
     // Equipment requirements
     pub min_skill: i32,
-    pub num_ropaje: i32,     // Body graphic when equipped (mount)
+    pub num_ropaje: i32, // Body graphic when equipped (mount)
 
     // Crafting
     pub sk_herreria: i32,
     pub sk_carpinteria: i32,
-    pub ling_h: i32,         // Iron ingots
-    pub ling_o: i32,         // Gold ingots
-    pub ling_p: i32,         // Silver ingots
+    pub ling_h: i32, // Iron ingots
+    pub ling_o: i32, // Gold ingots
+    pub ling_p: i32, // Silver ingots
 
     // Crafting (extended)
     pub madera: i32,          // Wood needed (carpentry)
@@ -185,26 +185,26 @@ pub struct ObjData {
 
     // Flags
     pub cura_veneno: bool,
-    pub envenena: bool,      // Weapon poisons on hit (60% chance)
-    pub refuerzo: i32,       // Weapon penetration (reduces armor absorption)
-    pub es_voladora: bool,   // Flying mount
+    pub envenena: bool,    // Weapon poisons on hit (60% chance)
+    pub refuerzo: i32,     // Weapon penetration (reduces armor absorption)
+    pub es_voladora: bool, // Flying mount
     pub newbie: bool,
 
     // Class restrictions (empty = no restriction)
     pub class_prohibida: Vec<String>,
 
     // Level requirement
-    pub lvl: i32,             // Minimum level to equip (0 = no req)
-    pub raza_enana: bool,     // Dwarf race only
-    pub raza_doble: bool,     // All races can use
-    pub mujer: bool,          // Female only
-    pub hombre: bool,         // Male only
+    pub lvl: i32,         // Minimum level to equip (0 = no req)
+    pub raza_enana: bool, // Dwarf race only
+    pub raza_doble: bool, // All races can use
+    pub mujer: bool,      // Female only
+    pub hombre: bool,     // Male only
 
     // Sound
-    pub snd1: i32,            // VB6 Snd1 — sound ID (used by instruments)
+    pub snd1: i32, // VB6 Snd1 — sound ID (used by instruments)
 
     // Paralysis on hit
-    pub paraliza: bool,       // Weapon paralyzes on hit
+    pub paraliza: bool, // Weapon paralyzes on hit
 
     // Aura (VB6: CreaAura — aura index from Auras.dat, 0 = no aura)
     pub crea_aura: i32,
@@ -318,10 +318,10 @@ impl Default for ObjData {
 /// Returns a Vec where index 0 is OBJ1, index 1 is OBJ2, etc.
 pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
     let path = base.join("dat").join("obj.dat");
-    let ini = IniFile::load(&path)
-        .map_err(|e| format!("Failed to load Obj.dat: {}", e))?;
+    let ini = IniFile::load(&path).map_err(|e| format!("Failed to load Obj.dat: {}", e))?;
 
-    let num_objs: usize = ini.get("INIT", "NumOBJs")
+    let num_objs: usize = ini
+        .get("INIT", "NumOBJs")
         .or_else(|| ini.get("INIT", "Numobjs"))
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
@@ -335,15 +335,14 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
     for i in 1..=num_objs {
         let section = format!("OBJ{}", i);
 
-        let get_str = |key: &str| -> String {
-            ini.get(&section, key).unwrap_or_default()
-        };
+        let get_str = |key: &str| -> String { ini.get(&section, key).unwrap_or_default() };
         let get_int = |key: &str| -> i32 {
-            ini.get(&section, key).and_then(|s| s.parse().ok()).unwrap_or(0)
+            ini.get(&section, key)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0)
         };
-        let get_bool = |key: &str| -> bool {
-            ini.get(&section, key).map(|s| s == "1").unwrap_or(false)
-        };
+        let get_bool =
+            |key: &str| -> bool { ini.get(&section, key).map(|s| s == "1").unwrap_or(false) };
 
         let mut obj = ObjData {
             index: i,
@@ -354,16 +353,16 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             agarrable: get_bool("Agarrable"),
             min_hit: get_int("MinHIT"),
             max_hit: get_int("MaxHIT"),
-            weapon_anim: 0,  // Set below based on ObjType (VB6: all use "Anim" field)
+            weapon_anim: 0, // Set below based on ObjType (VB6: all use "Anim" field)
             dos_manos: get_bool("DosManos"),
             proyectil: get_bool("proyectil"),
             municion: get_int("Municion"),
             min_def: get_int("MINDEF"),
             max_def: get_int("MAXDEF"),
-            shield_anim: 0,  // Set below based on ObjType
-            casco_anim: 0,   // Set below based on ObjType
+            shield_anim: 0, // Set below based on ObjType
+            casco_anim: 0,  // Set below based on ObjType
             llave: get_int("llave"),
-            cerrada: get_int("abierta"),  // VB6 field "abierta" maps to Cerrada (1=closed)
+            cerrada: get_int("abierta"), // VB6 field "abierta" maps to Cerrada (1=closed)
             puerta_doble: get_int("PuertaDoble"),
             porton: get_int("Porton"),
             reja_forta: get_int("RejaForta"),
@@ -445,21 +444,35 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
     }
 
     // Debug: verify shield/helmet anim values were loaded correctly
-    let shields_with_anim: Vec<_> = objects.iter().enumerate()
+    let shields_with_anim: Vec<_> = objects
+        .iter()
+        .enumerate()
         .filter(|(_, o)| o.obj_type == ObjType::Shield && o.shield_anim > 0)
         .map(|(i, o)| (i + 1, &o.name, o.shield_anim))
         .collect();
-    let helmets_with_anim: Vec<_> = objects.iter().enumerate()
+    let helmets_with_anim: Vec<_> = objects
+        .iter()
+        .enumerate()
         .filter(|(_, o)| o.obj_type == ObjType::Helmet && o.casco_anim > 0)
         .map(|(i, o)| (i + 1, &o.name, o.casco_anim))
         .collect();
-    tracing::info!("Objects loaded: {} items ({} shields with anim, {} helmets with anim)",
-        objects.len(), shields_with_anim.len(), helmets_with_anim.len());
+    tracing::info!(
+        "Objects loaded: {} items ({} shields with anim, {} helmets with anim)",
+        objects.len(),
+        shields_with_anim.len(),
+        helmets_with_anim.len()
+    );
     if !shields_with_anim.is_empty() {
-        tracing::debug!("Shield anims: {:?}", &shields_with_anim[..shields_with_anim.len().min(5)]);
+        tracing::debug!(
+            "Shield anims: {:?}",
+            &shields_with_anim[..shields_with_anim.len().min(5)]
+        );
     }
     if !helmets_with_anim.is_empty() {
-        tracing::debug!("Helmet anims: {:?}", &helmets_with_anim[..helmets_with_anim.len().min(5)]);
+        tracing::debug!(
+            "Helmet anims: {:?}",
+            &helmets_with_anim[..helmets_with_anim.len().min(5)]
+        );
     }
     Ok(objects)
 }
@@ -476,7 +489,11 @@ mod tests {
             return;
         }
         let objs = load_objects(base).unwrap();
-        assert!(objs.len() > 100, "Should have many objects, got {}", objs.len());
+        assert!(
+            objs.len() > 100,
+            "Should have many objects, got {}",
+            objs.len()
+        );
 
         // First object should be "Manzana Roja"
         assert_eq!(objs[0].name, "Manzana Roja");

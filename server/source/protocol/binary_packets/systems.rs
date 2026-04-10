@@ -1,7 +1,7 @@
 //! System packets: MultiMessage, GM Panel, NPC Trade, Pre-login, Crafting lists, Navigation.
 
 use crate::protocol::byte_queue::ByteQueue;
-use crate::protocol::packets::{ServerPacketID, MultiMessageID};
+use crate::protocol::packets::{MultiMessageID, ServerPacketID};
 
 // ── MultiMessage ───────────────────────────────────────────
 
@@ -120,8 +120,14 @@ pub fn write_trade_items(obj_index: i16, amount: i16, name: &str) -> Vec<u8> {
 
 /// ID 98: Character data (auras, color, levitating, ranking).
 pub fn write_char_data(
-    char_index: i16, color: u8, aura_a: i16, aura_w: i16,
-    aura_e: i16, aura_r: i16, aura_c: i16, levitando: bool,
+    char_index: i16,
+    color: u8,
+    aura_a: i16,
+    aura_w: i16,
+    aura_e: i16,
+    aura_r: i16,
+    aura_c: i16,
+    levitando: bool,
     ranking: u8,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -140,8 +146,12 @@ pub fn write_char_data(
 
 /// ID 99: Aura update broadcast.
 pub fn write_aura_update(
-    char_index: i16, aura_a: i16, aura_w: i16,
-    aura_e: i16, aura_r: i16, aura_c: i16,
+    char_index: i16,
+    aura_a: i16,
+    aura_w: i16,
+    aura_e: i16,
+    aura_r: i16,
+    aura_c: i16,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::AuraUpdate.to_byte());
@@ -181,7 +191,19 @@ pub fn write_init_account(num_chars: u8, notice: &str) -> Vec<u8> {
 }
 
 /// ID 64: Add character to selection list (typed binary fields).
-pub fn write_add_pj(name: &str, index: u8, head: i16, body: i16, weapon: i16, shield: i16, helmet: i16, level: u8, class: &str, dead: bool, race: &str) -> Vec<u8> {
+pub fn write_add_pj(
+    name: &str,
+    index: u8,
+    head: i16,
+    body: i16,
+    weapon: i16,
+    shield: i16,
+    helmet: i16,
+    level: u8,
+    class: &str,
+    dead: bool,
+    race: &str,
+) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::AddCharPreview.to_byte());
     pkt.write_ascii_string(name);
@@ -362,5 +384,3 @@ pub fn write_send_night(is_night: bool) -> Vec<u8> {
     pkt.write_byte(if is_night { 1 } else { 0 });
     pkt.into_bytes()
 }
-
-

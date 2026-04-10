@@ -1,21 +1,20 @@
 //! NPC AI tick handlers: movement, chase, attack, healing, respawn.
 
-use crate::game::types::{GameState, SendTarget};
 use crate::data::npcs::NpcType;
-use crate::game::npc;
-use crate::protocol::binary_packets;
 use crate::game::handlers::common::*;
 use crate::game::handlers::world;
 use crate::game::handlers::{
-    npc_attack_user, npc_die, npc_cast_spell, move_npc,
-    npc_pathfind_step, pathfind_bfs,
+    move_npc, npc_attack_user, npc_cast_spell, npc_die, npc_pathfind_step, pathfind_bfs,
 };
+use crate::game::npc;
+use crate::game::types::{GameState, SendTarget};
+use crate::protocol::binary_packets;
 // Cross-module access to npc_move functions (send_npc_move, send_ghost_push, etc.)
 use super::{
-    send_npc_move, send_ghost_push, find_adjacent_player, find_nearest_player,
-    find_player_by_name, chase_heading, restore_old_movement, npc_attack_npc,
-    find_target_npc_in_vision, find_nearest_hostile_npc, find_wounded_pretoriano_ally, find_paralyzed_pretoriano_ally,
-    has_pretoriano_allies,
+    chase_heading, find_adjacent_player, find_nearest_hostile_npc, find_nearest_player,
+    find_paralyzed_pretoriano_ally, find_player_by_name, find_target_npc_in_vision,
+    find_wounded_pretoriano_ally, has_pretoriano_allies, npc_attack_npc, restore_old_movement,
+    send_ghost_push, send_npc_move,
 };
 
 /// AI tick — called every 100ms from the main loop.
@@ -39,25 +38,42 @@ pub async fn tick_npc_ai(state: &mut GameState) {
     update_map_user_counts(state);
 
     // Use active NPC index set instead of scanning all 10,000 slots
-    let active_npcs: Vec<usize> = state.active_npc_indices.iter()
+    let active_npcs: Vec<usize> = state
+        .active_npc_indices
+        .iter()
         .copied()
-        .filter(|&i| state.npcs.get(i).and_then(|s| s.as_ref()).map(|n| n.is_alive()).unwrap_or(false))
+        .filter(|&i| {
+            state
+                .npcs
+                .get(i)
+                .and_then(|s| s.as_ref())
+                .map(|n| n.is_alive())
+                .unwrap_or(false)
+        })
         .collect();
 
     for npc_idx in active_npcs {
         // Skip paralyzed NPCs — they can't move or attack
         let is_paralyzed = state.get_npc(npc_idx).map(|n| n.paralyzed).unwrap_or(false);
-        if is_paralyzed { continue; }
+        if is_paralyzed {
+            continue;
+        }
 
         // VB6: Elemental lifetime countdown (TiempoExistencia)
         // AI tick runs every 100ms. Decrement and kill when expired.
         {
-            let lifetime = state.get_npc(npc_idx).map(|n| n.tiempo_existencia_ms).unwrap_or(0);
+            let lifetime = state
+                .get_npc(npc_idx)
+                .map(|n| n.tiempo_existencia_ms)
+                .unwrap_or(0);
             if lifetime > 0 {
                 if let Some(n) = state.get_npc_mut(npc_idx) {
                     n.tiempo_existencia_ms -= 100; // 100ms per tick
                 }
-                let expired = state.get_npc(npc_idx).map(|n| n.tiempo_existencia_ms <= 0).unwrap_or(false);
+                let expired = state
+                    .get_npc(npc_idx)
+                    .map(|n| n.tiempo_existencia_ms <= 0)
+                    .unwrap_or(false);
                 if expired {
                     npc_die(state, npc_idx, 0, 0, 0, 0).await;
                     continue;
@@ -66,14 +82,44 @@ pub async fn tick_npc_ai(state: &mut GameState) {
         }
 
         let npc_data = match state.get_npc(npc_idx) {
-            Some(n) => (n.movement, n.hostile, n.can_attack, n.map, n.x, n.y, n.target,
-                        n.lanza_spells, n.spells.len(), n.npc_type, !n.attacked_by.is_empty(),
-                        n.min_hp, n.max_hp, n.alineacion, n.ataca_doble, n.npc_number),
+            Some(n) => (
+                n.movement,
+                n.hostile,
+                n.can_attack,
+                n.map,
+                n.x,
+                n.y,
+                n.target,
+                n.lanza_spells,
+                n.spells.len(),
+                n.npc_type,
+                !n.attacked_by.is_empty(),
+                n.min_hp,
+                n.max_hp,
+                n.alineacion,
+                n.ataca_doble,
+                n.npc_number,
+            ),
             None => continue,
         };
-        let (movement, hostile, can_attack, map, x, y, target,
-             lanza_spells, spells_len, npc_type, has_attacked_by,
-             cur_hp, max_hp, alineacion, ataca_doble, npc_number) = npc_data;
+        let (
+            movement,
+            hostile,
+            can_attack,
+            map,
+            x,
+            y,
+            target,
+            lanza_spells,
+            spells_len,
+            npc_type,
+            has_attacked_by,
+            cur_hp,
+            max_hp,
+            alineacion,
+            ataca_doble,
+            npc_number,
+        ) = npc_data;
 
         // Skip NPCs on maps with no users (VB6 optimization)
         let map_users = state.map_user_counts.get(&map).copied().unwrap_or(0);
@@ -90,7 +136,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
             npc::AI_STATIC => {
                 // No movement, but attack adjacent if hostile
                 if hostile && can_attack {
-                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) =
+                        find_adjacent_player(state, map, x, y)
+                    {
                         npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
@@ -103,7 +151,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 // Random movement (1/12 chance per tick)
                 // Guards with AI_RANDOM also chase their targets
                 if hostile && can_attack {
-                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) =
+                        find_adjacent_player(state, map, x, y)
+                    {
                         npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
@@ -114,8 +164,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     let heading = rand_range(1, 4);
                     {
                         let (moved, ghost) = move_npc(state, npc_idx, heading);
-                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                        if moved { send_npc_move(state, npc_idx).await; }
+                        if let Some(gp) = ghost {
+                            send_ghost_push(state, gp).await;
+                        }
+                        if moved {
+                            send_npc_move(state, npc_idx).await;
+                        }
                     }
                 }
             }
@@ -130,7 +184,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                 // First: check adjacent tiles for attack
                 if can_attack {
-                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) =
+                        find_adjacent_player(state, map, x, y)
+                    {
                         // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
                         // AtacaDoble = 50% chance to SKIP the spell (melee only).
                         // Non-AtacaDoble with LanzaSpells = always spell+melee.
@@ -156,7 +212,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             let tx = x + dx;
                             let ty = y + dy;
                             if let Some(adj_npc_idx) = state.npc_at_tile(map, tx, ty) {
-                                let is_pet = state.get_npc(adj_npc_idx)
+                                let is_pet = state
+                                    .get_npc(adj_npc_idx)
                                     .map(|n| n.maestro_user.is_some() && n.is_alive())
                                     .unwrap_or(false);
                                 if is_pet {
@@ -176,16 +233,23 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     // Scan vision range for nearest player
                     // Filter out GM targets — if existing target is a GM, discard it
                     let valid_target = target.filter(|t| {
-                        state.users.get(t).map(|u| u.privileges == 0).unwrap_or(false)
+                        state
+                            .users
+                            .get(t)
+                            .map(|u| u.privileges == 0)
+                            .unwrap_or(false)
                     });
-                    let chase_target = valid_target.or_else(|| find_nearest_player(state, map, x, y));
+                    let chase_target =
+                        valid_target.or_else(|| find_nearest_player(state, map, x, y));
 
                     if let Some(target_conn) = chase_target {
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.target = Some(target_conn);
                         }
 
-                        let target_pos = state.users.get(&target_conn)
+                        let target_pos = state
+                            .users
+                            .get(&target_conn)
                             .filter(|u| u.logged && !u.dead && u.pos_map == map)
                             .map(|u| (u.pos_x, u.pos_y));
 
@@ -193,7 +257,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             let dist = (x - tx).abs() + (y - ty).abs();
 
                             // Cast spell if in range
-                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && spells_len > 0 {
+                            if dist > 1
+                                && dist <= 8
+                                && lanza_spells > 0
+                                && can_attack
+                                && spells_len > 0
+                            {
                                 if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 }
@@ -207,8 +276,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                 let heading = chase_heading(x, y, tx, ty);
                                 {
                                     let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                    if moved { send_npc_move(state, npc_idx).await; }
+                                    if let Some(gp) = ghost {
+                                        send_ghost_push(state, gp).await;
+                                    }
+                                    if moved {
+                                        send_npc_move(state, npc_idx).await;
+                                    }
                                 }
                             }
                         } else {
@@ -220,8 +293,11 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     } else {
                         // No target at all — if this was originally a non-hostile NPC
                         // that was switched to hostile chase, restore old movement
-                        let was_defense_switch = state.get_npc(npc_idx)
-                            .map(|n| n.old_movement != npc::AI_HOSTILE_CHASE && !n.attacked_by.is_empty())
+                        let was_defense_switch = state
+                            .get_npc(npc_idx)
+                            .map(|n| {
+                                n.old_movement != npc::AI_HOSTILE_CHASE && !n.attacked_by.is_empty()
+                            })
                             .unwrap_or(false);
                         if was_defense_switch {
                             restore_old_movement(state, npc_idx);
@@ -231,8 +307,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             let heading = rand_range(1, 4);
                             {
                                 let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                if moved { send_npc_move(state, npc_idx).await; }
+                                if let Some(gp) = ghost {
+                                    send_ghost_push(state, gp).await;
+                                }
+                                if moved {
+                                    send_npc_move(state, npc_idx).await;
+                                }
                             }
                         }
                     }
@@ -248,16 +328,25 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 } else {
                     None
                 };
-                let attacker_conn = attacker_name_opt.as_deref()
+                let attacker_conn = attacker_name_opt
+                    .as_deref()
                     .and_then(|name| find_player_by_name(state, map, x, y, name))
-                    .filter(|c| state.users.get(c).map(|u| u.privileges == 0).unwrap_or(false));
+                    .filter(|c| {
+                        state
+                            .users
+                            .get(c)
+                            .map(|u| u.privileges == 0)
+                            .unwrap_or(false)
+                    });
 
                 if let Some(target_conn) = attacker_conn {
                     if let Some(n) = state.get_npc_mut(npc_idx) {
                         n.target = Some(target_conn);
                     }
 
-                    let target_pos = state.users.get(&target_conn)
+                    let target_pos = state
+                        .users
+                        .get(&target_conn)
                         .filter(|u| u.logged && !u.dead && u.pos_map == map)
                         .map(|u| (u.pos_x, u.pos_y));
 
@@ -270,7 +359,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if lanza_spells > 0 && spells_len > 0 {
                                 let skip_spell = ataca_doble && rand_range(0, 1) == 0;
                                 if !skip_spell {
-                                    if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    if let Some(spell_id) =
+                                        pick_npc_spell(state, npc_idx, spells_len)
+                                    {
                                         npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                     }
                                 }
@@ -284,7 +375,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             }
                         } else {
                             // Cast spell if possible
-                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && spells_len > 0 {
+                            if dist > 1
+                                && dist <= 8
+                                && lanza_spells > 0
+                                && can_attack
+                                && spells_len > 0
+                            {
                                 if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 }
@@ -298,8 +394,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                 let heading = chase_heading(x, y, tx, ty);
                                 {
                                     let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                    if moved { send_npc_move(state, npc_idx).await; }
+                                    if let Some(gp) = ghost {
+                                        send_ghost_push(state, gp).await;
+                                    }
+                                    if moved {
+                                        send_npc_move(state, npc_idx).await;
+                                    }
                                 }
                             }
                         }
@@ -314,8 +414,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         let heading = rand_range(1, 4);
                         {
                             let (moved, ghost) = move_npc(state, npc_idx, heading);
-                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                            if moved { send_npc_move(state, npc_idx).await; }
+                            if let Some(gp) = ghost {
+                                send_ghost_push(state, gp).await;
+                            }
+                            if moved {
+                                send_npc_move(state, npc_idx).await;
+                            }
                         }
                     }
                 }
@@ -328,12 +432,22 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 let is_royal = npc_type == NpcType::RoyalGuard || alineacion == 1;
 
                 if can_attack {
-                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) =
+                        find_adjacent_player(state, map, x, y)
+                    {
                         let should_attack = if is_royal {
-                            state.users.get(&target_conn).map(|u| u.criminal).unwrap_or(false)
+                            state
+                                .users
+                                .get(&target_conn)
+                                .map(|u| u.criminal)
+                                .unwrap_or(false)
                         } else {
                             // Chaos guard — attack citizens
-                            state.users.get(&target_conn).map(|u| !u.criminal).unwrap_or(false)
+                            state
+                                .users
+                                .get(&target_conn)
+                                .map(|u| !u.criminal)
+                                .unwrap_or(false)
                         };
                         if should_attack {
                             npc_attack_user(state, npc_idx, target_conn).await;
@@ -354,7 +468,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         n.target = Some(target_conn);
                     }
 
-                    let target_pos = state.users.get(&target_conn)
+                    let target_pos = state
+                        .users
+                        .get(&target_conn)
                         .filter(|u| u.logged && !u.dead && u.pos_map == map)
                         .map(|u| (u.pos_x, u.pos_y));
 
@@ -366,7 +482,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if lanza_spells > 0 && spells_len > 0 {
                                 let skip_spell = ataca_doble && rand_range(0, 1) == 0;
                                 if !skip_spell {
-                                    if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    if let Some(spell_id) =
+                                        pick_npc_spell(state, npc_idx, spells_len)
+                                    {
                                         npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                     }
                                 }
@@ -376,7 +494,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
-                        } else if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && spells_len > 0 {
+                        } else if dist > 1
+                            && dist <= 8
+                            && lanza_spells > 0
+                            && can_attack
+                            && spells_len > 0
+                        {
                             if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
                                 npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                             }
@@ -385,15 +508,20 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             }
                         } else if dist > 1 {
                             // Use BFS pathfinding
-                            let has_path = state.get_npc(npc_idx)
+                            let has_path = state
+                                .get_npc(npc_idx)
                                 .map(|n| !n.pf_path.is_empty() && n.pf_step < n.pf_path.len())
                                 .unwrap_or(false);
 
                             if has_path {
                                 {
                                     let (pf_moved, pf_ghost) = npc_pathfind_step(state, npc_idx);
-                                    if let Some(gp) = pf_ghost { send_ghost_push(state, gp).await; }
-                                    if pf_moved { send_npc_move(state, npc_idx).await; }
+                                    if let Some(gp) = pf_ghost {
+                                        send_ghost_push(state, gp).await;
+                                    }
+                                    if pf_moved {
+                                        send_npc_move(state, npc_idx).await;
+                                    }
                                 }
                             } else {
                                 let path = pathfind_bfs(state, map, x, y, tx, ty);
@@ -403,16 +531,25 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                         n.pf_step = 0;
                                     }
                                     {
-                                        let (pf_moved, pf_ghost) = npc_pathfind_step(state, npc_idx);
-                                        if let Some(gp) = pf_ghost { send_ghost_push(state, gp).await; }
-                                        if pf_moved { send_npc_move(state, npc_idx).await; }
+                                        let (pf_moved, pf_ghost) =
+                                            npc_pathfind_step(state, npc_idx);
+                                        if let Some(gp) = pf_ghost {
+                                            send_ghost_push(state, gp).await;
+                                        }
+                                        if pf_moved {
+                                            send_npc_move(state, npc_idx).await;
+                                        }
                                     }
                                 } else {
                                     let heading = chase_heading(x, y, tx, ty);
                                     {
                                         let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                        if moved { send_npc_move(state, npc_idx).await; }
+                                        if let Some(gp) = ghost {
+                                            send_ghost_push(state, gp).await;
+                                        }
+                                        if moved {
+                                            send_npc_move(state, npc_idx).await;
+                                        }
                                     }
                                 }
                             }
@@ -429,8 +566,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         let heading = rand_range(1, 4);
                         {
                             let (moved, ghost) = move_npc(state, npc_idx, heading);
-                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                            if moved { send_npc_move(state, npc_idx).await; }
+                            if let Some(gp) = ghost {
+                                send_ghost_push(state, gp).await;
+                            }
+                            if moved {
+                                send_npc_move(state, npc_idx).await;
+                            }
                         }
                     }
                 }
@@ -443,7 +584,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 // Movement phase (AiNpcObjeto): scans vision for spell targets.
                 if hostile && can_attack {
                     // Adjacent melee/spell attack (VB6: same attack phase as other hostiles)
-                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) =
+                        find_adjacent_player(state, map, x, y)
+                    {
                         // VB6: NpcObjeto -> RandomNumber(1,3) < 3 -> 2/3 chance to attack
                         if rand_range(1, 3) < 3 {
                             // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
@@ -451,7 +594,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if lanza_spells > 0 && spells_len > 0 {
                                 let skip_spell = ataca_doble && rand_range(0, 1) == 0;
                                 if !skip_spell {
-                                    if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    if let Some(spell_id) =
+                                        pick_npc_spell(state, npc_idx, spells_len)
+                                    {
                                         npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                     }
                                 }
@@ -486,7 +631,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     None => (None, 0),
                 };
                 if let Some(master_conn) = master_id {
-                    let master_pos = state.users.get(&master_conn)
+                    let master_pos = state
+                        .users
+                        .get(&master_conn)
                         .filter(|u| u.logged && !u.dead && u.pos_map == map)
                         .map(|u| (u.pos_x, u.pos_y, u.target_npc_idx));
 
@@ -505,11 +652,17 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         // Priority: pet's own target (from check_pets) > master's target
                         let effective_target = if pet_target_npc > 0 {
                             // Validate pet target is still alive
-                            if state.get_npc(pet_target_npc).map(|n| n.is_alive()).unwrap_or(false) {
+                            if state
+                                .get_npc(pet_target_npc)
+                                .map(|n| n.is_alive())
+                                .unwrap_or(false)
+                            {
                                 pet_target_npc
                             } else {
                                 // Target dead — clear it
-                                if let Some(n) = state.get_npc_mut(npc_idx) { n.target_npc = 0; }
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.target_npc = 0;
+                                }
                                 master_target_npc
                             }
                         } else {
@@ -517,12 +670,13 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         };
 
                         if effective_target > 0 && can_attack {
-                            let target_npc_alive = state.get_npc(effective_target)
+                            let target_npc_alive = state
+                                .get_npc(effective_target)
                                 .map(|n| n.is_alive())
                                 .unwrap_or(false);
                             if target_npc_alive {
-                                let target_npc_pos = state.get_npc(effective_target)
-                                    .map(|n| (n.x, n.y));
+                                let target_npc_pos =
+                                    state.get_npc(effective_target).map(|n| (n.x, n.y));
                                 if let Some((tnx, tny)) = target_npc_pos {
                                     let tdist = (x - tnx).abs() + (y - tny).abs();
                                     if tdist <= 1 {
@@ -534,30 +688,44 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                         let heading = chase_heading(x, y, tnx, tny);
                                         {
                                             let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                            if moved { send_npc_move(state, npc_idx).await; }
+                                            if let Some(gp) = ghost {
+                                                send_ghost_push(state, gp).await;
+                                            }
+                                            if moved {
+                                                send_npc_move(state, npc_idx).await;
+                                            }
                                         }
                                     }
                                 }
                             } else {
                                 // Target dead — clear
-                                if let Some(n) = state.get_npc_mut(npc_idx) { n.target_npc = 0; }
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.target_npc = 0;
+                                }
                             }
                         } else if dist > 3 {
                             // Too far from master — follow
                             let heading = chase_heading(x, y, mx, my);
                             {
                                 let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                if moved { send_npc_move(state, npc_idx).await; }
+                                if let Some(gp) = ghost {
+                                    send_ghost_push(state, gp).await;
+                                }
+                                if moved {
+                                    send_npc_move(state, npc_idx).await;
+                                }
                             }
                         } else if rand_range(1, 12) == 3 {
                             // Near master — random wander
                             let heading = rand_range(1, 4);
                             {
                                 let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                if moved { send_npc_move(state, npc_idx).await; }
+                                if let Some(gp) = ghost {
+                                    send_ghost_push(state, gp).await;
+                                }
+                                if moved {
+                                    send_npc_move(state, npc_idx).await;
+                                }
                             }
                         }
                     }
@@ -571,7 +739,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 //   1) If has target_npc, scan vision for it → attack if adjacent, else chase
                 //   2) If target not found, follow owner (if pet) or restore old movement
                 let target_npc_idx = state.get_npc(npc_idx).map(|n| n.target_npc).unwrap_or(0);
-                let is_fire_elemental = state.get_npc(npc_idx)
+                let is_fire_elemental = state
+                    .get_npc(npc_idx)
                     .map(|n| n.npc_number == npc::ELEMENTAL_FUEGO as usize)
                     .unwrap_or(false);
 
@@ -602,12 +771,17 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         if dist > 1 {
                             let heading = chase_heading(x, y, tx, ty);
                             let (moved, ghost) = move_npc(state, npc_idx, heading);
-                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                            if moved { send_npc_move(state, npc_idx).await; }
+                            if let Some(gp) = ghost {
+                                send_ghost_push(state, gp).await;
+                            }
+                            if moved {
+                                send_npc_move(state, npc_idx).await;
+                            }
                         }
                     } else {
                         // Target not found in vision — follow owner if pet, else restore
-                        let has_master = state.get_npc(npc_idx)
+                        let has_master = state
+                            .get_npc(npc_idx)
                             .map(|n| n.maestro_user.is_some())
                             .unwrap_or(false);
 
@@ -621,7 +795,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     }
                 } else {
                     // No target assigned — follow owner or restore
-                    let has_master = state.get_npc(npc_idx)
+                    let has_master = state
+                        .get_npc(npc_idx)
                         .map(|n| n.maestro_user.is_some())
                         .unwrap_or(false);
                     if has_master {
@@ -639,7 +814,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                 // Attack adjacent players first
                 if can_attack {
-                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) =
+                        find_adjacent_player(state, map, x, y)
+                    {
                         npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
@@ -653,7 +830,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     if let Some(n) = state.get_npc_mut(npc_idx) {
                         n.target = Some(target_conn);
                     }
-                    let target_pos = state.users.get(&target_conn)
+                    let target_pos = state
+                        .users
+                        .get(&target_conn)
                         .filter(|u| u.logged && !u.dead && u.pos_map == map)
                         .map(|u| (u.pos_x, u.pos_y));
                     if let Some((tx, ty)) = target_pos {
@@ -661,24 +840,35 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         if dist > 1 {
                             let heading = chase_heading(x, y, tx, ty);
                             let (moved, ghost) = move_npc(state, npc_idx, heading);
-                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                            if moved { send_npc_move(state, npc_idx).await; }
+                            if let Some(gp) = ghost {
+                                send_ghost_push(state, gp).await;
+                            }
+                            if moved {
+                                send_npc_move(state, npc_idx).await;
+                            }
                         }
                     } else {
                         // Target gone
-                        if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.target = None;
+                        }
                     }
                 } else {
                     // No target — return toward spawn
-                    let (ox, oy) = state.get_npc(npc_idx)
+                    let (ox, oy) = state
+                        .get_npc(npc_idx)
                         .map(|n| (n.orig_x, n.orig_y))
                         .unwrap_or((x, y));
                     let dist_to_origin = (x - ox).abs() + (y - oy).abs();
                     if dist_to_origin > 3 {
                         let heading = chase_heading(x, y, ox, oy);
                         let (moved, ghost) = move_npc(state, npc_idx, heading);
-                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                        if moved { send_npc_move(state, npc_idx).await; }
+                        if let Some(gp) = ghost {
+                            send_ghost_push(state, gp).await;
+                        }
+                        if moved {
+                            send_npc_move(state, npc_idx).await;
+                        }
                     }
                 }
             }
@@ -690,7 +880,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 let mut attacked = false;
 
                 if can_attack {
-                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) =
+                        find_adjacent_player(state, map, x, y)
+                    {
                         npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
@@ -705,14 +897,21 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.target = Some(target_conn);
                         }
-                        let target_pos = state.users.get(&target_conn)
+                        let target_pos = state
+                            .users
+                            .get(&target_conn)
                             .filter(|u| u.logged && !u.dead && u.pos_map == map)
                             .map(|u| (u.pos_x, u.pos_y));
                         if let Some((tx, ty)) = target_pos {
                             let dist = (x - tx).abs() + (y - ty).abs();
 
                             // Cast spell at range
-                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && spells_len > 0 {
+                            if dist > 1
+                                && dist <= 8
+                                && lanza_spells > 0
+                                && can_attack
+                                && spells_len > 0
+                            {
                                 if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 }
@@ -725,23 +924,34 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if dist > 1 {
                                 let heading = chase_heading(x, y, tx, ty);
                                 let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                if moved { send_npc_move(state, npc_idx).await; }
+                                if let Some(gp) = ghost {
+                                    send_ghost_push(state, gp).await;
+                                }
+                                if moved {
+                                    send_npc_move(state, npc_idx).await;
+                                }
                             }
                         } else {
-                            if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.target = None;
+                            }
                         }
                     } else {
                         // No target — return toward spawn
-                        let (ox, oy) = state.get_npc(npc_idx)
+                        let (ox, oy) = state
+                            .get_npc(npc_idx)
                             .map(|n| (n.orig_x, n.orig_y))
                             .unwrap_or((x, y));
                         let dist_to_origin = (x - ox).abs() + (y - oy).abs();
                         if dist_to_origin > 3 {
                             let heading = chase_heading(x, y, ox, oy);
                             let (moved, ghost) = move_npc(state, npc_idx, heading);
-                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                            if moved { send_npc_move(state, npc_idx).await; }
+                            if let Some(gp) = ghost {
+                                send_ghost_push(state, gp).await;
+                            }
+                            if moved {
+                                send_npc_move(state, npc_idx).await;
+                            }
                         }
                     }
                 }
@@ -755,7 +965,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                 // First: try to paralyze adjacent pet NPCs
                 if can_attack && lanza_spells > 0 && spells_len > 0 {
-                    if let Some((pet_idx, _, _)) = find_nearest_hostile_npc(state, map, x, y, npc_idx) {
+                    if let Some((pet_idx, _, _)) =
+                        find_nearest_hostile_npc(state, map, x, y, npc_idx)
+                    {
                         let pet_pos = state.get_npc(pet_idx).map(|n| (n.x, n.y));
                         if let Some((px, py)) = pet_pos {
                             let dist = (x - px).abs() + (y - py).abs();
@@ -778,7 +990,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.target = Some(target_conn);
                         }
-                        let target_pos = state.users.get(&target_conn)
+                        let target_pos = state
+                            .users
+                            .get(&target_conn)
                             .filter(|u| u.logged && !u.dead && u.pos_map == map)
                             .map(|u| (u.pos_x, u.pos_y));
                         if let Some((tx, ty)) = target_pos {
@@ -792,21 +1006,28 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                 }
                             }
                         } else {
-                            if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.target = None;
+                            }
                         }
                     }
                 }
 
                 // Movement: stay near spawn, avoid melee range of players
-                let (ox, oy) = state.get_npc(npc_idx)
+                let (ox, oy) = state
+                    .get_npc(npc_idx)
                     .map(|n| (n.orig_x, n.orig_y))
                     .unwrap_or((x, y));
                 let dist_to_origin = (x - ox).abs() + (y - oy).abs();
                 if dist_to_origin > 5 {
                     let heading = chase_heading(x, y, ox, oy);
                     let (moved, ghost) = move_npc(state, npc_idx, heading);
-                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                    if moved { send_npc_move(state, npc_idx).await; }
+                    if let Some(gp) = ghost {
+                        send_ghost_push(state, gp).await;
+                    }
+                    if moved {
+                        send_npc_move(state, npc_idx).await;
+                    }
                 }
             }
 
@@ -819,7 +1040,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                 if can_attack && lanza_spells > 0 && spells_len > 0 {
                     // Priority 1: unparalyze allied pretoriano
-                    if let Some((ally_idx, _ax, _ay)) = find_paralyzed_pretoriano_ally(state, map, x, y, npc_idx) {
+                    if let Some((ally_idx, _ax, _ay)) =
+                        find_paralyzed_pretoriano_ally(state, map, x, y, npc_idx)
+                    {
                         // Remove paralysis from ally (20% effectiveness like VB6 king)
                         if rand_range(1, 100) <= 20 {
                             if let Some(ally) = state.get_npc_mut(ally_idx) {
@@ -835,7 +1058,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                     // Priority 2: paralyze enemy pets
                     if !acted {
-                        if let Some((pet_idx, px, py)) = find_nearest_hostile_npc(state, map, x, y, npc_idx) {
+                        if let Some((pet_idx, px, py)) =
+                            find_nearest_hostile_npc(state, map, x, y, npc_idx)
+                        {
                             let dist = (x - px).abs() + (y - py).abs();
                             if dist <= 8 {
                                 // Paralyze the pet
@@ -860,13 +1085,17 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.target = Some(target_conn);
                             }
-                            let target_pos = state.users.get(&target_conn)
+                            let target_pos = state
+                                .users
+                                .get(&target_conn)
                                 .filter(|u| u.logged && !u.dead && u.pos_map == map)
                                 .map(|u| (u.pos_x, u.pos_y));
                             if let Some((tx, ty)) = target_pos {
                                 let dist = (x - tx).abs() + (y - ty).abs();
                                 if dist <= 8 {
-                                    if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    if let Some(spell_id) =
+                                        pick_npc_spell(state, npc_idx, spells_len)
+                                    {
                                         npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                     }
                                     if let Some(n) = state.get_npc_mut(npc_idx) {
@@ -875,14 +1104,18 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                     acted = true;
                                 }
                             } else {
-                                if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.target = None;
+                                }
                             }
                         }
                     }
 
                     // Priority 4: heal wounded allies
                     if !acted {
-                        if let Some((ally_idx, _ax, _ay)) = find_wounded_pretoriano_ally(state, map, x, y, npc_idx) {
+                        if let Some((ally_idx, _ax, _ay)) =
+                            find_wounded_pretoriano_ally(state, map, x, y, npc_idx)
+                        {
                             // Heal: use existing npc_try_self_heal-style logic but on ally
                             let heal_amount = 30; // VB6: NPCcuraNPC heals 30 HP
                             if let Some(ally) = state.get_npc_mut(ally_idx) {
@@ -896,15 +1129,20 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 }
 
                 // Movement: stay near spawn (close to king)
-                let (ox, oy) = state.get_npc(npc_idx)
+                let (ox, oy) = state
+                    .get_npc(npc_idx)
                     .map(|n| (n.orig_x, n.orig_y))
                     .unwrap_or((x, y));
                 let dist_to_origin = (x - ox).abs() + (y - oy).abs();
                 if dist_to_origin > 4 {
                     let heading = chase_heading(x, y, ox, oy);
                     let (moved, ghost) = move_npc(state, npc_idx, heading);
-                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                    if moved { send_npc_move(state, npc_idx).await; }
+                    if let Some(gp) = ghost {
+                        send_ghost_push(state, gp).await;
+                    }
+                    if moved {
+                        send_npc_move(state, npc_idx).await;
+                    }
                 }
             }
 
@@ -923,7 +1161,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                     if can_attack && lanza_spells > 0 && spells_len > 0 {
                         // Priority 1: unparalyze allied pretoriano (20% chance)
-                        if let Some((ally_idx, _ax, _ay)) = find_paralyzed_pretoriano_ally(state, map, x, y, npc_idx) {
+                        if let Some((ally_idx, _ax, _ay)) =
+                            find_paralyzed_pretoriano_ally(state, map, x, y, npc_idx)
+                        {
                             if rand_range(1, 100) <= 20 {
                                 if let Some(ally) = state.get_npc_mut(ally_idx) {
                                     ally.paralyzed = false;
@@ -933,7 +1173,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
-                        } else if let Some((ally_idx, _ax, _ay)) = find_wounded_pretoriano_ally(state, map, x, y, npc_idx) {
+                        } else if let Some((ally_idx, _ax, _ay)) =
+                            find_wounded_pretoriano_ally(state, map, x, y, npc_idx)
+                        {
                             // Priority 2: heal wounded allies
                             let heal_amount = 5; // VB6: king heals +5 (CuraLeves)
                             if let Some(ally) = state.get_npc_mut(ally_idx) {
@@ -946,15 +1188,20 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     }
 
                     // King doesn't move aggressively while allies exist — stays back
-                    let (ox, oy) = state.get_npc(npc_idx)
+                    let (ox, oy) = state
+                        .get_npc(npc_idx)
                         .map(|n| (n.orig_x, n.orig_y))
                         .unwrap_or((x, y));
                     let dist_to_origin = (x - ox).abs() + (y - oy).abs();
                     if dist_to_origin > 2 {
                         let heading = chase_heading(x, y, ox, oy);
                         let (moved, ghost) = move_npc(state, npc_idx, heading);
-                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                        if moved { send_npc_move(state, npc_idx).await; }
+                        if let Some(gp) = ghost {
+                            send_ghost_push(state, gp).await;
+                        }
+                        if moved {
+                            send_npc_move(state, npc_idx).await;
+                        }
                     }
                 } else {
                     // King is alone — all allies dead. Enter berserker mode.
@@ -963,7 +1210,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     // Attack adjacent players (check all 4 directions)
                     let mut did_attack = false;
                     if can_attack {
-                        if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                        if let Some((target_conn, _adj_heading)) =
+                            find_adjacent_player(state, map, x, y)
+                        {
                             npc_attack_user(state, npc_idx, target_conn).await;
                             // VB6: special speed ability — can attack again immediately
                             if let Some(n) = state.get_npc_mut(npc_idx) {
@@ -979,14 +1228,21 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.target = Some(target_conn);
                         }
-                        let target_pos = state.users.get(&target_conn)
+                        let target_pos = state
+                            .users
+                            .get(&target_conn)
                             .filter(|u| u.logged && !u.dead && u.pos_map == map)
                             .map(|u| (u.pos_x, u.pos_y));
                         if let Some((tx, ty)) = target_pos {
                             let dist = (x - tx).abs() + (y - ty).abs();
 
                             // Cast debuff spells at range if can't reach
-                            if dist > 1 && dist <= 8 && lanza_spells > 0 && spells_len > 0 && !did_attack {
+                            if dist > 1
+                                && dist <= 8
+                                && lanza_spells > 0
+                                && spells_len > 0
+                                && !did_attack
+                            {
                                 if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 }
@@ -996,26 +1252,37 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if dist > 1 {
                                 let heading = chase_heading(x, y, tx, ty);
                                 let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                if moved { send_npc_move(state, npc_idx).await; }
+                                if let Some(gp) = ghost {
+                                    send_ghost_push(state, gp).await;
+                                }
+                                if moved {
+                                    send_npc_move(state, npc_idx).await;
+                                }
                             }
                         } else {
-                            if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.target = None;
+                            }
                         }
                     } else {
                         // No targets — heal self and return to spawn
                         if cur_hp < max_hp {
                             npc_try_self_heal(state, npc_idx).await;
                         }
-                        let (ox, oy) = state.get_npc(npc_idx)
+                        let (ox, oy) = state
+                            .get_npc(npc_idx)
                             .map(|n| (n.orig_x, n.orig_y))
                             .unwrap_or((x, y));
                         let dist_to_origin = (x - ox).abs() + (y - oy).abs();
                         if dist_to_origin > 2 {
                             let heading = chase_heading(x, y, ox, oy);
                             let (moved, ghost) = move_npc(state, npc_idx, heading);
-                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                            if moved { send_npc_move(state, npc_idx).await; }
+                            if let Some(gp) = ghost {
+                                send_ghost_push(state, gp).await;
+                            }
+                            if moved {
+                                send_npc_move(state, npc_idx).await;
+                            }
                         }
                     }
                 }
@@ -1085,29 +1352,66 @@ async fn npc_cast_spell_on_npc(state: &mut GameState, caster_idx: usize, target_
         None => return,
     };
     if spell.fx_grh > 0 {
-        let target_char = state.get_npc(target_idx).map(|n| n.char_index.0).unwrap_or(0);
-        let fx_pkt = binary_packets::write_create_fx(target_char as i16, spell.fx_grh as i16, spell.loops as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: caster_map, x: cx, y: cy }, &fx_pkt);
+        let target_char = state
+            .get_npc(target_idx)
+            .map(|n| n.char_index.0)
+            .unwrap_or(0);
+        let fx_pkt = binary_packets::write_create_fx(
+            target_char as i16,
+            spell.fx_grh as i16,
+            spell.loops as i16,
+        );
+        state.send_data_bytes(
+            SendTarget::ToArea {
+                map: caster_map,
+                x: cx,
+                y: cy,
+            },
+            &fx_pkt,
+        );
     }
     if spell.wav > 0 {
         let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, cx as i16, cy as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: caster_map, x: cx, y: cy }, &snd_pkt);
+        state.send_data_bytes(
+            SendTarget::ToArea {
+                map: caster_map,
+                x: cx,
+                y: cy,
+            },
+            &snd_pkt,
+        );
     }
 
     if target_dead {
         let a_master = state.get_npc(caster_idx).and_then(|n| n.maestro_user);
         if let Some(master_conn) = a_master {
-            let (give_exp, give_gld_min, give_gld_max) = state.get_npc(target_idx)
+            let (give_exp, give_gld_min, give_gld_max) = state
+                .get_npc(target_idx)
                 .map(|n| (n.give_exp, n.give_gld_min, n.give_gld_max))
                 .unwrap_or((0, 0, 0));
-            npc_die(state, target_idx, master_conn, give_exp, give_gld_min, give_gld_max).await;
+            npc_die(
+                state,
+                target_idx,
+                master_conn,
+                give_exp,
+                give_gld_min,
+                give_gld_max,
+            )
+            .await;
         } else {
             let (t_map, tx, ty, t_char) = match state.get_npc(target_idx) {
                 Some(n) => (n.map, n.x, n.y, n.char_index),
                 None => return,
             };
             let bp_pkt = binary_packets::write_character_remove(t_char.0 as i16);
-            state.send_data_bytes(SendTarget::ToArea { map: t_map, x: tx, y: ty }, &bp_pkt);
+            state.send_data_bytes(
+                SendTarget::ToArea {
+                    map: t_map,
+                    x: tx,
+                    y: ty,
+                },
+                &bp_pkt,
+            );
             state.kill_npc(target_idx);
         }
     }
@@ -1115,14 +1419,23 @@ async fn npc_cast_spell_on_npc(state: &mut GameState, caster_idx: usize, target_
 
 /// Follow-owner behavior shared by AI_NPC_ATACA_NPC when no target is in vision.
 /// Mirrors AI_FOLLOW_OWNER: attack master's target NPC if valid, else follow/wander.
-async fn follow_owner_behavior(state: &mut GameState, npc_idx: usize, map: i32, x: i32, y: i32, can_attack: bool) {
+async fn follow_owner_behavior(
+    state: &mut GameState,
+    npc_idx: usize,
+    map: i32,
+    x: i32,
+    y: i32,
+    can_attack: bool,
+) {
     let master_id = state.get_npc(npc_idx).and_then(|n| n.maestro_user);
     let master_conn = match master_id {
         Some(c) => c,
         None => return,
     };
 
-    let master_pos = state.users.get(&master_conn)
+    let master_pos = state
+        .users
+        .get(&master_conn)
         .filter(|u| u.logged && !u.dead && u.pos_map == map)
         .map(|u| (u.pos_x, u.pos_y, u.target_npc_idx));
 
@@ -1132,7 +1445,8 @@ async fn follow_owner_behavior(state: &mut GameState, npc_idx: usize, map: i32, 
         // Check if master has a valid NPC target to attack
         let effective_target = master_target_npc;
         if effective_target > 0 && can_attack {
-            let target_alive = state.get_npc(effective_target)
+            let target_alive = state
+                .get_npc(effective_target)
                 .map(|n| n.is_alive())
                 .unwrap_or(false);
             if target_alive {
@@ -1147,8 +1461,12 @@ async fn follow_owner_behavior(state: &mut GameState, npc_idx: usize, map: i32, 
                     } else {
                         let heading = chase_heading(x, y, tnx, tny);
                         let (moved, ghost) = move_npc(state, npc_idx, heading);
-                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                        if moved { send_npc_move(state, npc_idx).await; }
+                        if let Some(gp) = ghost {
+                            send_ghost_push(state, gp).await;
+                        }
+                        if moved {
+                            send_npc_move(state, npc_idx).await;
+                        }
                     }
                 }
                 return;
@@ -1159,14 +1477,22 @@ async fn follow_owner_behavior(state: &mut GameState, npc_idx: usize, map: i32, 
             // Too far from master — follow
             let heading = chase_heading(x, y, mx, my);
             let (moved, ghost) = move_npc(state, npc_idx, heading);
-            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-            if moved { send_npc_move(state, npc_idx).await; }
+            if let Some(gp) = ghost {
+                send_ghost_push(state, gp).await;
+            }
+            if moved {
+                send_npc_move(state, npc_idx).await;
+            }
         } else if rand_range(1, 12) == 3 {
             // Near master — random wander
             let heading = rand_range(1, 4);
             let (moved, ghost) = move_npc(state, npc_idx, heading);
-            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-            if moved { send_npc_move(state, npc_idx).await; }
+            if let Some(gp) = ghost {
+                send_ghost_push(state, gp).await;
+            }
+            if moved {
+                send_npc_move(state, npc_idx).await;
+            }
         }
     }
 }
@@ -1177,8 +1503,11 @@ fn pick_npc_spell(state: &GameState, npc_idx: usize, spells_len: usize) -> Optio
     if spells_len == 0 {
         return None;
     }
-    let spell_idx = (rand_range(0, spells_len as i32 - 1) as usize).min(spells_len.saturating_sub(1));
-    state.get_npc(npc_idx).and_then(|n| n.spells.get(spell_idx).copied())
+    let spell_idx =
+        (rand_range(0, spells_len as i32 - 1) as usize).min(spells_len.saturating_sub(1));
+    state
+        .get_npc(npc_idx)
+        .and_then(|n| n.spells.get(spell_idx).copied())
 }
 
 /// NPC self-heal: check if any spell has SubeHP=1 and cast it on self.
@@ -1210,7 +1539,11 @@ pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize) {
 
             // FX on NPC
             if spell.fx_grh > 0 {
-                let pkt = binary_packets::write_create_fx(npc_char.0 as i16, spell.fx_grh as i16, spell.loops as i16);
+                let pkt = binary_packets::write_create_fx(
+                    npc_char.0 as i16,
+                    spell.fx_grh as i16,
+                    spell.loops as i16,
+                );
                 state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt);
             }
             if spell.wav > 0 {
@@ -1220,7 +1553,12 @@ pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize) {
 
             // Magic words
             if !spell.palabras_magicas.is_empty() {
-                state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, &format!("{} dice: {}", npc_name, spell.palabras_magicas), npc_char.0 as i16, 255);
+                state.send_chat_over_head_to(
+                    SendTarget::ToArea { map, x: nx, y: ny },
+                    &format!("{} dice: {}", npc_name, spell.palabras_magicas),
+                    npc_char.0 as i16,
+                    255,
+                );
             }
             break; // Only cast one heal per tick
         }
@@ -1229,10 +1567,11 @@ pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize) {
 
 /// Respawn tick — check dead NPCs and revive them.
 pub async fn tick_npc_respawn(state: &mut GameState) {
-    let dead_npcs: Vec<usize> = state.npcs.iter().enumerate()
-        .filter_map(|(i, slot)| {
-            slot.as_ref().filter(|n| !n.active && n.respawn).map(|_| i)
-        })
+    let dead_npcs: Vec<usize> = state
+        .npcs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, slot)| slot.as_ref().filter(|n| !n.active && n.respawn).map(|_| i))
         .collect();
 
     for npc_idx in dead_npcs {

@@ -4,8 +4,8 @@
 // NPCs-HOSTILES.dat has [NPC500]+ (hostile monsters).
 // Both files share the same field structure.
 
-use std::path::Path;
 use crate::config::IniFile;
+use std::path::Path;
 
 /// NPC type matching VB6 eNPCType.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,17 +83,17 @@ pub struct NpcData {
     pub head: i32,
     pub body: i32,
     pub heading: i32,
-    pub weapon_anim: i32,   // VB6: ArmaAnim
-    pub shield_anim: i32,   // VB6: EscudoAnim
-    pub casco_anim: i32,    // VB6: CascoAnim
+    pub weapon_anim: i32, // VB6: ArmaAnim
+    pub shield_anim: i32, // VB6: EscudoAnim
+    pub casco_anim: i32,  // VB6: CascoAnim
 
     // Behavior
-    pub movement: i32,      // AI movement type (0=static, 1=random, 2=wander, 3=chase)
+    pub movement: i32, // AI movement type (0=static, 1=random, 2=wander, 3=chase)
     pub attackable: bool,
     pub hostile: bool,
     pub respawn: bool,
-    pub domable: i32,       // Taming skill required (0 = can't tame)
-    pub comercia: bool,     // Can trade
+    pub domable: i32,   // Taming skill required (0 = can't tame)
+    pub comercia: bool, // Can trade
 
     // Combat
     pub min_hp: i32,
@@ -101,7 +101,7 @@ pub struct NpcData {
     pub min_hit: i32,
     pub max_hit: i32,
     pub def: i32,
-    pub def_m: i32,         // VB6: DEFm — magic defense vs spells
+    pub def_m: i32, // VB6: DEFm — magic defense vs spells
     pub poder_ataque: i32,
     pub poder_evasion: i32,
 
@@ -112,25 +112,25 @@ pub struct NpcData {
     pub give_gld_max: i32,
 
     // Commerce
-    pub inflacion: i32,     // Price markup percentage (e.g. 50 = +50%)
-    pub tipo_items: i32,    // ObjType filter (0 = buys anything)
-    pub inv_respawn: bool,  // If true, inventory does NOT auto-replenish
+    pub inflacion: i32,    // Price markup percentage (e.g. 50 = +50%)
+    pub tipo_items: i32,   // ObjType filter (0 = buys anything)
+    pub inv_respawn: bool, // If true, inventory does NOT auto-replenish
 
     // Inventory
     pub nro_items: i32,
     pub items: Vec<NpcInvItem>, // Items loaded from Obj1..ObjN
-    pub alineacion: i32,    // Alignment (0=neutral, 1=good, 2=evil)
+    pub alineacion: i32,        // Alignment (0=neutral, 1=good, 2=evil)
 
     // Movement constraints (VB6: LegalPosNPC)
-    pub agua_valida: bool,      // Can walk on water tiles
-    pub tierra_invalida: bool,  // Can ONLY walk on water tiles
+    pub agua_valida: bool,     // Can walk on water tiles
+    pub tierra_invalida: bool, // Can ONLY walk on water tiles
 
     // Status effects
-    pub veneno: bool,           // Poisons on hit (VB6: Npclist.Veneno)
+    pub veneno: bool, // Poisons on hit (VB6: Npclist.Veneno)
 
     // Spells
-    pub lanza_spells: i32,      // Number of spells (0 = can't cast)
-    pub spells: Vec<i32>,       // Spell indices (Sp1..SpN)
+    pub lanza_spells: i32, // Number of spells (0 = can't cast)
+    pub spells: Vec<i32>,  // Spell indices (Sp1..SpN)
 
     // Sound effects (VB6: SND1 = attack, SND2 = hit/hurt, SND3 = death)
     pub snd1: i32,
@@ -170,19 +170,46 @@ impl Default for NpcData {
             name: String::new(),
             desc: String::new(),
             npc_type: NpcType::Common,
-            head: 0, body: 0, heading: 3, weapon_anim: 0, shield_anim: 0, casco_anim: 0,
-            movement: 0, attackable: false, hostile: false,
-            respawn: false, domable: 0, comercia: false,
-            min_hp: 0, max_hp: 0, min_hit: 0, max_hit: 0,
-            def: 0, def_m: 0, poder_ataque: 0, poder_evasion: 0,
-            give_exp: 0, give_gld: 0, give_gld_min: 0, give_gld_max: 0,
-            inflacion: 0, tipo_items: 0, inv_respawn: false,
-            nro_items: 0, items: Vec::new(), alineacion: 0,
-            agua_valida: false, tierra_invalida: false,
+            head: 0,
+            body: 0,
+            heading: 3,
+            weapon_anim: 0,
+            shield_anim: 0,
+            casco_anim: 0,
+            movement: 0,
+            attackable: false,
+            hostile: false,
+            respawn: false,
+            domable: 0,
+            comercia: false,
+            min_hp: 0,
+            max_hp: 0,
+            min_hit: 0,
+            max_hit: 0,
+            def: 0,
+            def_m: 0,
+            poder_ataque: 0,
+            poder_evasion: 0,
+            give_exp: 0,
+            give_gld: 0,
+            give_gld_min: 0,
+            give_gld_max: 0,
+            inflacion: 0,
+            tipo_items: 0,
+            inv_respawn: false,
+            nro_items: 0,
+            items: Vec::new(),
+            alineacion: 0,
+            agua_valida: false,
+            tierra_invalida: false,
             veneno: false,
-            lanza_spells: 0, spells: Vec::new(),
-            snd1: 0, snd2: 0, snd3: 0,
-            nro_criaturas: 0, criaturas: Vec::new(),
+            lanza_spells: 0,
+            spells: Vec::new(),
+            snd1: 0,
+            snd2: 0,
+            snd3: 0,
+            nro_criaturas: 0,
+            criaturas: Vec::new(),
             aura: 0,
             ataca_doble: false,
         }
@@ -191,15 +218,13 @@ impl Default for NpcData {
 
 /// Load NPC from a single INI section.
 fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
-    let get_str = |key: &str| -> String {
-        ini.get(section, key).unwrap_or_default()
-    };
+    let get_str = |key: &str| -> String { ini.get(section, key).unwrap_or_default() };
     let get_int = |key: &str| -> i32 {
-        ini.get(section, key).and_then(|s| s.parse().ok()).unwrap_or(0)
+        ini.get(section, key)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0)
     };
-    let get_bool = |key: &str| -> bool {
-        ini.get(section, key).map(|s| s == "1").unwrap_or(false)
-    };
+    let get_bool = |key: &str| -> bool { ini.get(section, key).map(|s| s == "1").unwrap_or(false) };
 
     NpcData {
         index,
@@ -242,11 +267,24 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
                 if !line.is_empty() {
                     // Format: ObjIndex-Amount-ProbTirar (delimiter '-', ASCII 45)
                     let parts: Vec<&str> = line.split('-').collect();
-                    let obj_index = parts.first().and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
-                    let amount = parts.get(1).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
-                    let prob_tirar = parts.get(2).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+                    let obj_index = parts
+                        .first()
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .unwrap_or(0);
+                    let amount = parts
+                        .get(1)
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .unwrap_or(0);
+                    let prob_tirar = parts
+                        .get(2)
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .unwrap_or(0);
                     if obj_index > 0 {
-                        items.push(NpcInvItem { obj_index, amount, prob_tirar });
+                        items.push(NpcInvItem {
+                            obj_index,
+                            amount,
+                            prob_tirar,
+                        });
                     }
                 }
             }
@@ -280,7 +318,10 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
             for i in 1..=nro {
                 let ci = get_int(&format!("CI{}", i));
                 let cn = get_str(&format!("CN{}", i));
-                criaturas.push(TrainerCreature { npc_index: ci, npc_name: cn });
+                criaturas.push(TrainerCreature {
+                    npc_index: ci,
+                    npc_name: cn,
+                });
             }
             criaturas
         },
@@ -318,7 +359,8 @@ pub fn load_npcs(base: &Path) -> Result<NpcDatabase, String> {
 
     // Load normal NPCs (1-499)
     if let Ok(ini) = IniFile::load(&normal_path) {
-        let num: usize = ini.get("INIT", "NumNPCs")
+        let num: usize = ini
+            .get("INIT", "NumNPCs")
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 

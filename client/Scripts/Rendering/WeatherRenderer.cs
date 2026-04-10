@@ -22,6 +22,17 @@ public partial class WeatherRenderer : Node2D
     private const float RainWindSpeed = 120f;    // pixels/sec horizontal (diagonal)
     private const float RainDropLength = 12f;    // length of each rain line
     private const float RainDropWidth = 1.2f;
+
+    // Snow particle system
+    private const int MaxSnowFlakes = 150;
+    private const float SnowSpeed = 50f;         // pixels/sec vertical (slow drift)
+    private const float SnowSway = 20f;          // max horizontal sway (pixels/sec)
+    private const float SnowAlpha = 0.6f;
+    private const float SnowRadius = 2.5f;
+    private readonly float[] _snowX = new float[MaxSnowFlakes];
+    private readonly float[] _snowY = new float[MaxSnowFlakes];
+    private readonly float[] _snowSway = new float[MaxSnowFlakes]; // per-flake sway velocity
+    private bool _snowInitialized;
     private static int ViewW => ResolutionManager.ViewportW;
     private static int ViewH => ResolutionManager.ViewportH;
     // Spawn margin: drops spawn outside viewport so they enter from top/left
@@ -222,7 +233,7 @@ public partial class WeatherRenderer : Node2D
         if (_state == null) return;
 
         float dt = (float)delta;
-        bool raining = _state.Raining;
+        bool raining = _state.Raining || _state.ZoneLluvia;
 
         // Fade intensity
         if (raining && _rainIntensity < 1f)
@@ -232,6 +243,34 @@ public partial class WeatherRenderer : Node2D
         else if (!raining && _rainIntensity > 0f)
         {
             _rainIntensity = Math.Max(0f, _rainIntensity - FadeOutSpeed * dt);
+        }
+
+        // Update snow flakes
+        if (_state.ZoneNieve)
+        {
+            if (!_snowInitialized)
+            {
+                for (int i = 0; i < MaxSnowFlakes; i++)
+                {
+                    _snowX[i] = (float)(_rng.NextDouble() * ViewW);
+                    _snowY[i] = (float)(_rng.NextDouble() * ViewH);
+                    _snowSway[i] = (float)((_rng.NextDouble() - 0.5) * 2.0 * SnowSway);
+                }
+                _snowInitialized = true;
+            }
+
+            for (int i = 0; i < MaxSnowFlakes; i++)
+            {
+                _snowX[i] += _snowSway[i] * dt;
+                _snowY[i] += SnowSpeed * dt;
+
+                if (_snowY[i] > ViewH + SnowRadius * 2 || _snowX[i] < -10 || _snowX[i] > ViewW + 10)
+                {
+                    _snowX[i] = (float)(_rng.NextDouble() * ViewW);
+                    _snowY[i] = -SnowRadius * 2;
+                    _snowSway[i] = (float)((_rng.NextDouble() - 0.5) * 2.0 * SnowSway);
+                }
+            }
         }
 
         // Rain sound control
@@ -256,7 +295,8 @@ public partial class WeatherRenderer : Node2D
             }
         }
 
-        if (_rainIntensity <= 0f)
+        bool hasWeather = _rainIntensity > 0f || _state.ZoneNieve || _state.ZoneNiebla;
+        if (!hasWeather)
         {
             _lightningFlashAlpha = 0f;
             Visible = false;
@@ -316,8 +356,8 @@ public partial class WeatherRenderer : Node2D
             _lightningFlashAlpha = 0f;
         }
 
-        // Only redraw when there's something to draw (rain or lightning flash)
-        if (_rainIntensity > 0f || _lightningFlashAlpha > 0f)
+        // Redraw when any effect is active
+        if (_rainIntensity > 0f || _lightningFlashAlpha > 0f || _state.ZoneNieve || _state.ZoneNiebla)
             QueueRedraw();
     }
 

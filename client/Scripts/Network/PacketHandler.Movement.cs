@@ -901,6 +901,15 @@ public partial class PacketHandler
         short zoneX2 = bq.ReadInteger();
         short zoneY2 = bq.ReadInteger();
 
+        // Optional ambient RGB (3 bytes appended by newer server versions)
+        byte ambR = 0, ambG = 0, ambB = 0;
+        if (bq.Available >= 3)
+        {
+            ambR = bq.ReadByte();
+            ambG = bq.ReadByte();
+            ambB = bq.ReadByte();
+        }
+
         _state.CurrentZoneName = zoneName;
         _state.CurrentZoneType = zoneType;
         _state.CurrentZoneSafe = isSafe;
@@ -915,5 +924,11 @@ public partial class PacketHandler
         _state.ZoneLluvia = lluvia;
         _state.ZoneNieve = nieve;
         _state.ZoneNiebla = niebla;
+
+        // Store zone ambient; trigger light recalc so LightSystem picks up new ambient
+        _state.ZoneAmbientR = ambR;
+        _state.ZoneAmbientG = ambG;
+        _state.ZoneAmbientB = ambB;
+        _state.LightsDirty = true;
     }
 }

@@ -1,69 +1,66 @@
-pub(crate) mod common;
-mod gm_teleport;
-mod gm_moderation;
-mod gm_items;
-mod gm_server;
-mod gm_query;
-mod ticks;
-mod events;
-mod commerce;
-mod skills;
-mod guilds_handler;
-mod spells;
-mod quests_party;
+mod auth;
 mod combat;
-mod npcs;
-mod social;
-mod player_commands;
+mod commerce;
+pub(crate) mod common;
+mod events;
+mod gm_items;
+mod gm_moderation;
+mod gm_query;
+mod gm_server;
+mod gm_teleport;
+mod guilds_handler;
+mod inventory;
+mod leveling;
 mod misc_packets;
 mod misc_slash;
-mod inventory;
-mod auth;
 mod movement;
-mod warp;
-mod leveling;
+mod npcs;
 mod parity_gameplay;
 mod parity_gm;
-use common::*;
-use gm_teleport::*;
-use gm_moderation::*;
-use gm_items::*;
-use gm_server::*;
-use gm_query::*;
-use ticks::*;
-use events::*;
-use commerce::*;
-use skills::*;
-use guilds_handler::*;
-use spells::*;
-use quests_party::*;
+mod player_commands;
+mod quests_party;
+mod skills;
+mod social;
+mod spells;
+mod ticks;
+mod warp;
 use combat::*;
-use npcs::*;
-use social::*;
-use player_commands::*;
+use commerce::*;
+use common::*;
+use events::*;
+use gm_items::*;
+use gm_moderation::*;
+use gm_query::*;
+use gm_server::*;
+use gm_teleport::*;
+use guilds_handler::*;
+use inventory::*;
 use misc_packets::*;
 use misc_slash::*;
+use npcs::*;
 use parity_gameplay::*;
 use parity_gm::*;
-use inventory::*;
+use player_commands::*;
+use quests_party::*;
+use skills::*;
+use social::*;
+use spells::*;
+use ticks::*;
 // Re-export functions from new submodules so sibling modules can use `super::fn_name`
-pub(crate) use warp::{
-    make_user_visible, check_update_needed_user, warp_user,
-    warp_user_exact, mover_casper, send_warp_fx,
-};
 pub(crate) use leveling::check_user_level;
+pub(crate) use warp::{
+    check_update_needed_user, make_user_visible, mover_casper, send_warp_fx, warp_user,
+    warp_user_exact,
+};
 // Re-export quest/party functions called from other modules
 // Re-export tick functions called from main.rs
-pub use ticks::{
-    tick_npc_ai, tick_npc_respawn, tick_player_passive,
-    tick_intervals, tick_clean_world, tick_security,
-    auto_save_all_users, build_char_save_data,
-};
 pub(crate) use ticks::remove_pet_from_owner;
-// Re-export event functions called from main.rs and other modules
-pub use events::{
-    pretoriano_check_death, ip_security_accept,
+pub use ticks::{
+    auto_save_all_users, build_char_save_data, tick_clean_world, tick_intervals, tick_npc_ai,
+    tick_npc_respawn, tick_player_passive, tick_security,
 };
+// Re-export event functions called from main.rs and other modules
+pub use events::{ip_security_accept, pretoriano_check_death};
 
 // Packet handlers — processes decrypted client packets.
 //
@@ -86,14 +83,14 @@ pub use events::{
 
 use tracing::info;
 
-use crate::net::ConnectionId;
-use crate::protocol::{client_opcodes, font_index, fields::read_field};
-use crate::protocol::byte_queue::ByteQueue;
-use crate::protocol::packets::ClientPacketID;
-use crate::protocol::binary_packets;
-use crate::db::charfile;
 use super::types::{GameState, privilege_level};
 use super::world;
+use crate::db::charfile;
+use crate::net::ConnectionId;
+use crate::protocol::binary_packets;
+use crate::protocol::byte_queue::ByteQueue;
+use crate::protocol::packets::ClientPacketID;
+use crate::protocol::{client_opcodes, fields::read_field, font_index};
 
 // ─── BINARY PROTOCOL DISPATCH ──────────────────────────────────────────────
 // Modern 13.3-style binary protocol: 1-byte opcode + typed fields via ByteQueue.
@@ -102,8 +99,15 @@ use super::world;
 
 /// Decode coordinate-bearing packet using the per-connection rolling cipher.
 /// Returns None if cipher is not active (pre-login) or decoding fails validation.
-fn decode_coords(state: &mut GameState, conn_id: ConnectionId, enc_x: i16, enc_y: i16) -> Option<(i16, i16)> {
-    let (map, _map_w, _map_h) = state.users.get(&conn_id)
+fn decode_coords(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    enc_x: i16,
+    enc_y: i16,
+) -> Option<(i16, i16)> {
+    let (map, _map_w, _map_h) = state
+        .users
+        .get(&conn_id)
         .map(|u| (u.pos_map, 0i32, 0i32))
         .unwrap_or((0, 0, 0));
     let (grid_w, grid_h) = state.grid_dimensions(map);
@@ -138,7 +142,8 @@ pub async fn handle_packet_stream(state: &mut GameState, conn_id: ConnectionId, 
     if data.len() > crate::net::connection::MAX_RECV_BUFFER {
         tracing::warn!(
             "[SEC] Connection #{} recv buffer overflow ({} bytes), disconnecting",
-            conn_id, data.len()
+            conn_id,
+            data.len()
         );
         state.security_kick_queue.push(conn_id);
         return;
@@ -167,7 +172,8 @@ pub async fn handle_packet_stream(state: &mut GameState, conn_id: ConnectionId, 
             }
             tracing::debug!(
                 "[SEC] Connection #{} exceeded packet rate ({}/s), throttled",
-                conn_id, max_pps
+                conn_id,
+                max_pps
             );
             break;
         }
@@ -207,7 +213,11 @@ enum PacketResult {
 ///
 /// 13.3-style binary protocol: reads 1-byte opcode, then typed fields via ByteQueue.
 /// Bridge layer: converts binary fields to the text format existing handlers expect.
-async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mut ByteQueue) -> PacketResult {
+async fn handle_one_packet(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    bq: &mut ByteQueue,
+) -> PacketResult {
     let packet_id_byte = match bq.read_byte() {
         Ok(b) => b,
         Err(_) => return PacketResult::Incomplete,
@@ -216,7 +226,10 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
     let packet_id = match ClientPacketID::from_byte(packet_id_byte) {
         Some(id) => id,
         None => {
-            info!("[PKT] Unknown binary packet ID {} from #{}", packet_id_byte, conn_id);
+            info!(
+                "[PKT] Unknown binary packet ID {} from #{}",
+                packet_id_byte, conn_id
+            );
             return PacketResult::Error;
         }
     };
@@ -249,19 +262,43 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let account = bq.read_ascii_string().unwrap_or_default();
             // Client sends byte IDs — convert to name strings matching client ClassNames/RaceNames arrays
             let race_name = match race_id {
-                1 => "Humano", 2 => "Elfo", 3 => "Elfo Oscuro", 4 => "Enano", 5 => "Gnomo",
+                1 => "Humano",
+                2 => "Elfo",
+                3 => "Elfo Oscuro",
+                4 => "Enano",
+                5 => "Gnomo",
                 _ => "Humano",
             };
             // VB6 eClass: 1=Mago,2=Clerigo,3=Guerrero,4=Asesino,5=Ladron,6=Bardo,
             //   7=Druida,8=Bandido,9=Paladin,10=Cazador,11=Trabajador,12=Pirata
             let class_name = match class_id {
-                1 => "Mago", 2 => "Clerigo", 3 => "Guerrero", 4 => "Asesino",
-                5 => "Ladron", 6 => "Bardo", 7 => "Druida", 8 => "Bandido",
-                9 => "Paladin", 10 => "Cazador", 11 => "Trabajador", 12 => "Pirata",
+                1 => "Mago",
+                2 => "Clerigo",
+                3 => "Guerrero",
+                4 => "Asesino",
+                5 => "Ladron",
+                6 => "Bardo",
+                7 => "Druida",
+                8 => "Bandido",
+                9 => "Paladin",
+                10 => "Cazador",
+                11 => "Trabajador",
+                12 => "Pirata",
                 _ => "Guerrero",
             };
             let gender_i32: i32 = if gender == 1 { 1 } else { 2 };
-            auth::handle_create_character(state, conn_id, &char_name, race_name, gender_i32, class_name, homeland as i32, &account, head as i32).await;
+            auth::handle_create_character(
+                state,
+                conn_id,
+                &char_name,
+                race_name,
+                gender_i32,
+                class_name,
+                homeland as i32,
+                &account,
+                head as i32,
+            )
+            .await;
         }
         ClientPacketID::CharacterLogin => {
             let char_name = bq.read_ascii_string().unwrap_or_default();
@@ -284,10 +321,13 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::ChangePassword => {
             let old_pass = bq.read_ascii_string().unwrap_or_default();
             let new_pass = bq.read_ascii_string().unwrap_or_default();
-            let account = state.users.get(&conn_id)
+            let account = state
+                .users
+                .get(&conn_id)
                 .map(|u| u.account_name.clone())
                 .unwrap_or_default();
-            auth::handle_change_password(state, conn_id, &account, &old_pass, &new_pass, &new_pass).await;
+            auth::handle_change_password(state, conn_id, &account, &old_pass, &new_pass, &new_pass)
+                .await;
         }
         ClientPacketID::AccountRecovery => {
             let account = bq.read_ascii_string().unwrap_or_default();
@@ -302,11 +342,15 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             // Binary client only sends name. Account is from connection state.
             // For security verification, load the charfile password (codex) server-side
             // since the client is already authenticated via AccountLogin.
-            let account = state.users.get(&conn_id)
+            let account = state
+                .users
+                .get(&conn_id)
                 .map(|u| u.account_name.clone())
                 .unwrap_or_default();
-            let codex = charfile::load_charfile(&state.pool, &char_name).await
-                .map(|c| c.password).unwrap_or_default();
+            let codex = charfile::load_charfile(&state.pool, &char_name)
+                .await
+                .map(|c| c.password)
+                .unwrap_or_default();
             auth::handle_delete_character(state, conn_id, &char_name, &account, &codex).await;
         }
 
@@ -362,7 +406,9 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let msg = bq.read_ascii_string().unwrap_or_default();
             if msg.starts_with('/') {
                 let logged = state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false);
-                if logged { handle_slash_command(state, conn_id, &msg).await; }
+                if logged {
+                    handle_slash_command(state, conn_id, &msg).await;
+                }
             } else {
                 social::handle_talk(state, conn_id, &msg).await;
             }
@@ -380,7 +426,9 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let cmd = bq.read_ascii_string().unwrap_or_default();
             if cmd.starts_with('/') {
                 let logged = state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false);
-                if logged { handle_slash_command(state, conn_id, &cmd).await; }
+                if logged {
+                    handle_slash_command(state, conn_id, &cmd).await;
+                }
             } else {
                 social::handle_talk(state, conn_id, &cmd).await;
             }
@@ -505,7 +553,11 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::BankDeposit => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let is_guild = state.users.get(&conn_id).map(|u| u.guild_bank_open).unwrap_or(false);
+            let is_guild = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.guild_bank_open)
+                .unwrap_or(false);
             if is_guild {
                 if slot == 0 {
                     handle_guild_bank_deposit_gold(state, conn_id, amount as i32).await;
@@ -519,7 +571,11 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::BankWithdraw => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let is_guild = state.users.get(&conn_id).map(|u| u.guild_bank_open).unwrap_or(false);
+            let is_guild = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.guild_bank_open)
+                .unwrap_or(false);
             if is_guild {
                 if slot == 0 {
                     handle_guild_bank_withdraw_gold(state, conn_id, amount as i32).await;
@@ -531,7 +587,11 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             }
         }
         ClientPacketID::BankClose => {
-            let is_guild = state.users.get(&conn_id).map(|u| u.guild_bank_open).unwrap_or(false);
+            let is_guild = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.guild_bank_open)
+                .unwrap_or(false);
             if is_guild {
                 handle_guild_bank_close(state, conn_id).await;
             } else {
@@ -597,7 +657,6 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let body = bq.read_ascii_string().unwrap_or_default();
             inventory::handle_forum_post(state, conn_id, msg_type, title, body).await;
         }
-
 
         // Player info
         ClientPacketID::PlayerInfo => {
@@ -707,12 +766,19 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         let char_name = read_field(1, payload, ',');
         let race = read_field(2, payload, ',');
         let gender_str = read_field(4, payload, ',');
-        let gender: i32 = if gender_str.to_lowercase().contains("ombre") { 1 } else { 2 };
+        let gender: i32 = if gender_str.to_lowercase().contains("ombre") {
+            1
+        } else {
+            2
+        };
         let class = read_field(5, payload, ',');
         let hogar: i32 = read_field(6, payload, ',').parse().unwrap_or(1);
         let account = read_field(7, payload, ',');
         let head: i32 = read_field(8, payload, ',').parse().unwrap_or(0);
-        auth::handle_create_character(state, conn_id, &char_name, &race, gender, &class, hogar, &account, head).await;
+        auth::handle_create_character(
+            state, conn_id, &char_name, &race, gender, &class, hogar, &account, head,
+        )
+        .await;
     } else if data.starts_with(client_opcodes::TIRDAD) {
         auth::handle_roll_dice(state, conn_id).await;
     } else if data.starts_with(client_opcodes::TBRP) {
@@ -727,7 +793,15 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         let old_password = read_field(2, payload, ',');
         let new_password = read_field(3, payload, ',');
         let confirm_password = read_field(4, payload, ',');
-        auth::handle_change_password(state, conn_id, &account_name, &old_password, &new_password, &confirm_password).await;
+        auth::handle_change_password(
+            state,
+            conn_id,
+            &account_name,
+            &old_password,
+            &new_password,
+            &confirm_password,
+        )
+        .await;
     } else if data.starts_with(client_opcodes::REECUH) {
         let payload = strip_opcode(data, 6);
         let account_name = read_field(1, payload, ',');
@@ -739,14 +813,26 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
     } else if data.starts_with(client_opcodes::COMMERCE_BUY) {
         info!("[DISPATCH] #{} COMP raw='{}'", conn_id, data);
         let payload = strip_opcode(data, 5); // "COMP," = 5
-        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
-        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let slot: usize = match read_field(1, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
+        let amount: i32 = match read_field(2, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
         handle_commerce_buy(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::COMMERCE_SELL) {
         info!("[DISPATCH] #{} VEND raw='{}'", conn_id, data);
         let payload = strip_opcode(data, 5); // "VEND," = 5
-        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
-        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let slot: usize = match read_field(1, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
+        let amount: i32 = match read_field(2, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
         handle_commerce_sell(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::TRADE_CANCEL) {
         handle_trade_cancel(state, conn_id).await;
@@ -758,8 +844,14 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_trade_offer_gold(state, conn_id, gold).await;
     } else if data.starts_with(client_opcodes::TRADE_OFFER_ITEM) {
         let payload = strip_opcode(data, 3);
-        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
-        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let slot: usize = match read_field(1, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
+        let amount: i32 = match read_field(2, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
         handle_trade_offer_item(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::TRADE_CHAT) {
         let msg = strip_opcode(data, 3);
@@ -768,19 +860,40 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_bank_close(state, conn_id).await;
     } else if data.starts_with(client_opcodes::BANK_DEPOSIT) {
         let payload = strip_opcode(data, 5); // "DEPO," = 5
-        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
-        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let slot: usize = match read_field(1, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
+        let amount: i32 = match read_field(2, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
         handle_bank_deposit(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::BANK_WITHDRAW) {
         let payload = strip_opcode(data, 5); // "RETI," = 5
-        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
-        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let slot: usize = match read_field(1, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
+        let amount: i32 = match read_field(2, payload, ',').parse() {
+            Ok(v) if v >= 1 => v,
+            _ => return,
+        };
         handle_bank_withdraw(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::WORK_LEFT_CLICK) {
         let payload = strip_opcode(data, 3); // "WLC" = 3
-        let target_x: i32 = match read_field(1, payload, ',').parse() { Ok(v) => v, _ => return };
-        let target_y: i32 = match read_field(2, payload, ',').parse() { Ok(v) => v, _ => return };
-        let skill_type: i32 = match read_field(3, payload, ',').parse() { Ok(v) => v, _ => return };
+        let target_x: i32 = match read_field(1, payload, ',').parse() {
+            Ok(v) => v,
+            _ => return,
+        };
+        let target_y: i32 = match read_field(2, payload, ',').parse() {
+            Ok(v) => v,
+            _ => return,
+        };
+        let skill_type: i32 = match read_field(3, payload, ',').parse() {
+            Ok(v) => v,
+            _ => return,
+        };
         handle_work_left_click(state, conn_id, target_x, target_y, skill_type).await;
     } else if data.starts_with(client_opcodes::GUILD_INFO) {
         handle_guild_info(state, conn_id).await;
@@ -901,13 +1014,25 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_cast_spell(state, conn_id, spell_slot).await;
     } else if data.starts_with(client_opcodes::LEFT_CLICK) {
         let payload = strip_opcode(data, 2);
-        let x: i32 = match read_field(1, payload, ',').parse() { Ok(v) => v, _ => return };
-        let y: i32 = match read_field(2, payload, ',').parse() { Ok(v) => v, _ => return };
+        let x: i32 = match read_field(1, payload, ',').parse() {
+            Ok(v) => v,
+            _ => return,
+        };
+        let y: i32 = match read_field(2, payload, ',').parse() {
+            Ok(v) => v,
+            _ => return,
+        };
         handle_left_click(state, conn_id, x, y).await;
     } else if data.starts_with(client_opcodes::RIGHT_CLICK) {
         let payload = strip_opcode(data, 2);
-        let x: i32 = match read_field(1, payload, ',').parse() { Ok(v) => v, _ => return };
-        let y: i32 = match read_field(2, payload, ',').parse() { Ok(v) => v, _ => return };
+        let x: i32 = match read_field(1, payload, ',').parse() {
+            Ok(v) => v,
+            _ => return,
+        };
+        let y: i32 = match read_field(2, payload, ',').parse() {
+            Ok(v) => v,
+            _ => return,
+        };
         handle_right_click(state, conn_id, x, y).await;
     } else if data.starts_with(client_opcodes::MEDITATE) {
         handle_meditate(state, conn_id).await;
@@ -957,7 +1082,6 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         info!("[PKT] Unhandled from #{}: '{}'", conn_id, op);
     }
 }
-
 
 // ─── SHARED HELPERS ─────────────────────────────────────────────────────────
 

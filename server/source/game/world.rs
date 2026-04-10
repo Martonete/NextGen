@@ -4,8 +4,8 @@
 // Only chunks that are actually written to get allocated. The zone system
 // provides O(1) area user lookups for broadcast operations.
 
-use std::collections::HashMap;
 use crate::net::ConnectionId;
+use std::collections::HashMap;
 
 // Default map dimensions (VB6 standard — used when loading .map files)
 pub const MAP_WIDTH: usize = 100;
@@ -133,7 +133,9 @@ impl MapGrid {
     /// Ensure the chunk containing (x, y) exists. Creates it if missing.
     pub fn ensure_chunk(&mut self, x: i32, y: i32) {
         let (cx, cy) = chunk_coords(x, y);
-        self.chunks.entry((cx, cy)).or_insert_with(RuntimeChunk::new);
+        self.chunks
+            .entry((cx, cy))
+            .or_insert_with(RuntimeChunk::new);
     }
 
     /// Return the number of currently loaded chunks.
@@ -156,7 +158,9 @@ impl MapGrid {
             return None;
         }
         let (cx, cy) = chunk_coords(x, y);
-        self.chunks.get(&(cx, cy)).map(|chunk| &chunk.tiles[local_index(x, y)])
+        self.chunks
+            .get(&(cx, cy))
+            .map(|chunk| &chunk.tiles[local_index(x, y)])
     }
 
     /// Get mutable tile at (x, y). Coordinates are 1-based.
@@ -167,7 +171,10 @@ impl MapGrid {
             return None;
         }
         let (cx, cy) = chunk_coords(x, y);
-        let chunk = self.chunks.entry((cx, cy)).or_insert_with(RuntimeChunk::new);
+        let chunk = self
+            .chunks
+            .entry((cx, cy))
+            .or_insert_with(RuntimeChunk::new);
         let idx = local_index(x, y);
         Some(&mut chunk.tiles[idx])
     }
@@ -230,7 +237,8 @@ impl MapGrid {
 
     /// Get all user connections on this grid.
     pub fn get_all_users(&self) -> Vec<ConnectionId> {
-        self.zone_users.iter()
+        self.zone_users
+            .iter()
             .flat_map(|zone| zone.iter().map(|&(conn, _, _)| conn))
             .collect()
     }
@@ -267,7 +275,9 @@ impl WorldState {
 
     /// Ensure a grid exists for a reloaded map.
     pub fn reload_map(&mut self, map_num: usize, _maps: &[Option<crate::data::maps::GameMap>]) {
-        self.grids.entry(map_num as i32).or_insert_with(MapGrid::new);
+        self.grids
+            .entry(map_num as i32)
+            .or_insert_with(MapGrid::new);
     }
 
     /// Get grid for a map.
@@ -462,7 +472,7 @@ mod tests {
 
         world.place_user(1, 50, 50, conn1);
         world.place_user(1, 55, 50, conn2); // Within ±8 X
-        world.place_user(1, 1, 1, conn3);   // Far away
+        world.place_user(1, 1, 1, conn3); // Far away
 
         let nearby = get_users_in_area(world.grid(1).unwrap(), 50, 50);
         assert!(nearby.contains(&conn1));
