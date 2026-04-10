@@ -45,7 +45,8 @@ public class WalkModeLightSystem
                     if (zone != null && (zone.AmbientR > 0 || zone.AmbientG > 0 || zone.AmbientB > 0))
                     { r = zone.AmbientR; g = zone.AmbientG; b = zone.AmbientB; }
                 }
-                ambR[x, y] = r; ambG[x, y] = g; ambB[x, y] = b;
+                // Normalize to 0-1 range
+                ambR[x, y] = r / 255f; ambG[x, y] = g / 255f; ambB[x, y] = b / 255f;
             }
 
         // Corner grid: corner (cx,cy) = NW corner of tile (cx,cy)
@@ -87,7 +88,7 @@ public class WalkModeLightSystem
 
                         float f = dist / rangePx;
                         int atx = Math.Clamp(cx, 1, _mapWidth), aty = Math.Clamp(cy, 1, _mapHeight);
-                        float ar = ambR[atx, aty] / 255f, ag = ambG[atx, aty] / 255f, ab = ambB[atx, aty] / 255f;
+                        float ar = ambR[atx, aty], ag = ambG[atx, aty], ab = ambB[atx, aty];
 
                         cR[cx, cy] = MathF.Max(cR[cx, cy], lr + (ar - lr) * f);
                         cG[cx, cy] = MathF.Max(cG[cx, cy], lg + (ag - lg) * f);
