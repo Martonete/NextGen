@@ -801,6 +801,20 @@ public partial class MapViewport : Control
                 DrawArc(center, radius, 0, MathF.Tau, 32,
                     new Color(lightCol.R, lightCol.G, lightCol.B, 0.4f), 1.5f);
         }
+        else if (State.ActiveTool == EditorTool.Particle && State.SelectedParticleGroup > 0)
+        {
+            // Particle cursor preview: colored diamond + group number
+            var center = new Vector2((hx + 0.5f) * TileSize, (hy + 0.5f) * TileSize);
+            var pCol = new Color(0.3f, 1f, 0.9f, 0.5f);
+            float s = TileSize * 0.35f;
+            DrawCircle(center, s, pCol with { A = 0.2f });
+            DrawCircle(center, 4f, pCol with { A = 0.8f });
+            DrawArc(center, s, 0, MathF.Tau, 16, pCol with { A = 0.6f }, 1.5f);
+            var font = ThemeDB.Singleton.FallbackFont;
+            string label = $"P{State.SelectedParticleGroup}";
+            DrawString(font, new Vector2(hx * TileSize + 2, hy * TileSize + TileSize - 3),
+                label, HorizontalAlignment.Left, -1, 9, new Color(0.3f, 1f, 0.9f, 0.9f));
+        }
         else if (State.ActiveTool == EditorTool.Trigger)
         {
             // Show a preview of the trigger color that will be painted
