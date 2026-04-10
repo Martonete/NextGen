@@ -2088,34 +2088,42 @@ public partial class EditorMain : Control
             _walkWindow.CloseRequested += () => _walkWindow.Visible = false;
             AddChild(_walkWindow);
 
-            // Resolution selector bar at top
+            // Resolution selector bar at top — uses plain Buttons (no popups)
+            // because OptionButton/MenuButton popups don't work in sub-Windows
             var topBar = new HBoxContainer();
             topBar.Position = Vector2.Zero;
-            topBar.Size = new Vector2(800, 28);
-            topBar.AddThemeConstantOverride("separation", 8);
-            var resLabel = new Label { Text = "Resolución:" };
-            resLabel.AddThemeFontSizeOverride("font_size", 13);
+            topBar.Size = new Vector2(1920, 28);
+            topBar.AddThemeConstantOverride("separation", 4);
+            var resLabel = new Label { Text = "Res:" };
+            resLabel.AddThemeFontSizeOverride("font_size", 12);
             topBar.AddChild(resLabel);
 
-            var resOption = new OptionButton();
-            resOption.AddThemeFontSizeOverride("font_size", 13);
-            resOption.CustomMinimumSize = new Vector2(220, 0);
+            Button[]? resButtons = new Button[WalkModePanel.Resolutions.Length];
             for (int i = 0; i < WalkModePanel.Resolutions.Length; i++)
-                resOption.AddItem(WalkModePanel.Resolutions[i].Label, i);
-            resOption.Selected = 0;
-            topBar.AddChild(resOption);
+            {
+                var (label, w, h) = WalkModePanel.Resolutions[i];
+                var btn = new Button { Text = $"{w}x{h}", ToggleMode = true, FocusMode = Control.FocusModeEnum.None };
+                btn.AddThemeFontSizeOverride("font_size", 11);
+                btn.CustomMinimumSize = new Vector2(70, 0);
+                int capturedIdx = i;
+                btn.Pressed += () =>
+                {
+                    var res = WalkModePanel.Resolutions[capturedIdx];
+                    _walkPanel!.SetResolution(res.W, res.H);
+                    _walkWindow!.Size = new Vector2I(_walkPanel.ViewWidth, _walkPanel.ViewHeight + 30);
+                    // Update toggle state
+                    for (int j = 0; j < resButtons!.Length; j++)
+                        resButtons[j].ButtonPressed = (j == capturedIdx);
+                };
+                topBar.AddChild(btn);
+                resButtons[i] = btn;
+            }
+            resButtons[0].ButtonPressed = true; // 800x600 default
             _walkWindow.AddChild(topBar);
 
             _walkPanel = new WalkModePanel();
             _walkPanel.Position = new Vector2(0, 30);
             _walkWindow.AddChild(_walkPanel);
-
-            resOption.ItemSelected += (long idx) =>
-            {
-                var res = WalkModePanel.Resolutions[(int)idx];
-                _walkPanel.SetResolution(res.W, res.H);
-                _walkWindow.Size = new Vector2I(_walkPanel.ViewWidth, _walkPanel.ViewHeight + 30);
-            };
         }
 
         // Inject dependencies
