@@ -99,12 +99,9 @@ public partial class WalkModePanel : Control
     private const float RoofFadeRate = 8f; // alpha change per frame
     private bool _diagPrinted;
 
-    // ── Native 2D lighting (CanvasModulate + PointLight2D) ──
-    private LightingSystem? _lighting;
-    private bool _lightingDirty = true;
     private int _lastMapNumber = -1;
 
-    // ── CPU per-tile lighting (fallback that always works in sub-Windows) ──
+    // ── CPU per-tile lighting (per-tile modulate, doesn't affect overlays/UI) ──
     private readonly WalkModeLightSystem _cpuLights = new();
     private bool _cpuLightsDirty = true;
 
@@ -121,11 +118,6 @@ public partial class WalkModePanel : Control
         ClipContents = true;
         FocusMode = FocusModeEnum.All;
         GrabFocus();
-
-        // GPU lighting (PointLight2D/CanvasModulate) disabled in walk mode —
-        // CanvasModulate darkens the entire viewport including HUD/panels.
-        // CPU per-tile lighting (_cpuLights) handles all lighting instead.
-        _lighting = null;
 
         // Additive particle layer — separate CanvasItem so particles glow correctly
         var particleOverlay = new WalkParticleOverlay { Owner = this, Name = "ParticleOverlay" };
@@ -182,7 +174,6 @@ public partial class WalkModePanel : Control
         Size = new Vector2(_viewWidth, _viewHeight);
 
         BuildFogTexture();
-        _lightingDirty = true;
         _cpuLightsDirty = true;
         QueueRedraw();
     }
@@ -377,7 +368,6 @@ public partial class WalkModePanel : Control
 
         // Rebuild particles and lights for new map
         Particles?.BuildStreamsFromMap(newMap);
-        _lightingDirty = true;
         _cpuLightsDirty = true;
 
         // Update window title
@@ -506,7 +496,6 @@ public partial class WalkModePanel : Control
         if (Map.MapNumber != _lastMapNumber)
         {
             _lastMapNumber = Map.MapNumber;
-            _lightingDirty = true;
             _cpuLightsDirty = true;
         }
 
@@ -519,40 +508,6 @@ public partial class WalkModePanel : Control
 
         float ofsX = (float)Math.Round(_moveOffsetX);
         float ofsY = (float)Math.Round(_moveOffsetY);
-
-        // ── Native 2D lighting: ambient + per-tile PointLight2D ──
-        if (_lighting != null)
-        {
-            // Zone ambient override: use zone values if non-zero, else fall back to map default
-            byte ar = Map.AmbientR, ag = Map.AmbientG, ab = Map.AmbientB;
-            var zone = Zones?.GetZoneAt(CharX, CharY);
-            if (zone != null && (zone.AmbientR != 0 || zone.AmbientG != 0 || zone.AmbientB != 0))
-            {
-                ar = (byte)Mathf.Clamp(zone.AmbientR, 0, 255);
-                ag = (byte)Mathf.Clamp(zone.AmbientG, 0, 255);
-                ab = (byte)Mathf.Clamp(zone.AmbientB, 0, 255);
-            }
-            _lighting.SetAmbient(new Color(ar / 255f, ag / 255f, ab / 255f, 1f));
-            _lighting.SetEnabled(true);
-            if (_lightingDirty)
-            {
-                _lighting.Rebuild(Map);
-                _lightingDirty = false;
-            }
-            // Walk mode draws tiles at panel pixel ((dx + _halfTilesX) * TS + ofs).
-            // World pixel of tile (CharX-_halfTilesX, CharY-_halfTilesY) is the
-            // top-left of the visible region. Light positions are stored in world
-            // pixels — we offset the container so they line up with the drawn tiles.
-            float topLeftWorldX = (CharX - _halfTilesX - 1) * TileSize;
-            float topLeftWorldY = (CharY - _halfTilesY - 1) * TileSize;
-            // panel_px(0,0) maps to world_px(topLeftWorldX - ofsX, topLeftWorldY - ofsY)
-            // Light at world_px (lx, ly) → panel_px (lx - topLeftWorldX + ofsX, ...)
-            // Container offset = -(topLeftWorldX - ofsX) so that light.position
-            // (in world coords) lands at the right panel pixel.
-            _lighting.SetWorldTransform(
-                new Vector2(-topLeftWorldX + ofsX, -topLeftWorldY + ofsY),
-                1f);
-        }
 
         // L1 uses smaller buffer; L2/L3/L4 need large buffer for multi-tile GRHs
         int minDY_L1 = -_halfTilesY - ExtraTiles;
@@ -852,8 +807,8 @@ public partial class WalkModePanel : Control
 
         GD.Print($"[WalkMode] Door toggle at ({doorX},{doorY}): obj {curObjIdx} -> {newObjIdx} (closing={closing})");
 
-        // Doors changed Blocked tiles → rebuild shadow occluders so light/shadow reacts
-        _lighting?.RebuildOccluders(Map);
+        // Doors changed Blocked tiles → recalculate lighting
+        _cpuLightsDirty = true;
     }
 
     private DoorInfo? FindDoorAt(int x, int y)

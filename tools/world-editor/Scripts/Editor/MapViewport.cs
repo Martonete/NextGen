@@ -81,13 +81,10 @@ public partial class MapViewport : Control
     private int _moveSelW, _moveSelH;    // Selection dimensions
 
     private ParticleOverlay? _particleOverlay;
-    private LightingSystem? _lighting;
-    private bool _lightingDirty = true;
 
     // CPU per-tile lighting for tile draw modulation (doesn't affect overlays/UI)
     private readonly WalkModeLightSystem _cpuLights = new();
     private bool _cpuLightsDirty = true;
-    private bool _occludersDirty = true;
 
     // Weather FX driven by the currently selected zone in ZonePanel
     public ZonePanel? ZonePanelRef;  // set by EditorMain after creation
@@ -104,21 +101,12 @@ public partial class MapViewport : Control
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
 
-        // CanvasModulate darkens the entire canvas layer including UI panels.
-        // CPU per-tile lighting (_cpuLights) handles all lighting instead.
-        _lighting = null;
     }
 
-    /// <summary>Request a lightmap rebuild on the next draw.</summary>
+    /// <summary>Request a CPU per-tile lighting rebuild on the next draw.</summary>
     public void MarkLightmapDirty()
     {
-        _lightingDirty = true; _cpuLightsDirty = true;
-    }
-
-    /// <summary>Request an occluder rebuild on the next draw (call after loading a new map).</summary>
-    public void MarkOccludersDirty()
-    {
-        _occludersDirty = true;
+        _cpuLightsDirty = true;
     }
 
     private static bool HasAnyLight(MapData map)
@@ -239,9 +227,6 @@ public partial class MapViewport : Control
             _cpuLights.Recalculate(Map, ZoneData);
             _cpuLightsDirty = false;
         }
-
-        // GPU lighting (CanvasModulate) is disabled — it darkens the entire canvas
-        // layer including UI panels. CPU per-tile lighting handles map shading.
 
         DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
@@ -2212,7 +2197,7 @@ public partial class MapViewport : Control
         Map.Tiles[x, y].LightB = (short)State.LightB;
         Map.Tiles[x, y].LightRange = (short)State.LightRange;
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
-        _lightingDirty = true; _cpuLightsDirty = true;
+        _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -2239,7 +2224,7 @@ public partial class MapViewport : Control
                 count++;
             }
         Undo?.EndBatch();
-        _lightingDirty = true; _cpuLightsDirty = true;
+        _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -2263,7 +2248,7 @@ public partial class MapViewport : Control
                 Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
             }
         Undo?.EndBatch();
-        _lightingDirty = true; _cpuLightsDirty = true;
+        _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -2280,7 +2265,7 @@ public partial class MapViewport : Control
         Undo?.BeginBatch("Erase Light");
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
         Undo?.EndBatch();
-        _lightingDirty = true; _cpuLightsDirty = true;
+        _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -2433,7 +2418,6 @@ public partial class MapViewport : Control
             var before = Map.Tiles[tx, ty];
             Map.Tiles[tx, ty].Blocked = !Map.Tiles[tx, ty].Blocked;
             Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
-            _occludersDirty = true;
         }
 
         QueueRedraw();

@@ -262,8 +262,8 @@ public partial class EditorMain : Control
         var undoGroup = EditorTheme.ToolBarGroup();
         var undoGroupH = new HBoxContainer();
         undoGroupH.AddThemeConstantOverride("separation", 6);
-        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21a9", "Deshacer (Ctrl+Z)", () => { _undo.Undo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); }, "Deshacer"));
-        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21aa", "Rehacer (Ctrl+Y)", () => { _undo.Redo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); }, "Rehacer"));
+        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21a9", "Deshacer (Ctrl+Z)", () => { _undo.Undo(_map!); _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); }, "Deshacer"));
+        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21aa", "Rehacer (Ctrl+Y)", () => { _undo.Redo(_map!); _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); }, "Rehacer"));
         undoGroup.AddChild(undoGroupH);
         _toolBar.AddChild(undoGroup);
 
@@ -405,7 +405,7 @@ public partial class EditorMain : Control
         _sidebarTabs.AddChild(_particlePalette);
 
         _zonePanel = new ZonePanel { Name = "Zonas", State = _state, ZoneData = _mapZones };
-        _zonePanel.OnZonesChanged += () => { _state.MarkDirty(); _viewport?.QueueRedraw(); };
+        _zonePanel.OnZonesChanged += () => { _state.MarkDirty(); _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); };
         _zonePanel.OnZoneSelected += (zone) => { _viewport?.CenterOnTile((zone.X1 + zone.X2) / 2, (zone.Y1 + zone.Y2) / 2); };
         _zonePanel.OnEditZone += (zone) => ShowZoneEditPopup(zone);
         _sidebarTabs.AddChild(_zonePanel);
@@ -691,7 +691,7 @@ public partial class EditorMain : Control
             Map = _map,
             State = _state,
             Undo = _undo,
-            OnTileChanged = () => { _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); },
+            OnTileChanged = () => { _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); },
         };
         _propsWindow.AddChild(_propsPanel);
 
@@ -1690,8 +1690,8 @@ public partial class EditorMain : Control
     {
         switch (id)
         {
-            case 0: _undo.Undo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
-            case 1: _undo.Redo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
+            case 0: _undo.Undo(_map!); _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); break;
+            case 1: _undo.Redo(_map!); _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); break;
             case 2: _state.CopySelection(_map!); SetStatus($"Copiado {_state.ClipWidth}x{_state.ClipHeight} tiles"); break;
             case 3: PasteClipboard(); break;
             case 4: CutSelection(); break;
@@ -2043,6 +2043,8 @@ public partial class EditorMain : Control
         _map.AmbientR = (byte)_mapAmbR!.Value;
         _map.AmbientG = (byte)_mapAmbG!.Value;
         _map.AmbientB = (byte)_mapAmbB!.Value;
+        _viewport?.MarkLightmapDirty();
+        _viewport?.QueueRedraw();
         _state.MarkDirty();
         SetStatus($"Props: {_map.Name}");
     }
@@ -2425,7 +2427,7 @@ public partial class EditorMain : Control
             SetStatus("Mapa insertado descartado");
         }
         _state.ClearSelection();
-        _viewport?.MarkOccludersDirty();
+        _viewport?.MarkLightmapDirty();
         _viewport?.QueueRedraw();
     }
 
@@ -2735,8 +2737,8 @@ public partial class EditorMain : Control
         {
             switch (key.Keycode)
             {
-                case Key.Z: _undo.Undo(_map!); _particles?.BuildStreamsFromMap(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
-                case Key.Y: _undo.Redo(_map!); _particles?.BuildStreamsFromMap(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
+                case Key.Z: _undo.Undo(_map!); _particles?.BuildStreamsFromMap(_map!); _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); break;
+                case Key.Y: _undo.Redo(_map!); _particles?.BuildStreamsFromMap(_map!); _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); break;
                 case Key.S: OnSaveMap(); break;
                 case Key.O: RequestOpenMap(); break;
                 case Key.N: RequestNewMap(); break;
@@ -2860,7 +2862,7 @@ public partial class EditorMain : Control
                 _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
             }
         _undo.EndBatch();
-        _viewport?.MarkOccludersDirty();
+        _viewport?.MarkLightmapDirty();
         _viewport?.QueueRedraw();
     }
 
@@ -3455,6 +3457,7 @@ public partial class EditorMain : Control
         popup.OnSaved += () =>
         {
             _zonePanel?.RebuildList();
+            _viewport?.MarkLightmapDirty();
             _viewport?.QueueRedraw();
             _state.MarkDirty();
         };
