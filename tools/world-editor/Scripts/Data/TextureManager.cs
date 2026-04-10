@@ -154,43 +154,27 @@ public class TextureManager
 
     /// <summary>
     /// Fast black color key using raw byte buffer.
-    /// Skips images that already have meaningful alpha (PNG with transparency).
-    /// Uses SetData to avoid double allocation.
+    /// Always converts near-black OPAQUE pixels to transparent, even in PNGs
+    /// that already have partial alpha (e.g. particle atlas with soft edges
+    /// AND black padding between sprites).
     /// </summary>
     private static void ApplyBlackColorKeyFast(Image image)
     {
-        // If the image loaded as RGB8 (no alpha), it definitely needs color key
-        bool needsConvert = image.GetFormat() != Image.Format.Rgba8;
-        if (needsConvert)
+        if (image.GetFormat() != Image.Format.Rgba8)
             image.Convert(Image.Format.Rgba8);
 
         byte[] data = image.GetData();
         int len = data.Length;
 
-        // If the image already had alpha, check if it has any non-opaque pixels.
-        // If yes, the PNG has proper transparency — skip color key to preserve black pixels.
-        if (!needsConvert)
-        {
-            bool hasAlpha = false;
-            for (int i = 3; i < len; i += 4)
-            {
-                if (data[i] < 250) // some pixel is not fully opaque
-                {
-                    hasAlpha = true;
-                    break;
-                }
-            }
-            if (hasAlpha)
-                return; // image already has real transparency, don't touch it
-        }
-
-        // Apply black color key: (R,G,B) near (0,0,0) → alpha=0
+        // Apply black color key: near-black pixels that are opaque → transparent.
+        // Preserves existing partial alpha (soft edges, anti-aliasing).
         bool modified = false;
         for (int i = 0; i < len; i += 4)
         {
-            if (data[i] <= BlackThreshold &&     // R
-                data[i + 1] <= BlackThreshold &&  // G
-                data[i + 2] <= BlackThreshold)    // B
+            if (data[i] <= BlackThreshold &&      // R near 0
+                data[i + 1] <= BlackThreshold &&   // G near 0
+                data[i + 2] <= BlackThreshold &&   // B near 0
+                data[i + 3] >= 250)                 // currently opaque
             {
                 data[i + 3] = 0; // A = transparent
                 modified = true;
@@ -199,7 +183,6 @@ public class TextureManager
 
         if (modified)
         {
-            // SetData replaces image data in-place — no extra Image allocation
             image.SetData(image.GetWidth(), image.GetHeight(),
                 false, Image.Format.Rgba8, data);
         }
