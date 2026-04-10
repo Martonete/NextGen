@@ -140,12 +140,40 @@ public partial class ZoneEditPopup : Window
         _nieblaCheck = AddCheckInline(weatherRow, "Niebla", Zone.Niebla);
         vbox.AddChild(weatherRow);
 
+        // Color picker label
+        var ambLabel = EditorTheme.MakeLabel("Color ambiente (oscuridad/tinte de la zona):", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        vbox.AddChild(ambLabel);
+
         var ambRow = new HBoxContainer();
         ambRow.AddThemeConstantOverride("separation", 4);
         AddSpinWithLabel(ambRow, "R:", 0, 255, Zone.AmbientR, out _ambRSpin);
         AddSpinWithLabel(ambRow, "G:", 0, 255, Zone.AmbientG, out _ambGSpin);
         AddSpinWithLabel(ambRow, "B:", 0, 255, Zone.AmbientB, out _ambBSpin);
         vbox.AddChild(ambRow);
+
+        // Live color preview rectangle
+        var ambPreview = new ColorRect
+        {
+            CustomMinimumSize = new Vector2(0, 24),
+            Color = new Color(Zone.AmbientR / 255f, Zone.AmbientG / 255f, Zone.AmbientB / 255f),
+        };
+        ambPreview.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        vbox.AddChild(ambPreview);
+
+        // Wire spin → live preview update
+        if (_ambRSpin != null) _ambRSpin.ValueChanged += (v) => UpdateAmbPreview(ambPreview);
+        if (_ambGSpin != null) _ambGSpin.ValueChanged += (v) => UpdateAmbPreview(ambPreview);
+        if (_ambBSpin != null) _ambBSpin.ValueChanged += (v) => UpdateAmbPreview(ambPreview);
+
+        // Quick presets row
+        var presetsRow = new HBoxContainer();
+        presetsRow.AddThemeConstantOverride("separation", 4);
+        AddPresetButton(presetsRow, "Día", 230, 230, 230, ambPreview);
+        AddPresetButton(presetsRow, "Tarde", 200, 150, 100, ambPreview);
+        AddPresetButton(presetsRow, "Noche", 50, 60, 110, ambPreview);
+        AddPresetButton(presetsRow, "Cueva", 30, 30, 40, ambPreview);
+        AddPresetButton(presetsRow, "Infierno", 120, 30, 30, ambPreview);
+        vbox.AddChild(presetsRow);
 
         // === Exit ===
         vbox.AddChild(EditorTheme.MakeHSeparator());
@@ -233,6 +261,28 @@ public partial class ZoneEditPopup : Window
         if (_x2Spin != null) _x2Spin.Value = x2;
         if (_y2Spin != null) _y2Spin.Value = y2;
         Show();
+    }
+
+    private void UpdateAmbPreview(ColorRect preview)
+    {
+        int r = (int)(_ambRSpin?.Value ?? 0);
+        int g = (int)(_ambGSpin?.Value ?? 0);
+        int b = (int)(_ambBSpin?.Value ?? 0);
+        preview.Color = new Color(r / 255f, g / 255f, b / 255f);
+    }
+
+    private void AddPresetButton(HBoxContainer parent, string label, int r, int g, int b, ColorRect preview)
+    {
+        var btn = EditorTheme.MakeButton(label);
+        btn.CustomMinimumSize = new Vector2(60, 0);
+        btn.Pressed += () =>
+        {
+            if (_ambRSpin != null) _ambRSpin.Value = r;
+            if (_ambGSpin != null) _ambGSpin.Value = g;
+            if (_ambBSpin != null) _ambBSpin.Value = b;
+            UpdateAmbPreview(preview);
+        };
+        parent.AddChild(btn);
     }
 
     // === Helpers ===

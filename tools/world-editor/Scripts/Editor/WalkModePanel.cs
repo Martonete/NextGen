@@ -36,6 +36,9 @@ public partial class WalkModePanel : Control
     // Track toggled doors: maps (mapNum, x, y) → toggled ObjIndex (so we don't persist changes)
     private readonly Dictionary<(int map, int x, int y), int> _toggledDoors = new();
 
+    // Particle engine (shared with MapViewport for live particle rendering in walk mode)
+    public ParticleEngine? Particles;
+
     // Map loading — for exit tile transitions
     public string MapDir = "";  // directory where Mapa{N}.map/.inf/.dat live
 
@@ -84,8 +87,8 @@ public partial class WalkModePanel : Control
     private const float RoofFadeRate = 8f; // alpha change per frame
     private bool _diagPrinted;
 
-    // ── Lighting (matches client GPU shader pipeline) ──
-    private LightingRenderer? _lighting;
+    // ── Native 2D lighting (CanvasModulate + PointLight2D) ──
+    private LightingSystem? _lighting;
     private bool _lightingDirty = true;
 
     public override void _Ready()
@@ -95,8 +98,7 @@ public partial class WalkModePanel : Control
         FocusMode = FocusModeEnum.All;
         GrabFocus();
 
-        _lighting = new LightingRenderer();
-        Material = _lighting.Material;
+        _lighting = new LightingSystem(this);
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution.</summary>
@@ -116,6 +118,9 @@ public partial class WalkModePanel : Control
     public override void _Process(double delta)
     {
         _globalTime += delta * 1000.0;
+
+        // Step the shared particle simulation so streams animate in walk mode too
+        Particles?.Update((float)delta);
 
         if (_isMoving)
         {
@@ -362,28 +367,32 @@ public partial class WalkModePanel : Control
         float ofsX = (float)Math.Round(_moveOffsetX);
         float ofsY = (float)Math.Round(_moveOffsetY);
 
-        // ── Lightmap pipeline (identical to client) ──
+        // ── Native 2D lighting: ambient + per-tile PointLight2D ──
         if (_lighting != null)
         {
-            bool hasAnyLight = HasAnyLight(Map);
-            if (hasAnyLight && _lightingDirty)
+            float ar = Map.AmbientR / 255f;
+            float ag = Map.AmbientG / 255f;
+            float ab = Map.AmbientB / 255f;
+            _lighting.SetAmbient(new Color(ar, ag, ab, 1f));
+            _lighting.SetEnabled(true);
+            if (_lightingDirty)
             {
-                _lighting.Rebuild(Map, Map.AmbientR, Map.AmbientG, Map.AmbientB);
+                _lighting.Rebuild(Map);
                 _lightingDirty = false;
             }
-            _lighting.SetEnabled(hasAnyLight);
-            // Compute world pixel origin that maps viewport (0,0) → world_px.
-            // In walk mode the character is at the panel center, and the
-            // top-left visible tile is (CharX - _halfTilesX, CharY - _halfTilesY).
-            // Tile (tx, ty) is drawn at panel pixel ((dx + _halfTilesX) * TS + ofs).
-            // World pixel of that tile (1-based) is ((tx - 1) * TS, (ty - 1) * TS).
-            // So world_origin = world_px(topLeftTile) - panel_px(topLeftTile).
+            // Walk mode draws tiles at panel pixel ((dx + _halfTilesX) * TS + ofs).
+            // World pixel of tile (CharX-_halfTilesX, CharY-_halfTilesY) is the
+            // top-left of the visible region. Light positions are stored in world
+            // pixels — we offset the container so they line up with the drawn tiles.
             float topLeftWorldX = (CharX - _halfTilesX - 1) * TileSize;
             float topLeftWorldY = (CharY - _halfTilesY - 1) * TileSize;
-            // Panel position of the top-left visible tile is (0, 0) with current
-            // draw code (dx=-_halfTilesX → sx = 0 + ofs). We subtract ofs so that
-            // a panel pixel p maps to world_origin + p.
-            _lighting.SetWorldOrigin(new Vector2(topLeftWorldX - ofsX, topLeftWorldY - ofsY));
+            // panel_px(0,0) maps to world_px(topLeftWorldX - ofsX, topLeftWorldY - ofsY)
+            // Light at world_px (lx, ly) → panel_px (lx - topLeftWorldX + ofsX, ...)
+            // Container offset = -(topLeftWorldX - ofsX) so that light.position
+            // (in world coords) lands at the right panel pixel.
+            _lighting.SetWorldTransform(
+                new Vector2(-topLeftWorldX + ofsX, -topLeftWorldY + ofsY),
+                1f);
         }
 
         // L1 uses smaller buffer; L2/L3/L4 need large buffer for multi-tile GRHs
@@ -474,6 +483,9 @@ public partial class WalkModePanel : Control
 
         // ── Exit markers ──
         DrawExitMarkers(minDX_L1, maxDX_L1, minDY_L1, maxDY_L1, ofsX, ofsY);
+
+        // ── Particles (rain, fire, fountain, etc.) ──
+        DrawWalkModeParticles(ofsX, ofsY);
 
         // ── HUD ──
         var font = ThemeDB.Singleton.FallbackFont;
@@ -764,6 +776,50 @@ public partial class WalkModePanel : Control
         var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
         var dst = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), grh.PixelWidth, grh.PixelHeight);
         DrawTextureRectRegion(texture, dst, src, mod);
+    }
+
+    /// <summary>Draw all active particles from the shared ParticleEngine in walk-mode space.
+    /// Walk mode draws tile (tx, ty) at panel pixel ((tx - CharX + _halfTilesX) * TS + ofs).
+    /// We use the same transform for particles so they line up.</summary>
+    private void DrawWalkModeParticles(float ofsX, float ofsY)
+    {
+        if (Particles == null || Grhs == null || Textures == null || Map == null) return;
+
+        foreach (var stream in Particles.Streams)
+        {
+            if (!stream.Active) continue;
+            // Tile center in panel pixels (stream.MapX/Y are 1-based world tiles)
+            int dx = stream.MapX - CharX;
+            int dy = stream.MapY - CharY;
+            // Quick cull: skip streams far from the visible area
+            if (Math.Abs(dx) > _halfTilesX + ExtraTilesLarge ||
+                Math.Abs(dy) > _halfTilesY + ExtraTilesLarge) continue;
+
+            float streamX = (dx + _halfTilesX) * TileSize + TileSize / 2f + ofsX;
+            float streamY = (dy + _halfTilesY) * TileSize + TileSize / 2f + ofsY;
+
+            foreach (var p in stream.Particles)
+            {
+                if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
+                var grh = Grhs[p.GrhIndex];
+                if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+                {
+                    int frameIdx = grh.Frames[0];
+                    if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
+                    grh = Grhs[frameIdx];
+                }
+                if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
+                var texture = Textures.GetTexture(grh.FileNum);
+                if (texture == null) continue;
+
+                var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+                float drawX = streamX + p.X - grh.PixelWidth / 2f;
+                float drawY = streamY + p.Y - grh.PixelHeight / 2f;
+                var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+                DrawTextureRectRegion(texture, destRect, srcRect, color);
+            }
+        }
     }
 
     private static bool HasAnyLight(MapData map)

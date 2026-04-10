@@ -81,7 +81,7 @@ public partial class MapViewport : Control
     private int _moveSelW, _moveSelH;    // Selection dimensions
 
     private ParticleOverlay? _particleOverlay;
-    private LightingRenderer? _lighting;
+    private LightingSystem? _lighting;
     private bool _lightingDirty = true;
 
     public override void _Ready()
@@ -95,9 +95,8 @@ public partial class MapViewport : Control
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
 
-        // Lightmap shader identical to the client — applied to the viewport itself
-        _lighting = new LightingRenderer();
-        Material = _lighting.Material;
+        // Native Godot 2D lighting (CanvasModulate + PointLight2D pool)
+        _lighting = new LightingSystem(this);
     }
 
     /// <summary>Request a lightmap rebuild on the next draw.</summary>
@@ -119,6 +118,10 @@ public partial class MapViewport : Control
     public override void _Process(double delta)
     {
         _animTime += delta * 1000.0;
+
+        // Step the particle simulation so streams animate (rain falls, fire flickers, etc.)
+        if (Particles != null && State != null && State.ShowParticles)
+            Particles.Update((float)delta);
 
         // Keyboard panning (WASD / Arrow keys)
         // Pressing W = view moves UP on map = tiles with lower Y become visible
@@ -162,22 +165,27 @@ public partial class MapViewport : Control
 
         if (Map == null || Grhs == null || Textures == null || State == null) return;
 
-        // ── Lightmap: rebuild if dirty, then enable/disable based on ShowLights ──
-        if (_lighting != null)
+        // ── Native 2D lighting: ambient + per-tile PointLight2D ──
+        if (_lighting != null && State.ShowLights)
         {
-            bool hasAnyLight = HasAnyLight(Map);
-            bool showLights = State.ShowLights && hasAnyLight;
-            if (showLights && _lightingDirty)
+            // Map ambient (0..255 → 0..1). If the user paints the map dark, the
+            // CanvasModulate darkens everything; PointLight2D nodes brighten back.
+            float ar = Map.AmbientR / 255f;
+            float ag = Map.AmbientG / 255f;
+            float ab = Map.AmbientB / 255f;
+            _lighting.SetAmbient(new Color(ar, ag, ab, 1f));
+            _lighting.SetEnabled(true);
+            if (_lightingDirty)
             {
-                _lighting.Rebuild(Map, Map.AmbientR, Map.AmbientG, Map.AmbientB);
+                _lighting.Rebuild(Map);
                 _lightingDirty = false;
             }
-            _lighting.SetEnabled(showLights);
-            // World origin must be zero because DrawSetTransform already applies
-            // CameraOffset/Zoom, so VERTEX in the shader is already in world space
-            // scaled by zoom. The shader's world_origin is added to VERTEX, so we
-            // pass zero and compute uv directly from VERTEX / map_size_px.
-            _lighting.SetWorldOrigin(Vector2.Zero);
+            // Sync the light container's transform with the camera/zoom each frame
+            _lighting.SetWorldTransform(State.CameraOffset, State.Zoom);
+        }
+        else
+        {
+            _lighting?.SetEnabled(false);
         }
 
         DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));

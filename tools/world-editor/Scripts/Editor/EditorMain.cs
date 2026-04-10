@@ -2132,6 +2132,7 @@ public partial class EditorMain : Control
         _walkPanel.HeadGrhs = _headGrhs;
         _walkPanel.DoorData = _doorData;
         _walkPanel.MapDir = _state.MapDir;
+        _walkPanel.Particles = _particles;
 
         // Start at current editor camera center tile
         int startX = Math.Clamp(_state.HoverX > 0 ? _state.HoverX : 50, 1, _map.Width);
