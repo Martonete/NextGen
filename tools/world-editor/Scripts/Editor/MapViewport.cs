@@ -100,13 +100,15 @@ public partial class MapViewport : Control
         _animTime += delta * 1000.0;
 
         // Keyboard panning (WASD / Arrow keys)
+        // Pressing W = view moves UP on map = tiles with lower Y become visible
+        // = world content scrolls DOWN on screen = CameraOffset.Y increases
         if (State != null && (_keyUp || _keyDown || _keyLeft || _keyRight))
         {
             float step = KeyPanSpeed * (float)delta;
-            if (_keyUp)    State.CameraOffset -= new Vector2(0, step);
-            if (_keyDown)  State.CameraOffset += new Vector2(0, step);
-            if (_keyLeft)  State.CameraOffset -= new Vector2(step, 0);
-            if (_keyRight) State.CameraOffset += new Vector2(step, 0);
+            if (_keyUp)    State.CameraOffset += new Vector2(0, step);
+            if (_keyDown)  State.CameraOffset -= new Vector2(0, step);
+            if (_keyLeft)  State.CameraOffset += new Vector2(step, 0);
+            if (_keyRight) State.CameraOffset -= new Vector2(step, 0);
         }
 
         // Auto-scroll when dragging selection near viewport edge
