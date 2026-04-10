@@ -83,6 +83,10 @@ public partial class MapViewport : Control
     private ParticleOverlay? _particleOverlay;
     private LightingSystem? _lighting;
     private bool _lightingDirty = true;
+
+    // CPU per-tile lighting for tile draw modulation (doesn't affect overlays/UI)
+    private readonly WalkModeLightSystem _cpuLights = new();
+    private bool _cpuLightsDirty = true;
     private bool _occludersDirty = true;
 
     // Weather FX driven by the currently selected zone in ZonePanel
@@ -107,7 +111,7 @@ public partial class MapViewport : Control
     /// <summary>Request a lightmap rebuild on the next draw.</summary>
     public void MarkLightmapDirty()
     {
-        _lightingDirty = true;
+        _lightingDirty = true; _cpuLightsDirty = true;
     }
 
     /// <summary>Request an occluder rebuild on the next draw (call after loading a new map).</summary>
@@ -228,6 +232,13 @@ public partial class MapViewport : Control
 
         if (Map == null || Grhs == null || Textures == null || State == null) return;
 
+        // CPU per-tile lighting: recalculate when dirty
+        if (State.ShowLights && _cpuLightsDirty)
+        {
+            _cpuLights.Recalculate(Map, ZoneData);
+            _cpuLightsDirty = false;
+        }
+
         // ── Native 2D lighting: ambient + per-tile PointLight2D ──
         if (_lighting != null && State.ShowLights)
         {
@@ -296,21 +307,30 @@ public partial class MapViewport : Control
         if (State.ShowLayer1)
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
-                    DrawTileGrh(Map.Tiles[x, y].Layer1, x, y);
+                {
+                    Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                    DrawTileGrh(Map.Tiles[x, y].Layer1, x, y, modulate: tl);
+                }
 
         // Layer 2: Mask
         if (State.ShowLayer2)
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer2 != 0)
-                        DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true);
+                    {
+                        Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                        DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true, modulate: tl);
+                    }
 
         // Layer 3: Objects/trees
         if (State.ShowLayer3)
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer3 != 0)
-                        DrawTileGrh(Map.Tiles[x, y].Layer3, x, y, center: true);
+                    {
+                        Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                        DrawTileGrh(Map.Tiles[x, y].Layer3, x, y, center: true, modulate: tl);
+                    }
 
         // Objects on map
         if (State.ShowObjects && ObjGrhs != null)
@@ -319,7 +339,10 @@ public partial class MapViewport : Control
                 {
                     int objIdx = Map.Tiles[x, y].ObjIndex;
                     if (objIdx > 0 && objIdx < ObjGrhs.Length && ObjGrhs[objIdx] > 0)
-                        DrawTileGrh(ObjGrhs[objIdx], x, y, center: true);
+                    {
+                        Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                        DrawTileGrh(ObjGrhs[objIdx], x, y, center: true, modulate: tl);
+                    }
                 }
 
         // NPCs on map — always draw all (sparse, no LOD skip)
@@ -332,8 +355,9 @@ public partial class MapViewport : Control
                     int bodyIdx = NpcBodies[npcIdx];
                     if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) continue;
                     int bodyGrh = NpcBodyGrhs[bodyIdx];
+                    Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
                     if (bodyGrh > 0)
-                        DrawTileGrh(bodyGrh, x, y, center: true, animate: false);
+                        DrawTileGrh(bodyGrh, x, y, center: true, modulate: tl, animate: false);
                     if (NpcHeads != null && HeadGrhs != null &&
                         NpcHeadOfsX != null && NpcHeadOfsY != null &&
                         npcIdx < NpcHeads.Length)
@@ -346,7 +370,7 @@ public partial class MapViewport : Control
                             {
                                 int ofsX = bodyIdx < NpcHeadOfsX.Length ? NpcHeadOfsX[bodyIdx] : 0;
                                 int ofsY = bodyIdx < NpcHeadOfsY.Length ? NpcHeadOfsY[bodyIdx] : 0;
-                                DrawTileGrhOffset(headGrh, x, y, ofsX, ofsY, animate: false);
+                                DrawTileGrhOffset(headGrh, x, y, ofsX, ofsY, animate: false, modulate: tl);
                             }
                         }
                     }
@@ -357,8 +381,12 @@ public partial class MapViewport : Control
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer4 != 0)
-                        DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true,
-                            modulate: new Color(1, 1, 1, 0.7f));
+                    {
+                        Color roofMod = State.ShowLights
+                            ? _cpuLights.GetTileLight(x, y) with { A = 0.7f }
+                            : new Color(1, 1, 1, 0.7f);
+                        DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true, modulate: roofMod);
+                    }
 
         // Paint tool: ghost preview at cursor position (Sims-style)
         DrawPaintPreview();
@@ -2213,7 +2241,7 @@ public partial class MapViewport : Control
         Map.Tiles[x, y].LightB = (short)State.LightB;
         Map.Tiles[x, y].LightRange = (short)State.LightRange;
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
-        _lightingDirty = true;
+        _lightingDirty = true; _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -2240,7 +2268,7 @@ public partial class MapViewport : Control
                 count++;
             }
         Undo?.EndBatch();
-        _lightingDirty = true;
+        _lightingDirty = true; _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -2264,7 +2292,7 @@ public partial class MapViewport : Control
                 Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
             }
         Undo?.EndBatch();
-        _lightingDirty = true;
+        _lightingDirty = true; _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -2281,7 +2309,7 @@ public partial class MapViewport : Control
         Undo?.BeginBatch("Erase Light");
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
         Undo?.EndBatch();
-        _lightingDirty = true;
+        _lightingDirty = true; _cpuLightsDirty = true;
         QueueRedraw();
     }
 
