@@ -261,8 +261,8 @@ public partial class EditorMain : Control
         var undoGroup = EditorTheme.ToolBarGroup();
         var undoGroupH = new HBoxContainer();
         undoGroupH.AddThemeConstantOverride("separation", 6);
-        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21a9", "Deshacer (Ctrl+Z)", () => { _undo.Undo(_map!); _viewport?.QueueRedraw(); }, "Deshacer"));
-        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21aa", "Rehacer (Ctrl+Y)", () => { _undo.Redo(_map!); _viewport?.QueueRedraw(); }, "Rehacer"));
+        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21a9", "Deshacer (Ctrl+Z)", () => { _undo.Undo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); }, "Deshacer"));
+        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21aa", "Rehacer (Ctrl+Y)", () => { _undo.Redo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); }, "Rehacer"));
         undoGroup.AddChild(undoGroupH);
         _toolBar.AddChild(undoGroup);
 
@@ -433,6 +433,7 @@ public partial class EditorMain : Control
             State = _state,
             Undo = _undo,
             ZoneData = _mapZones,
+            ZonePanelRef = _zonePanel,
             ClipContents = true,
         };
         _viewport.OnPendingAccept += CommitPendingPlacement;
@@ -689,6 +690,7 @@ public partial class EditorMain : Control
             Map = _map,
             State = _state,
             Undo = _undo,
+            OnTileChanged = () => { _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); },
         };
         _propsWindow.AddChild(_propsPanel);
 
@@ -1687,8 +1689,8 @@ public partial class EditorMain : Control
     {
         switch (id)
         {
-            case 0: _undo.Undo(_map!); _viewport?.QueueRedraw(); break;
-            case 1: _undo.Redo(_map!); _viewport?.QueueRedraw(); break;
+            case 0: _undo.Undo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
+            case 1: _undo.Redo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
             case 2: _state.CopySelection(_map!); SetStatus($"Copiado {_state.ClipWidth}x{_state.ClipHeight} tiles"); break;
             case 3: PasteClipboard(); break;
             case 4: CutSelection(); break;
@@ -2133,6 +2135,7 @@ public partial class EditorMain : Control
         _walkPanel.DoorData = _doorData;
         _walkPanel.MapDir = _state.MapDir;
         _walkPanel.Particles = _particles;
+        _walkPanel.Zones = _mapZones;
 
         // Start at current editor camera center tile
         int startX = Math.Clamp(_state.HoverX > 0 ? _state.HoverX : 50, 1, _map.Width);
@@ -2414,6 +2417,7 @@ public partial class EditorMain : Control
             SetStatus("Mapa insertado descartado");
         }
         _state.ClearSelection();
+        _viewport?.MarkOccludersDirty();
         _viewport?.QueueRedraw();
     }
 
@@ -2723,8 +2727,8 @@ public partial class EditorMain : Control
         {
             switch (key.Keycode)
             {
-                case Key.Z: _undo.Undo(_map!); _viewport?.QueueRedraw(); break;
-                case Key.Y: _undo.Redo(_map!); _viewport?.QueueRedraw(); break;
+                case Key.Z: _undo.Undo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
+                case Key.Y: _undo.Redo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
                 case Key.S: OnSaveMap(); break;
                 case Key.O: RequestOpenMap(); break;
                 case Key.N: RequestNewMap(); break;
@@ -2846,6 +2850,7 @@ public partial class EditorMain : Control
                 _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
             }
         _undo.EndBatch();
+        _viewport?.MarkOccludersDirty();
         _viewport?.QueueRedraw();
     }
 

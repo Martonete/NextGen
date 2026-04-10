@@ -14,6 +14,8 @@ public partial class TilePropertiesPanel : PanelContainer
     public MapData? Map;
     public EditorState? State;
     public UndoManager? Undo;
+    /// <summary>Fired after ApplyChanges so listeners can refresh viewport / occluders.</summary>
+    public System.Action? OnTileChanged;
 
     private Label? _titleLabel;
     private CheckBox? _blockedCheck;
@@ -175,5 +177,6 @@ public partial class TilePropertiesPanel : PanelContainer
         Undo?.BeginBatch("Edit Properties");
         Undo?.RecordTileChange(_tileX, _tileY, before, Map.Tiles[_tileX, _tileY]);
         Undo?.EndBatch();
+        OnTileChanged?.Invoke();
     }
 }

@@ -39,6 +39,9 @@ public partial class WalkModePanel : Control
     // Particle engine (shared with MapViewport for live particle rendering in walk mode)
     public ParticleEngine? Particles;
 
+    // Zone data for ambient override and weather in walk mode
+    public MapZoneData? Zones;
+
     // Map loading — for exit tile transitions
     public string MapDir = "";  // directory where Mapa{N}.map/.inf/.dat live
 
@@ -91,6 +94,9 @@ public partial class WalkModePanel : Control
     private LightingSystem? _lighting;
     private bool _lightingDirty = true;
 
+    // ── Weather FX ──
+    private readonly WeatherFx _weather = new();
+
     public override void _Ready()
     {
         SetResolution(800, 600);
@@ -121,6 +127,13 @@ public partial class WalkModePanel : Control
 
         // Step the shared particle simulation so streams animate in walk mode too
         Particles?.Update((float)delta);
+
+        // Update weather from current zone
+        var currentZone = Zones?.GetZoneAt(CharX, CharY);
+        _weather.Lluvia = currentZone?.Lluvia ?? false;
+        _weather.Nieve  = currentZone?.Nieve  ?? false;
+        _weather.Niebla = currentZone?.Niebla ?? false;
+        _weather.Update((float)delta, Size);
 
         if (_isMoving)
         {
@@ -370,10 +383,16 @@ public partial class WalkModePanel : Control
         // ── Native 2D lighting: ambient + per-tile PointLight2D ──
         if (_lighting != null)
         {
-            float ar = Map.AmbientR / 255f;
-            float ag = Map.AmbientG / 255f;
-            float ab = Map.AmbientB / 255f;
-            _lighting.SetAmbient(new Color(ar, ag, ab, 1f));
+            // Zone ambient override: use zone values if non-zero, else fall back to map default
+            byte ar = Map.AmbientR, ag = Map.AmbientG, ab = Map.AmbientB;
+            var zone = Zones?.GetZoneAt(CharX, CharY);
+            if (zone != null && (zone.AmbientR != 0 || zone.AmbientG != 0 || zone.AmbientB != 0))
+            {
+                ar = (byte)Mathf.Clamp(zone.AmbientR, 0, 255);
+                ag = (byte)Mathf.Clamp(zone.AmbientG, 0, 255);
+                ab = (byte)Mathf.Clamp(zone.AmbientB, 0, 255);
+            }
+            _lighting.SetAmbient(new Color(ar / 255f, ag / 255f, ab / 255f, 1f));
             _lighting.SetEnabled(true);
             if (_lightingDirty)
             {
@@ -486,6 +505,9 @@ public partial class WalkModePanel : Control
 
         // ── Particles (rain, fire, fountain, etc.) ──
         DrawWalkModeParticles(ofsX, ofsY);
+
+        // ── Weather FX ──
+        _weather.Draw(this, Size);
 
         // ── HUD ──
         var font = ThemeDB.Singleton.FallbackFont;
@@ -679,6 +701,9 @@ public partial class WalkModePanel : Control
         }
 
         GD.Print($"[WalkMode] Door toggle at ({doorX},{doorY}): obj {curObjIdx} -> {newObjIdx} (closing={closing})");
+
+        // Doors changed Blocked tiles → rebuild shadow occluders so light/shadow reacts
+        _lighting?.RebuildOccluders(Map);
     }
 
     private DoorInfo? FindDoorAt(int x, int y)

@@ -361,8 +361,26 @@ public partial class WeatherRenderer : Node2D
             QueueRedraw();
     }
 
+    private void DrawSnow()
+    {
+        var snowColor = new Color(1f, 1f, 1f, SnowAlpha);
+        for (int i = 0; i < MaxSnowFlakes; i++)
+            DrawCircle(new Vector2(_snowX[i], _snowY[i]), SnowRadius, snowColor);
+    }
+
+    private void DrawNiebla()
+    {
+        DrawRect(new Rect2(0, 0, ViewW, ViewH), new Color(0.5f, 0.55f, 0.6f, 0.35f));
+    }
+
     public override void _Draw()
     {
+        if (_state == null) return;
+
+        // Snow and niebla are independent of rain intensity
+        if (_state.ZoneNieve) DrawSnow();
+        if (_state.ZoneNiebla) DrawNiebla();
+
         if (_rainIntensity <= 0f) return;
 
         float alpha = _rainIntensity;

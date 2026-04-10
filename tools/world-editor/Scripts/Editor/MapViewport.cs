@@ -83,6 +83,11 @@ public partial class MapViewport : Control
     private ParticleOverlay? _particleOverlay;
     private LightingSystem? _lighting;
     private bool _lightingDirty = true;
+    private bool _occludersDirty = true;
+
+    // Weather FX driven by the currently selected zone in ZonePanel
+    public ZonePanel? ZonePanelRef;  // set by EditorMain after creation
+    private readonly WeatherFx _weather = new();
 
     public override void _Ready()
     {
@@ -105,6 +110,12 @@ public partial class MapViewport : Control
         _lightingDirty = true;
     }
 
+    /// <summary>Request an occluder rebuild on the next draw (call after loading a new map).</summary>
+    public void MarkOccludersDirty()
+    {
+        _occludersDirty = true;
+    }
+
     private static bool HasAnyLight(MapData map)
     {
         for (int y = 1; y <= map.Height; y++)
@@ -122,6 +133,20 @@ public partial class MapViewport : Control
         // Step the particle simulation so streams animate (rain falls, fire flickers, etc.)
         if (Particles != null && State != null && State.ShowParticles)
             Particles.Update((float)delta);
+
+        // Tick weather simulation (zone-driven, draw happens in _Draw)
+        // Set flags BEFORE Update so Update spawns the right particles this same frame.
+        ZoneInfo? weatherZone = null;
+        if (ZonePanelRef != null && ZoneData != null)
+        {
+            int selId = ZonePanelRef.SelectedZoneId;
+            if (selId >= 0)
+                weatherZone = ZoneData.Zones.Find(z => z.Id == selId);
+        }
+        _weather.Lluvia = weatherZone?.Lluvia ?? false;
+        _weather.Nieve  = weatherZone?.Nieve  ?? false;
+        _weather.Niebla = weatherZone?.Niebla ?? false;
+        _weather.Update((float)delta, Size);
 
         // Keyboard panning (WASD / Arrow keys)
         // Pressing W = view moves UP on map = tiles with lower Y become visible
@@ -168,17 +193,29 @@ public partial class MapViewport : Control
         // ── Native 2D lighting: ambient + per-tile PointLight2D ──
         if (_lighting != null && State.ShowLights)
         {
-            // Map ambient (0..255 → 0..1). If the user paints the map dark, the
-            // CanvasModulate darkens everything; PointLight2D nodes brighten back.
-            float ar = Map.AmbientR / 255f;
-            float ag = Map.AmbientG / 255f;
-            float ab = Map.AmbientB / 255f;
-            _lighting.SetAmbient(new Color(ar, ag, ab, 1f));
+            // Zone ambient override: use hover-tile zone if non-zero, else map default
+            byte ar = Map.AmbientR, ag = Map.AmbientG, ab = Map.AmbientB;
+            if (ZoneData != null && State.HoverX > 0 && State.HoverY > 0)
+            {
+                var hoverZone = ZoneData.GetZoneAt(State.HoverX, State.HoverY);
+                if (hoverZone != null && (hoverZone.AmbientR != 0 || hoverZone.AmbientG != 0 || hoverZone.AmbientB != 0))
+                {
+                    ar = (byte)Mathf.Clamp(hoverZone.AmbientR, 0, 255);
+                    ag = (byte)Mathf.Clamp(hoverZone.AmbientG, 0, 255);
+                    ab = (byte)Mathf.Clamp(hoverZone.AmbientB, 0, 255);
+                }
+            }
+            _lighting.SetAmbient(new Color(ar / 255f, ag / 255f, ab / 255f, 1f));
             _lighting.SetEnabled(true);
             if (_lightingDirty)
             {
                 _lighting.Rebuild(Map);
                 _lightingDirty = false;
+            }
+            if (_occludersDirty)
+            {
+                _lighting.RebuildOccluders(Map);
+                _occludersDirty = false;
             }
             // Sync the light container's transform with the camera/zoom each frame
             _lighting.SetWorldTransform(State.CameraOffset, State.Zoom);
@@ -320,6 +357,9 @@ public partial class MapViewport : Control
             if (State.ShowParticles)
                 _particleOverlay.QueueRedraw();
         }
+
+        // Weather FX: flags are set in _Process before Update; just draw here.
+        _weather.Draw(this, Size);
     }
 
     /// <summary>
@@ -2321,6 +2361,7 @@ public partial class MapViewport : Control
             var before = Map.Tiles[tx, ty];
             Map.Tiles[tx, ty].Blocked = !Map.Tiles[tx, ty].Blocked;
             Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+            _occludersDirty = true;
         }
 
         QueueRedraw();

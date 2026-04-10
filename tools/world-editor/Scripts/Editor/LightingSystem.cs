@@ -36,6 +36,11 @@ public class LightingSystem
     private bool _enabled = true;
     private Color _ambient = new(1, 1, 1, 1);
 
+    // Shadow occluder pool
+    private readonly List<LightOccluder2D> _occluderPool = new();
+    private int _activeOccluderCount;
+    private OccluderPolygon2D? _sharedOccluderPolygon; // 32×32 square, shared across this instance's occluders
+
     /// <summary>Create the lighting system attached to the given parent CanvasItem.</summary>
     public LightingSystem(Node parent)
     {
@@ -154,7 +159,10 @@ public class LightingSystem
             {
                 Texture = _lightTexture,
                 BlendMode = Light2D.BlendModeEnum.Add,
-                ShadowEnabled = false,
+                ShadowEnabled = true,
+                ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
+                ShadowFilterSmooth = 1.5f,
+                ShadowItemCullMask = 1,
                 Visible = false,
                 ZIndex = 0,
             };
@@ -162,6 +170,73 @@ public class LightingSystem
             _pool.Add(l);
         }
         return _pool[index];
+    }
+
+    /// <summary>
+    /// Build or rebuild LightOccluder2D nodes for every Blocked tile in the map.
+    /// One occluder per blocked tile, using a shared 32×32 square polygon.
+    /// Must be called whenever the blocked layer changes.
+    /// </summary>
+    public void RebuildOccluders(MapData? map)
+    {
+        if (map == null)
+        {
+            for (int i = 0; i < _occluderPool.Count; i++)
+                _occluderPool[i].Visible = false;
+            _activeOccluderCount = 0;
+            return;
+        }
+
+        EnsureContainer();
+
+        // Lazily create the shared occluder polygon (32×32 square at tile origin)
+        if (_sharedOccluderPolygon == null)
+        {
+            _sharedOccluderPolygon = new OccluderPolygon2D
+            {
+                Polygon = new[]
+                {
+                    new Vector2(0, 0),
+                    new Vector2(TileSize, 0),
+                    new Vector2(TileSize, TileSize),
+                    new Vector2(0, TileSize),
+                }
+            };
+        }
+
+        int idx = 0;
+        for (int y = 1; y <= map.Height; y++)
+        {
+            for (int x = 1; x <= map.Width; x++)
+            {
+                if (!map.Tiles[x, y].Blocked) continue;
+
+                var occ = AcquireOccluder(idx++);
+                // Position at tile top-left in world pixels (1-based coords → 0-based pixels)
+                occ.Position = new Vector2((x - 1) * TileSize, (y - 1) * TileSize);
+                occ.Visible = true;
+            }
+        }
+
+        _activeOccluderCount = idx;
+        for (int i = _activeOccluderCount; i < _occluderPool.Count; i++)
+            _occluderPool[i].Visible = false;
+    }
+
+    private LightOccluder2D AcquireOccluder(int index)
+    {
+        EnsureContainer();
+        while (_occluderPool.Count <= index)
+        {
+            var o = new LightOccluder2D
+            {
+                Occluder = _sharedOccluderPolygon,
+                Visible = false,
+            };
+            _container?.AddChild(o);
+            _occluderPool.Add(o);
+        }
+        return _occluderPool[index];
     }
 
     /// <summary>Build a radial white gradient texture (256x256) — center white, edge transparent.</summary>
@@ -192,6 +267,12 @@ public class LightingSystem
         foreach (var l in _pool)
             if (GodotObject.IsInstanceValid(l)) l.QueueFree();
         _pool.Clear();
+        foreach (var o in _occluderPool)
+            if (GodotObject.IsInstanceValid(o)) o.QueueFree();
+        _occluderPool.Clear();
+        if (_sharedOccluderPolygon != null && GodotObject.IsInstanceValid(_sharedOccluderPolygon))
+            _sharedOccluderPolygon.Dispose();
+        _sharedOccluderPolygon = null;
         if (_modulate != null && GodotObject.IsInstanceValid(_modulate))
             _modulate.QueueFree();
         _modulate = null;
