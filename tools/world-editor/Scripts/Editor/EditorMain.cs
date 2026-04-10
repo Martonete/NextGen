@@ -228,6 +228,7 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Luces", 10);
         _viewMenu.AddSeparator();
         _viewMenu.AddItem("Modo Caminata (F5)", 11);
+        _viewMenu.AddItem("Panel de Partículas", 12);
         for (int id = 0; id <= 10; id++)
         {
             int idx = _viewMenu.GetItemIndex(id);
@@ -1714,6 +1715,7 @@ public partial class EditorMain : Control
             case 9: _state.ShowParticles = !_state.ShowParticles; break;
             case 10: _state.ShowLights = !_state.ShowLights; break;
             case 11: OpenWalkMode(); return; // not a checkbox — early return
+            case 12: if (_sidebarTabs != null) _sidebarTabs.CurrentTab = 3; return;
         }
 
         if (_viewMenu != null)
@@ -2076,7 +2078,7 @@ public partial class EditorMain : Control
             _walkWindow = new Window
             {
                 Title = "Modo Caminata",
-                Size = new Vector2I(800, 638), // 608 (19*32 viewport) + 30 (top bar)
+                Size = new Vector2I(544, 446), // 17*32=544 viewport + 30 bar (default 800x600 → 17×13 core)
                 Visible = false,
                 Exclusive = false,
                 AlwaysOnTop = true,
@@ -2114,8 +2116,7 @@ public partial class EditorMain : Control
                 var res = WalkModePanel.Resolutions[(int)idx];
                 resMenu.Text = res.Label;
                 _walkPanel.SetResolution(res.W, res.H);
-                int viewH = (res.H / 32 / 2 * 2 + 1) * 32;
-                _walkWindow.Size = new Vector2I(Math.Max(res.W, (res.W / 32 / 2 * 2 + 1) * 32), viewH + 30);
+                _walkWindow.Size = new Vector2I(_walkPanel.ViewWidth, _walkPanel.ViewHeight + 30);
             };
         }
 
@@ -2811,6 +2812,8 @@ public partial class EditorMain : Control
         SyncToolBar();
         UpdateLightSection();
         UpdateTriggerPanel();
+        if (_sidebarTabs != null && tool == EditorTool.Particle)
+            _sidebarTabs.CurrentTab = 3;
     }
 
     private void SyncLayerTabs()

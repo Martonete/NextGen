@@ -50,7 +50,9 @@ public partial class WalkModePanel : Control
     {
         ("800x600 (AO Clásico)", 800, 600),
         ("1024x768",             1024, 768),
+        ("1152x864",             1152, 864),
         ("1280x720 (HD)",        1280, 720),
+        ("1280x960",             1280, 960),
         ("1366x768",             1366, 768),
         ("1600x900",             1600, 900),
         ("1920x1080 (Full HD)",  1920, 1080),
@@ -67,6 +69,10 @@ public partial class WalkModePanel : Control
     private int _viewHeight = 608;
     private const int ExtraTiles = 3;
     private const int ExtraTilesLarge = 12;
+    private int _extraTilesX, _extraTilesY;
+    private ImageTexture? _fogTexture;
+    public int ViewWidth => _viewWidth;
+    public int ViewHeight => _viewHeight;
 
     // Movement
     private const float PixelsPerSecond = 200f; // VB6 exact: ScrollPixels=8 per 40ms tick = 200px/s
@@ -107,18 +113,102 @@ public partial class WalkModePanel : Control
         _lighting = new LightingSystem(this);
     }
 
-    /// <summary>Recalculates viewport metrics for the given resolution.</summary>
-    public void SetResolution(int width, int height)
+    /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
+    public void SetResolution(int windowW, int windowH)
     {
-        _halfTilesX = width / TileSize / 2;
-        _halfTilesY = height / TileSize / 2;
-        _viewTilesX = _halfTilesX * 2 + 1;
-        _viewTilesY = _halfTilesY * 2 + 1;
-        _viewWidth = _viewTilesX * TileSize;
-        _viewHeight = _viewTilesY * TileSize;
+        float uiScale = windowH / 600f;
+        int leftMargin = (int)(13 * uiScale);
+        int topMargin = (int)(149 * uiScale);
+        int sidebarW = (int)(240 * uiScale);
+        int bottomBar = (int)(35 * uiScale);
+        int sidebarGap = (int)(3 * uiScale);
+
+        int availW = windowW - sidebarW - leftMargin - sidebarGap;
+        int availH = windowH - topMargin - bottomBar;
+        int tilesX = availW / TileSize;
+        int tilesY = availH / TileSize;
+        if (tilesX % 2 == 0) tilesX--;
+        if (tilesY % 2 == 0) tilesY--;
+
+        // Margin-shrink expansion (same as client)
+        int leftoverH = availH - tilesY * TileSize;
+        int extraNeededH = 2 * TileSize - leftoverH;
+        int minTopMargin = (int)(128 * uiScale);
+        if (extraNeededH > 0 && topMargin - extraNeededH >= minTopMargin)
+            tilesY += 2;
+
+        int leftoverW = availW - tilesX * TileSize;
+        int extraNeededW = 2 * TileSize - leftoverW;
+        int minLeftMargin = Math.Max(4, (int)(4 * uiScale));
+        if (extraNeededW > 0 && leftMargin - extraNeededW >= minLeftMargin)
+            tilesX += 2;
+
+        tilesX = Math.Max(17, tilesX);
+        tilesY = Math.Max(13, tilesY);
+
+        _halfTilesX = tilesX / 2;
+        _halfTilesY = tilesY / 2;
+        _viewTilesX = tilesX;
+        _viewTilesY = tilesY;
+        _viewWidth = tilesX * TileSize;
+        _viewHeight = tilesY * TileSize;
+        _extraTilesX = (tilesX - 17) / 2;
+        _extraTilesY = (tilesY - 13) / 2;
+
         CustomMinimumSize = new Vector2(_viewWidth, _viewHeight);
         Size = new Vector2(_viewWidth, _viewHeight);
+
+        BuildFogTexture();
+        _lightingDirty = true;
         QueueRedraw();
+    }
+
+    private void BuildFogTexture()
+    {
+        if (_extraTilesX <= 0 && _extraTilesY <= 0)
+        {
+            _fogTexture = null;
+            return;
+        }
+
+        const float MaxAlpha = 0.12f;
+        const float TransitionPx = 32f;
+
+        int texW = _viewWidth / 4;
+        int texH = _viewHeight / 4;
+        int coreW = 544 / 4;  // 17*32 / 4
+        int coreH = 416 / 4;  // 13*32 / 4
+        float centerX = texW / 2f;
+        float centerY = texH / 2f;
+        float halfCoreW = coreW / 2f;
+        float halfCoreH = coreH / 2f;
+        float transition = TransitionPx / 4f;
+
+        var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
+
+        for (int py = 0; py < texH; py++)
+            for (int px = 0; px < texW; px++)
+            {
+                float dx = Math.Max(0, Math.Abs(px - centerX) - halfCoreW);
+                float dy = Math.Max(0, Math.Abs(py - centerY) - halfCoreH);
+                float dist = Math.Max(dx, dy);
+
+                float alpha;
+                if (dist <= 0f)
+                    alpha = 0f;
+                else if (dist < transition)
+                {
+                    float t = dist / transition;
+                    t = t * t * (3f - 2f * t);
+                    alpha = t * MaxAlpha;
+                }
+                else
+                    alpha = MaxAlpha;
+
+                img.SetPixel(px, py, new Color(0, 0, 0, alpha));
+            }
+
+        _fogTexture = ImageTexture.CreateFromImage(img);
     }
 
     public override void _Process(double delta)
@@ -499,6 +589,10 @@ public partial class WalkModePanel : Control
                     DrawGrhCentered(l4, sx, sy, new Color(1, 1, 1, roofA));
                 }
         }
+
+        // ── Fog overlay (dark vignette on extra tiles beyond core 17×13) ──
+        if (_fogTexture != null && (_extraTilesX > 0 || _extraTilesY > 0))
+            DrawTextureRect(_fogTexture, new Rect2(0, 0, _viewWidth, _viewHeight), false);
 
         // ── Exit markers ──
         DrawExitMarkers(minDX_L1, maxDX_L1, minDY_L1, maxDY_L1, ofsX, ofsY);
