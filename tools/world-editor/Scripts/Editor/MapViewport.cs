@@ -879,7 +879,8 @@ public partial class MapViewport : Control
                     var grh = Grhs[p.GrhIndex];
                     if (grh.NumFrames > 1 && grh.Frames is { Length: > 0 })
                     {
-                        int fi = grh.Frames[0];
+                        int frame = grh.Speed > 0 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
+                        int fi = grh.Frames[frame];
                         if (fi > 0 && fi < Grhs.Length) grh = Grhs[fi];
                     }
                     if (grh.FileNum <= 0 || grh.PixelWidth <= 0) continue;
@@ -1386,7 +1387,8 @@ public partial class MapViewport : Control
                 var grh = Grhs[p.GrhIndex];
                 if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
                 {
-                    int frameIdx = grh.Frames[0];
+                    int frame = grh.Speed > 0 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
+                    int frameIdx = grh.Frames[frame];
                     if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
                     grh = Grhs[frameIdx];
                 }

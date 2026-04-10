@@ -2735,8 +2735,8 @@ public partial class EditorMain : Control
         {
             switch (key.Keycode)
             {
-                case Key.Z: _undo.Undo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
-                case Key.Y: _undo.Redo(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
+                case Key.Z: _undo.Undo(_map!); _particles?.BuildStreamsFromMap(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
+                case Key.Y: _undo.Redo(_map!); _particles?.BuildStreamsFromMap(_map!); _viewport?.MarkOccludersDirty(); _viewport?.QueueRedraw(); break;
                 case Key.S: OnSaveMap(); break;
                 case Key.O: RequestOpenMap(); break;
                 case Key.N: RequestNewMap(); break;

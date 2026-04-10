@@ -111,6 +111,10 @@ public partial class WalkModePanel : Control
     // ── Weather FX ──
     private readonly WeatherFx _weather = new();
 
+    // ── Particle overlay (additive-blend child CanvasItem for correct particle glow) ──
+    private WalkParticleOverlay? _particleOverlay;
+    internal float _particleDrawOfsX, _particleDrawOfsY; // set in _Draw, read by overlay
+
     public override void _Ready()
     {
         SetResolution(800, 600);
@@ -122,6 +126,14 @@ public partial class WalkModePanel : Control
         // CanvasModulate darkens the entire viewport including HUD/panels.
         // CPU per-tile lighting (_cpuLights) handles all lighting instead.
         _lighting = null;
+
+        // Additive particle layer — separate CanvasItem so particles glow correctly
+        var particleOverlay = new WalkParticleOverlay { Owner = this, Name = "ParticleOverlay" };
+        particleOverlay.Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add };
+        particleOverlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        particleOverlay.MouseFilter = MouseFilterEnum.Ignore;
+        AddChild(particleOverlay);
+        _particleOverlay = particleOverlay;
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
@@ -640,8 +652,10 @@ public partial class WalkModePanel : Control
         // ── Exit markers ──
         DrawExitMarkers(minDX_L1, maxDX_L1, minDY_L1, maxDY_L1, ofsX, ofsY);
 
-        // ── Particles (rain, fire, fountain, etc.) ──
-        DrawWalkModeParticles(ofsX, ofsY);
+        // ── Particles (rain, fire, fountain, etc.) — drawn on additive overlay ──
+        _particleDrawOfsX = ofsX;
+        _particleDrawOfsY = ofsY;
+        _particleOverlay?.QueueRedraw();
 
         // ── Weather FX ──
         _weather.Draw(this, Size);
@@ -941,8 +955,9 @@ public partial class WalkModePanel : Control
 
     /// <summary>Draw all active particles from the shared ParticleEngine in walk-mode space.
     /// Walk mode draws tile (tx, ty) at panel pixel ((tx - CharX + _halfTilesX) * TS + ofs).
-    /// We use the same transform for particles so they line up.</summary>
-    private void DrawWalkModeParticles(float ofsX, float ofsY)
+    /// We use the same transform for particles so they line up.
+    /// Called from WalkParticleOverlay._Draw to draw on an additive-blend CanvasItem.</summary>
+    internal void DrawWalkModeParticlesOn(CanvasItem canvas)
     {
         if (Particles == null || Grhs == null || Textures == null || Map == null) return;
 
@@ -956,8 +971,8 @@ public partial class WalkModePanel : Control
             if (Math.Abs(dx) > _halfTilesX + ExtraTilesLarge ||
                 Math.Abs(dy) > _halfTilesY + ExtraTilesLarge) continue;
 
-            float streamX = (dx + _halfTilesX) * TileSize + TileSize / 2f + ofsX;
-            float streamY = (dy + _halfTilesY) * TileSize + TileSize / 2f + ofsY;
+            float streamX = (dx + _halfTilesX) * TileSize + TileSize / 2f + _particleDrawOfsX;
+            float streamY = (dy + _halfTilesY) * TileSize + TileSize / 2f + _particleDrawOfsY;
 
             foreach (var p in stream.Particles)
             {
@@ -965,7 +980,8 @@ public partial class WalkModePanel : Control
                 var grh = Grhs[p.GrhIndex];
                 if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
                 {
-                    int frameIdx = grh.Frames[0];
+                    int frame = grh.Speed > 0 ? (int)(_globalTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
+                    int frameIdx = grh.Frames[frame];
                     if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
                     grh = Grhs[frameIdx];
                 }
@@ -978,7 +994,7 @@ public partial class WalkModePanel : Control
                 float drawY = streamY + p.Y - grh.PixelHeight / 2f;
                 var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
                 var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
-                DrawTextureRectRegion(texture, destRect, srcRect, color);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
             }
         }
     }
@@ -1028,4 +1044,21 @@ public partial class WalkModePanel : Control
     {
         1 => "Norte", 2 => "Este", 3 => "Sur", 4 => "Oeste", _ => "?"
     };
+
+    // ── Inner class: additive-blend particle overlay ──────────────────────────
+
+    /// <summary>
+    /// Transparent overlay drawn on top of the walk-mode panel with additive
+    /// blending, so particles emit light correctly (same as ParticleOverlay in
+    /// MapViewport). Delegates actual drawing to WalkModePanel.DrawWalkModeParticlesOn.
+    /// </summary>
+    private sealed partial class WalkParticleOverlay : Control
+    {
+        public new WalkModePanel? Owner;
+
+        public override void _Draw()
+        {
+            Owner?.DrawWalkModeParticlesOn(this);
+        }
+    }
 }

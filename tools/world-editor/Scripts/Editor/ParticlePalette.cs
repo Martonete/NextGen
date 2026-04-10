@@ -256,6 +256,7 @@ public partial class ParticlePalette : VBoxContainer
         private int _defIndex;
         private bool _hasDefinition;
         private Label? _placeholder;
+        private double _animTime; // ms, for GRH frame animation
 
         public override void _Ready()
         {
@@ -318,6 +319,7 @@ public partial class ParticlePalette : VBoxContainer
 
         public override void _Process(double delta)
         {
+            _animTime += delta * 1000.0;
             if (!_hasDefinition || _stream == null || Engine == null) return;
             if (_defIndex < 1 || _defIndex >= Engine.Defs.Length) return;
 
@@ -339,7 +341,8 @@ public partial class ParticlePalette : VBoxContainer
 
                 if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
                 {
-                    int frameIdx = grh.Frames[0];
+                    int frame = grh.Speed > 0 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
+                    int frameIdx = grh.Frames[frame];
                     if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
                     grh = Grhs[frameIdx];
                 }
