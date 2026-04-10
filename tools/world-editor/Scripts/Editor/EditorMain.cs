@@ -2097,24 +2097,22 @@ public partial class EditorMain : Control
             resLabel.AddThemeFontSizeOverride("font_size", 13);
             topBar.AddChild(resLabel);
 
-            // Use MenuButton instead of OptionButton to avoid popup z-order issues
-            var resMenu = new MenuButton { Text = WalkModePanel.Resolutions[0].Label, Flat = false };
-            resMenu.AddThemeFontSizeOverride("font_size", 13);
-            resMenu.CustomMinimumSize = new Vector2(220, 0);
-            var popup = resMenu.GetPopup();
+            var resOption = new OptionButton();
+            resOption.AddThemeFontSizeOverride("font_size", 13);
+            resOption.CustomMinimumSize = new Vector2(220, 0);
             for (int i = 0; i < WalkModePanel.Resolutions.Length; i++)
-                popup.AddItem(WalkModePanel.Resolutions[i].Label, i);
-            topBar.AddChild(resMenu);
+                resOption.AddItem(WalkModePanel.Resolutions[i].Label, i);
+            resOption.Selected = 0;
+            topBar.AddChild(resOption);
             _walkWindow.AddChild(topBar);
 
             _walkPanel = new WalkModePanel();
-            _walkPanel.Position = new Vector2(0, 30); // below the top bar
+            _walkPanel.Position = new Vector2(0, 30);
             _walkWindow.AddChild(_walkPanel);
 
-            popup.IdPressed += (long idx) =>
+            resOption.ItemSelected += (long idx) =>
             {
                 var res = WalkModePanel.Resolutions[(int)idx];
-                resMenu.Text = res.Label;
                 _walkPanel.SetResolution(res.W, res.H);
                 _walkWindow.Size = new Vector2I(_walkPanel.ViewWidth, _walkPanel.ViewHeight + 30);
             };

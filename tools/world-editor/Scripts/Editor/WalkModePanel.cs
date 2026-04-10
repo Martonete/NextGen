@@ -101,6 +101,10 @@ public partial class WalkModePanel : Control
     private bool _lightingDirty = true;
     private int _lastMapNumber = -1;
 
+    // ── CPU per-tile lighting (fallback that always works in sub-Windows) ──
+    private readonly WalkModeLightSystem _cpuLights = new();
+    private bool _cpuLightsDirty = true;
+
     // ── Weather FX ──
     private readonly WeatherFx _weather = new();
 
@@ -161,6 +165,7 @@ public partial class WalkModePanel : Control
 
         BuildFogTexture();
         _lightingDirty = true;
+        _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -355,6 +360,7 @@ public partial class WalkModePanel : Control
         // Rebuild particles and lights for new map
         Particles?.BuildStreamsFromMap(newMap);
         _lightingDirty = true;
+        _cpuLightsDirty = true;
 
         // Update window title
         var parentWindow = GetParent<Window>();
@@ -481,6 +487,14 @@ public partial class WalkModePanel : Control
         {
             _lastMapNumber = Map.MapNumber;
             _lightingDirty = true;
+            _cpuLightsDirty = true;
+        }
+
+        // CPU per-tile lighting (always works, independent of Godot GPU pipeline)
+        if (_cpuLightsDirty)
+        {
+            _cpuLights.Recalculate(Map, Zones);
+            _cpuLightsDirty = false;
         }
 
         float ofsX = (float)Math.Round(_moveOffsetX);
@@ -531,7 +545,7 @@ public partial class WalkModePanel : Control
         int minDX = -_halfTilesX - ExtraTilesLarge;
         int maxDX = _halfTilesX + ExtraTilesLarge;
 
-        // ── Pass 1: Ground (L1) ── top-left aligned
+        // ── Pass 1: Ground (L1) ── top-left aligned, with per-tile lighting
         for (int dy = minDY_L1; dy <= maxDY_L1; dy++)
             for (int dx = minDX_L1; dx <= maxDX_L1; dx++)
             {
@@ -539,7 +553,7 @@ public partial class WalkModePanel : Control
                 if (!Map.InBounds(tx, ty)) continue;
                 float sx = (dx + _halfTilesX) * TileSize + ofsX;
                 float sy = (dy + _halfTilesY) * TileSize + ofsY;
-                DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy, Colors.White);
+                DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy, _cpuLights.GetTileLight(tx, ty));
             }
 
         // ── Pass 2: Mask/Alpha (L2) ── centered, large buffer
@@ -552,7 +566,7 @@ public partial class WalkModePanel : Control
                 if (l2 <= 0) continue;
                 float sx = (dx + _halfTilesX) * TileSize + ofsX;
                 float sy = (dy + _halfTilesY) * TileSize + ofsY;
-                DrawGrhCentered(l2, sx, sy, Colors.White);
+                DrawGrhCentered(l2, sx, sy, _cpuLights.GetTileLight(tx, ty));
             }
 
         // ── Pass 3: Objects + NPCs + L3 + Character — Y-sorted ──
@@ -560,9 +574,12 @@ public partial class WalkModePanel : Control
         {
             int ty = CharY + dy;
 
-            // Draw character at its Y row
+            // Draw character at its Y row with per-tile lighting
             if (dy == 0)
-                DrawCharacter(ofsX, ofsY);
+            {
+                Color charLight = _cpuLights.GetTileLight(CharX, CharY);
+                DrawCharacter(ofsX, ofsY, charLight);
+            }
 
             for (int dx = minDX; dx <= maxDX; dx++)
             {
@@ -571,25 +588,26 @@ public partial class WalkModePanel : Control
 
                 float sx = (dx + _halfTilesX) * TileSize + ofsX;
                 float sy = (dy + _halfTilesY) * TileSize + ofsY;
+                Color tileLight = _cpuLights.GetTileLight(tx, ty);
 
                 // Ground objects from .inf data (includes doors)
-                DrawTileObject(tx, ty, sx, sy);
+                DrawTileObject(tx, ty, sx, sy, tileLight);
 
                 // NPCs from .inf data
-                DrawTileNpc(tx, ty, sx, sy);
+                DrawTileNpc(tx, ty, sx, sy, tileLight);
 
                 // L3 graphic layer
                 int l3 = Map.Tiles[tx, ty].Layer3;
                 if (l3 > 0)
                 {
                     bool onCharTile = (tx == CharX && ty == CharY);
-                    Color mod = onCharTile ? new Color(1, 1, 1, 0.5f) : Colors.White;
+                    Color mod = onCharTile ? new Color(tileLight.R, tileLight.G, tileLight.B, 0.5f) : tileLight;
                     DrawGrhCentered(l3, sx, sy, mod);
                 }
             }
         }
 
-        // ── Pass 4: Roof (L4) — centered, large buffer, smooth alpha fade ──
+        // ── Pass 4: Roof (L4) — centered, large buffer, smooth alpha fade + lighting
         if (_roofAlpha > 0)
         {
             float roofA = _roofAlpha / 255f;
@@ -602,7 +620,8 @@ public partial class WalkModePanel : Control
                     if (l4 <= 0) continue;
                     float sx = (dx + _halfTilesX) * TileSize + ofsX;
                     float sy = (dy + _halfTilesY) * TileSize + ofsY;
-                    DrawGrhCentered(l4, sx, sy, new Color(1, 1, 1, roofA));
+                    Color rl = _cpuLights.GetTileLight(tx, ty);
+                    DrawGrhCentered(l4, sx, sy, new Color(rl.R, rl.G, rl.B, roofA));
                 }
         }
 
@@ -632,17 +651,17 @@ public partial class WalkModePanel : Control
 
     // ── NPC / Object / Exit rendering ───────────────────────────────────────
 
-    private void DrawTileObject(int tx, int ty, float sx, float sy)
+    private void DrawTileObject(int tx, int ty, float sx, float sy, Color light)
     {
         if (ObjGrhs == null) return;
         int objIdx = Map!.Tiles[tx, ty].ObjIndex;
         if (objIdx <= 0 || objIdx >= ObjGrhs.Length) return;
         int objGrh = ObjGrhs[objIdx];
         if (objGrh <= 0) return;
-        DrawGrhCentered(objGrh, sx, sy, Colors.White);
+        DrawGrhCentered(objGrh, sx, sy, light);
     }
 
-    private void DrawTileNpc(int tx, int ty, float sx, float sy)
+    private void DrawTileNpc(int tx, int ty, float sx, float sy, Color light)
     {
         if (NpcBodies == null || NpcBodyGrhs == null || Grhs == null) return;
         int npcIdx = Map!.Tiles[tx, ty].NpcIndex;
@@ -651,12 +670,10 @@ public partial class WalkModePanel : Control
         int bodyIdx = NpcBodies[npcIdx];
         if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) return;
 
-        // Draw NPC body (south-facing static frame)
         int bodyGrh = NpcBodyGrhs[bodyIdx];
         if (bodyGrh > 0)
-            DrawAnimGrhCentered(bodyGrh, 0, sx, sy, Colors.White);
+            DrawAnimGrhCentered(bodyGrh, 0, sx, sy, light);
 
-        // Draw NPC head
         if (NpcHeads == null || HeadGrhs == null) return;
         if (npcIdx >= NpcHeads.Length) return;
         int headIdx = NpcHeads[npcIdx];
@@ -666,7 +683,7 @@ public partial class WalkModePanel : Control
 
         int hofX = (NpcHeadOfsX != null && bodyIdx < NpcHeadOfsX.Length) ? NpcHeadOfsX[bodyIdx] : 0;
         int hofY = (NpcHeadOfsY != null && bodyIdx < NpcHeadOfsY.Length) ? NpcHeadOfsY[bodyIdx] : 0;
-        DrawAnimGrhCentered(headGrh, 0, sx + hofX, sy + hofY, Colors.White);
+        DrawAnimGrhCentered(headGrh, 0, sx + hofX, sy + hofY, light);
     }
 
     private void DrawExitMarkers(int minDX, int maxDX, int minDY, int maxDY, float ofsX, float ofsY)
@@ -689,8 +706,9 @@ public partial class WalkModePanel : Control
             }
     }
 
-    private void DrawCharacter(float ofsX, float ofsY)
+    private void DrawCharacter(float ofsX, float ofsY, Color light = default)
     {
+        if (light == default) light = Colors.White;
         if (Bodies == null || Heads == null) return;
         if (BodyIndex <= 0 || BodyIndex >= Bodies.Length) return;
 
@@ -712,7 +730,7 @@ public partial class WalkModePanel : Control
             int steps = (int)(pixelsTraveled / ScrollPixels);
             bodyFrame = steps % frameCount;
         }
-        DrawAnimGrhCentered(bodyGrh, bodyFrame, cx, cy, Colors.White);
+        DrawAnimGrhCentered(bodyGrh, bodyFrame, cx, cy, light);
 
         // Head
         if (HeadIndex > 0 && HeadIndex < Heads.Length)
@@ -722,7 +740,7 @@ public partial class WalkModePanel : Control
             {
                 float hx = cx + body.HeadOffsetX;
                 float hy = cy + body.HeadOffsetY;
-                DrawAnimGrhCentered(headGrh, 0, hx, hy, Colors.White);
+                DrawAnimGrhCentered(headGrh, 0, hx, hy, light);
             }
         }
     }
