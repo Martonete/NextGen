@@ -970,7 +970,7 @@ public partial class MapViewport : Control
         // The actual lighting is rendered via the GPU shader (identical to game).
         // These markers only show WHERE light sources exist so you can find them.
         // Only drawn when the Light tool is active or ShowLights is off (for debug).
-        bool showLightMarkers = State.ActiveTool == EditorTool.Light && State.ShowLights;
+        bool showLightMarkers = State.ActiveTool == EditorTool.Light || State.ShowLights;
         if (showLightMarkers && !skipDetailedOverlays)
             for (int y = ovMinY; y <= ovMaxY; y++)
                 for (int x = ovMinX; x <= ovMaxX; x++)
