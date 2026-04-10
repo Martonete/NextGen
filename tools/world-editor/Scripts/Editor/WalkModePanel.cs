@@ -74,6 +74,9 @@ public partial class WalkModePanel : Control
     public int ViewWidth => _viewWidth;
     public int ViewHeight => _viewHeight;
 
+    /// <summary>Force CPU lighting recalculation (call after editing lights/zones in the main editor).</summary>
+    public void InvalidateLighting() => _cpuLightsDirty = true;
+
     // Movement
     private const float PixelsPerSecond = 200f; // VB6 exact: ScrollPixels=8 per 40ms tick = 200px/s
     private const float ScrollPixels = 8f;
@@ -115,7 +118,10 @@ public partial class WalkModePanel : Control
         FocusMode = FocusModeEnum.All;
         GrabFocus();
 
-        _lighting = new LightingSystem(this);
+        // GPU lighting (PointLight2D/CanvasModulate) disabled in walk mode —
+        // CanvasModulate darkens the entire viewport including HUD/panels.
+        // CPU per-tile lighting (_cpuLights) handles all lighting instead.
+        _lighting = null;
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
@@ -382,6 +388,7 @@ public partial class WalkModePanel : Control
         if (@event is InputEventKey key)
         {
             bool pressed = key.Pressed;
+            bool handled = true;
             switch (key.Keycode)
             {
                 case Key.W: case Key.Up: _keyUp = pressed; break;
@@ -391,8 +398,9 @@ public partial class WalkModePanel : Control
                 case Key.Escape:
                     if (pressed) GetParent<Window>()?.Hide();
                     break;
+                default: handled = false; break;
             }
-            AcceptEvent();
+            if (handled) AcceptEvent();
         }
         else if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
         {

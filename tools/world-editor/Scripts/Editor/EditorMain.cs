@@ -2135,6 +2135,7 @@ public partial class EditorMain : Control
         _walkPanel.MapDir = _state.MapDir;
         _walkPanel.Particles = _particles;
         _walkPanel.Zones = _mapZones;
+        _walkPanel.InvalidateLighting(); // Refresh lights in case tiles were edited
 
         // Start at current editor camera center tile
         int startX = Math.Clamp(_state.HoverX > 0 ? _state.HoverX : 50, 1, _map.Width);
