@@ -49,17 +49,28 @@ public class WalkModeLightSystem
                 ambR[x, y] = r / 255f; ambG[x, y] = g / 255f; ambB[x, y] = b / 255f;
             }
 
-        // Corner grid: corner (cx,cy) = NW corner of tile (cx,cy)
+        // Corner grid: corner (cx,cy) = NW corner of tile (cx,cy).
+        // Each corner is shared by up to 4 tiles. We average the ambient
+        // of those tiles so zone boundaries are centered (no 1-tile offset)
+        // and edges get a natural 1-tile gradient.
         float[,] cR = new float[_mapWidth + 2, _mapHeight + 2];
         float[,] cG = new float[_mapWidth + 2, _mapHeight + 2];
         float[,] cB = new float[_mapWidth + 2, _mapHeight + 2];
 
-        // Initialize all corners from per-tile ambient
         for (int cy = 1; cy <= _mapHeight + 1; cy++)
             for (int cx = 1; cx <= _mapWidth + 1; cx++)
             {
-                int tx = Math.Min(cx, _mapWidth), ty = Math.Min(cy, _mapHeight);
-                cR[cx, cy] = ambR[tx, ty]; cG[cx, cy] = ambG[tx, ty]; cB[cx, cy] = ambB[tx, ty];
+                // Corner (cx,cy) touches tiles (cx-1,cy-1), (cx,cy-1), (cx-1,cy), (cx,cy)
+                float sr = 0, sg = 0, sb = 0;
+                int n = 0;
+                for (int dy = -1; dy <= 0; dy++)
+                    for (int dx = -1; dx <= 0; dx++)
+                    {
+                        int tx = cx + dx, ty = cy + dy;
+                        if (tx >= 1 && tx <= _mapWidth && ty >= 1 && ty <= _mapHeight)
+                        { sr += ambR[tx, ty]; sg += ambG[tx, ty]; sb += ambB[tx, ty]; n++; }
+                    }
+                if (n > 0) { cR[cx, cy] = sr / n; cG[cx, cy] = sg / n; cB[cx, cy] = sb / n; }
             }
 
         // Apply lights (exact CalcCorner from client LightSystem)
