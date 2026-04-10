@@ -84,12 +84,19 @@ public partial class WalkModePanel : Control
     private const float RoofFadeRate = 8f; // alpha change per frame
     private bool _diagPrinted;
 
+    // ── Lighting (matches client GPU shader pipeline) ──
+    private LightingRenderer? _lighting;
+    private bool _lightingDirty = true;
+
     public override void _Ready()
     {
         SetResolution(800, 600);
         ClipContents = true;
         FocusMode = FocusModeEnum.All;
         GrabFocus();
+
+        _lighting = new LightingRenderer();
+        Material = _lighting.Material;
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution.</summary>
@@ -354,6 +361,30 @@ public partial class WalkModePanel : Control
 
         float ofsX = (float)Math.Round(_moveOffsetX);
         float ofsY = (float)Math.Round(_moveOffsetY);
+
+        // ── Lightmap pipeline (identical to client) ──
+        if (_lighting != null)
+        {
+            bool hasAnyLight = HasAnyLight(Map);
+            if (hasAnyLight && _lightingDirty)
+            {
+                _lighting.Rebuild(Map, Map.AmbientR, Map.AmbientG, Map.AmbientB);
+                _lightingDirty = false;
+            }
+            _lighting.SetEnabled(hasAnyLight);
+            // Compute world pixel origin that maps viewport (0,0) → world_px.
+            // In walk mode the character is at the panel center, and the
+            // top-left visible tile is (CharX - _halfTilesX, CharY - _halfTilesY).
+            // Tile (tx, ty) is drawn at panel pixel ((dx + _halfTilesX) * TS + ofs).
+            // World pixel of that tile (1-based) is ((tx - 1) * TS, (ty - 1) * TS).
+            // So world_origin = world_px(topLeftTile) - panel_px(topLeftTile).
+            float topLeftWorldX = (CharX - _halfTilesX - 1) * TileSize;
+            float topLeftWorldY = (CharY - _halfTilesY - 1) * TileSize;
+            // Panel position of the top-left visible tile is (0, 0) with current
+            // draw code (dx=-_halfTilesX → sx = 0 + ofs). We subtract ofs so that
+            // a panel pixel p maps to world_origin + p.
+            _lighting.SetWorldOrigin(new Vector2(topLeftWorldX - ofsX, topLeftWorldY - ofsY));
+        }
 
         // L1 uses smaller buffer; L2/L3/L4 need large buffer for multi-tile GRHs
         int minDY_L1 = -_halfTilesY - ExtraTiles;
@@ -733,6 +764,15 @@ public partial class WalkModePanel : Control
         var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
         var dst = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), grh.PixelWidth, grh.PixelHeight);
         DrawTextureRectRegion(texture, dst, src, mod);
+    }
+
+    private static bool HasAnyLight(MapData map)
+    {
+        if (map == null) return false;
+        for (int y = 1; y <= map.Height; y++)
+            for (int x = 1; x <= map.Width; x++)
+                if (map.Tiles[x, y].HasLight) return true;
+        return false;
     }
 
     private GrhData ResolveStaticFrame(int grhIndex)

@@ -81,6 +81,8 @@ public partial class MapViewport : Control
     private int _moveSelW, _moveSelH;    // Selection dimensions
 
     private ParticleOverlay? _particleOverlay;
+    private LightingRenderer? _lighting;
+    private bool _lightingDirty = true;
 
     public override void _Ready()
     {
@@ -92,6 +94,24 @@ public partial class MapViewport : Control
         _particleOverlay.ZIndex = 1;
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
+
+        // Lightmap shader identical to the client — applied to the viewport itself
+        _lighting = new LightingRenderer();
+        Material = _lighting.Material;
+    }
+
+    /// <summary>Request a lightmap rebuild on the next draw.</summary>
+    public void MarkLightmapDirty()
+    {
+        _lightingDirty = true;
+    }
+
+    private static bool HasAnyLight(MapData map)
+    {
+        for (int y = 1; y <= map.Height; y++)
+            for (int x = 1; x <= map.Width; x++)
+                if (map.Tiles[x, y].HasLight) return true;
+        return false;
     }
 
     private double _animTime; // ms, for tile animations
@@ -141,6 +161,24 @@ public partial class MapViewport : Control
         DrawRect(new Rect2(Vector2.Zero, Size), EditorTheme.BG_DARK);
 
         if (Map == null || Grhs == null || Textures == null || State == null) return;
+
+        // ── Lightmap: rebuild if dirty, then enable/disable based on ShowLights ──
+        if (_lighting != null)
+        {
+            bool hasAnyLight = HasAnyLight(Map);
+            bool showLights = State.ShowLights && hasAnyLight;
+            if (showLights && _lightingDirty)
+            {
+                _lighting.Rebuild(Map, Map.AmbientR, Map.AmbientG, Map.AmbientB);
+                _lightingDirty = false;
+            }
+            _lighting.SetEnabled(showLights);
+            // World origin must be zero because DrawSetTransform already applies
+            // CameraOffset/Zoom, so VERTEX in the shader is already in world space
+            // scaled by zoom. The shader's world_origin is added to VERTEX, so we
+            // pass zero and compute uv directly from VERTEX / map_size_px.
+            _lighting.SetWorldOrigin(Vector2.Zero);
+        }
 
         DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
@@ -866,24 +904,22 @@ public partial class MapViewport : Control
                             new Color(0.5f, 1f, 0.5f, 0.95f), 7);
                     }
 
-        // ── Lights ──
-        if (State.ShowLights && !skipDetailedOverlays)
+        // ── Light source markers ──
+        // The actual lighting is rendered via the GPU shader (identical to game).
+        // These markers only show WHERE light sources exist so you can find them.
+        // Only drawn when the Light tool is active or ShowLights is off (for debug).
+        bool showLightMarkers = State.ActiveTool == EditorTool.Light && State.ShowLights;
+        if (showLightMarkers && !skipDetailedOverlays)
             for (int y = ovMinY; y <= ovMaxY; y++)
                 for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].HasLight)
                     {
                         ref var tile = ref Map.Tiles[x, y];
-                        var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
-                        float radius = tile.LightRange * TileSize * 0.5f;
+                        var center = new Vector2((x - 0.5f) * TileSize, (y - 0.5f) * TileSize);
                         var lightCol = new Color(tile.LightR / 255f, tile.LightG / 255f, tile.LightB / 255f);
-                        DrawCircle(center, Math.Max(radius, TileSize * 0.4f),
-                            new Color(lightCol.R, lightCol.G, lightCol.B, 0.12f));
-                        // Glow dot
-                        DrawCircle(center, 5f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.6f));
-                        DrawCircle(center, 3f, new Color(1f, 1f, 1f, 0.8f));
-                        if (radius > TileSize * 0.5f)
-                            DrawArc(center, radius, 0, MathF.Tau, 32,
-                                new Color(lightCol.R, lightCol.G, lightCol.B, 0.25f), 1f);
+                        // Tiny bright dot at the light source (helps you locate it)
+                        DrawCircle(center, 4f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.9f));
+                        DrawCircle(center, 2f, new Color(1f, 1f, 1f, 0.95f));
                     }
 
         // ── Particle indicators (diamond + pill) ──
@@ -2056,6 +2092,7 @@ public partial class MapViewport : Control
         Map.Tiles[x, y].LightB = (short)State.LightB;
         Map.Tiles[x, y].LightRange = (short)State.LightRange;
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        _lightingDirty = true;
         QueueRedraw();
     }
 
@@ -2082,6 +2119,7 @@ public partial class MapViewport : Control
                 count++;
             }
         Undo?.EndBatch();
+        _lightingDirty = true;
         QueueRedraw();
     }
 
@@ -2105,6 +2143,7 @@ public partial class MapViewport : Control
                 Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
             }
         Undo?.EndBatch();
+        _lightingDirty = true;
         QueueRedraw();
     }
 
@@ -2121,6 +2160,7 @@ public partial class MapViewport : Control
         Undo?.BeginBatch("Erase Light");
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
         Undo?.EndBatch();
+        _lightingDirty = true;
         QueueRedraw();
     }
 
