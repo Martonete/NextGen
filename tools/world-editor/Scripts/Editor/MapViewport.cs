@@ -104,8 +104,9 @@ public partial class MapViewport : Control
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
 
-        // Native Godot 2D lighting (CanvasModulate + PointLight2D pool)
-        _lighting = new LightingSystem(this);
+        // CanvasModulate darkens the entire canvas layer including UI panels.
+        // CPU per-tile lighting (_cpuLights) handles all lighting instead.
+        _lighting = null;
     }
 
     /// <summary>Request a lightmap rebuild on the next draw.</summary>
@@ -239,40 +240,8 @@ public partial class MapViewport : Control
             _cpuLightsDirty = false;
         }
 
-        // ── Native 2D lighting: ambient + per-tile PointLight2D ──
-        if (_lighting != null && State.ShowLights)
-        {
-            // Zone ambient override: use hover-tile zone if non-zero, else map default
-            byte ar = Map.AmbientR, ag = Map.AmbientG, ab = Map.AmbientB;
-            if (ZoneData != null && State.HoverX > 0 && State.HoverY > 0)
-            {
-                var hoverZone = ZoneData.GetZoneAt(State.HoverX, State.HoverY);
-                if (hoverZone != null && (hoverZone.AmbientR != 0 || hoverZone.AmbientG != 0 || hoverZone.AmbientB != 0))
-                {
-                    ar = (byte)Mathf.Clamp(hoverZone.AmbientR, 0, 255);
-                    ag = (byte)Mathf.Clamp(hoverZone.AmbientG, 0, 255);
-                    ab = (byte)Mathf.Clamp(hoverZone.AmbientB, 0, 255);
-                }
-            }
-            _lighting.SetAmbient(new Color(ar / 255f, ag / 255f, ab / 255f, 1f));
-            _lighting.SetEnabled(true);
-            if (_lightingDirty)
-            {
-                _lighting.Rebuild(Map);
-                _lightingDirty = false;
-            }
-            if (_occludersDirty)
-            {
-                _lighting.RebuildOccluders(Map);
-                _occludersDirty = false;
-            }
-            // Sync the light container's transform with the camera/zoom each frame
-            _lighting.SetWorldTransform(State.CameraOffset, State.Zoom);
-        }
-        else
-        {
-            _lighting?.SetEnabled(false);
-        }
+        // GPU lighting (CanvasModulate) is disabled — it darkens the entire canvas
+        // layer including UI panels. CPU per-tile lighting handles map shading.
 
         DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
