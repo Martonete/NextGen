@@ -93,10 +93,7 @@ public partial class MapViewport : Control
     public override void _Ready()
     {
         _particleOverlay = new ParticleOverlay { Viewport = this };
-        _particleOverlay.Material = new CanvasItemMaterial
-        {
-            BlendMode = CanvasItemMaterial.BlendModeEnum.Add
-        };
+        _particleOverlay.Material = LoadParticleShader();
         _particleOverlay.ZIndex = 1;
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
@@ -107,6 +104,16 @@ public partial class MapViewport : Control
     public void MarkLightmapDirty()
     {
         _cpuLightsDirty = true;
+    }
+
+    /// <summary>Load the particle additive glow shader (brightness → alpha).</summary>
+    internal static ShaderMaterial LoadParticleShader()
+    {
+        var shader = GD.Load<Shader>("res://Shaders/particle_additive.gdshader");
+        if (shader != null)
+            return new ShaderMaterial { Shader = shader };
+        // Fallback if shader not found
+        return new ShaderMaterial();
     }
 
     private static bool HasAnyLight(MapData map)
