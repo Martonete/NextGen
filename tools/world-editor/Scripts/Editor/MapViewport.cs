@@ -126,6 +126,10 @@ public partial class MapViewport : Control
 
     private double _animTime; // ms, for tile animations
 
+    // Particle cursor preview: a live-simulated stream shown at the hovered tile
+    private EditorParticleStream? _particlePreviewStream;
+    private int _particlePreviewGroup = -1;
+
     public override void _Process(double delta)
     {
         _animTime += delta * 1000.0;
@@ -133,6 +137,40 @@ public partial class MapViewport : Control
         // Step the particle simulation so streams animate (rain falls, fire flickers, etc.)
         if (Particles != null && State != null && State.ShowParticles)
             Particles.Update((float)delta);
+
+        // Particle cursor preview: simulate a live stream at the hovered tile
+        if (Particles != null && State != null && State.ActiveTool == EditorTool.Particle
+            && State.SelectedParticleGroup > 0)
+        {
+            int pg = State.SelectedParticleGroup;
+            if (pg != _particlePreviewGroup || _particlePreviewStream == null)
+            {
+                _particlePreviewGroup = pg;
+                _particlePreviewStream = null;
+                if (pg >= 1 && pg < Particles.Defs.Length)
+                {
+                    var def = Particles.Defs[pg];
+                    if (def != null && def.NumParticles > 0)
+                    {
+                        _particlePreviewStream = new EditorParticleStream
+                        {
+                            DefIndex = pg,
+                            Particles = new EditorParticle[def.NumParticles],
+                            Active = true
+                        };
+                        for (int i = 0; i < def.NumParticles; i++)
+                            _particlePreviewStream.Particles[i] = new EditorParticle();
+                    }
+                }
+            }
+            if (_particlePreviewStream != null && pg >= 1 && pg < Particles.Defs.Length)
+                ParticleEngine.UpdateSingleStream(_particlePreviewStream, Particles.Defs[pg], (float)(delta * 1000.0));
+        }
+        else
+        {
+            _particlePreviewStream = null;
+            _particlePreviewGroup = -1;
+        }
 
         // Tick weather simulation (zone-driven, draw happens in _Draw)
         // Set flags BEFORE Update so Update spawns the right particles this same frame.
@@ -803,17 +841,38 @@ public partial class MapViewport : Control
         }
         else if (State.ActiveTool == EditorTool.Particle && State.SelectedParticleGroup > 0)
         {
-            // Particle cursor preview: colored diamond + group number
-            var center = new Vector2((hx + 0.5f) * TileSize, (hy + 0.5f) * TileSize);
-            var pCol = new Color(0.3f, 1f, 0.9f, 0.5f);
-            float s = TileSize * 0.35f;
-            DrawCircle(center, s, pCol with { A = 0.2f });
-            DrawCircle(center, 4f, pCol with { A = 0.8f });
-            DrawArc(center, s, 0, MathF.Tau, 16, pCol with { A = 0.6f }, 1.5f);
+            // Live particle preview at cursor + label
+            var tileCenter = new Vector2((hx + 0.5f) * TileSize, (hy + 0.5f) * TileSize);
+            if (_particlePreviewStream != null && Grhs != null && Textures != null)
+            {
+                foreach (var p in _particlePreviewStream.Particles)
+                {
+                    if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
+                    var grh = Grhs[p.GrhIndex];
+                    if (grh.NumFrames > 1 && grh.Frames is { Length: > 0 })
+                    {
+                        int fi = grh.Frames[0];
+                        if (fi > 0 && fi < Grhs.Length) grh = Grhs[fi];
+                    }
+                    if (grh.FileNum <= 0 || grh.PixelWidth <= 0) continue;
+                    var tex = Textures.GetTexture(grh.FileNum);
+                    if (tex == null) continue;
+                    var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+                    float px = tileCenter.X + p.X - grh.PixelWidth / 2f;
+                    float py = tileCenter.Y + p.Y - grh.PixelHeight / 2f;
+                    var dst = new Rect2(px, py, grh.PixelWidth, grh.PixelHeight);
+                    var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha * 0.7f);
+                    DrawTextureRectRegion(tex, dst, src, color);
+                }
+            }
+            // Label
             var font = ThemeDB.Singleton.FallbackFont;
-            string label = $"P{State.SelectedParticleGroup}";
             DrawString(font, new Vector2(hx * TileSize + 2, hy * TileSize + TileSize - 3),
-                label, HorizontalAlignment.Left, -1, 9, new Color(0.3f, 1f, 0.9f, 0.9f));
+                $"P{State.SelectedParticleGroup}", HorizontalAlignment.Left, -1, 9,
+                new Color(0.3f, 1f, 0.9f, 0.9f));
+            // Tile outline
+            DrawRect(new Rect2(hx * TileSize, hy * TileSize, TileSize, TileSize),
+                new Color(0.3f, 1f, 0.9f, 0.3f), false, 1f);
         }
         else if (State.ActiveTool == EditorTool.Trigger)
         {
