@@ -310,7 +310,7 @@ public partial class EditorMain : Control
             (EditorTool.Exit,     "\u2197", "Salida"),
             (EditorTool.Trigger,  "\u26a1", "Trigger"),
             (EditorTool.Particle, "\u2728", "Partículas"),
-            (EditorTool.Fog,      "\u2601", "Niebla"),
+            (EditorTool.Fog,      "\u2601", "Humo"),
         };
         var extButtons = new Button[propToolDefs.Length];
         for (int i = 0; i < propToolDefs.Length; i++)
