@@ -6,49 +6,61 @@ using Godot;
 namespace AOWorldEditor.Editor;
 
 /// <summary>
-/// World-space fog renderer using a single Sprite2D covering the whole
-/// map and a per-tile mask texture to control where fog appears.
+/// Two-mode fog renderer:
 ///
-/// Using Sprite2D with a 1x1 TRANSPARENT texture so that if the shader
-/// ever fails to compile (driver/GPU issue), the fallback rendering is
-/// `texture * modulate` = invisible, instead of the opaque white fallback
-/// that ColorRect gives you. That used to cover the entire viewport in
-/// white and made the map impossible to see.
+/// 1. <b>Humo (painted smoke)</b> — solid-fill fog painted per-tile by the
+///    user via the Humo tool. Uses `fog_humo.gdshader`. No noise, no
+///    animation, no player break — just a clean saturated tile fill with
+///    the map's humo color and density.
 ///
-/// - Zones with Niebla=true mark their tile rect as "has fog"
-/// - Painted fog tiles (MapData.PaintedFogTiles) also mark their tile
-/// - Tiles with content on Layer 2/3/4 are SUBTRACTED from the mask so
-///   objects like trees/buildings poke through the fog cleanly
-/// - A `player_world_pos` uniform makes the fog fade locally around the
-///   character, giving a smoke-breaking effect as the player walks through
+/// 2. <b>Niebla de zona (zone fog)</b> — animated world-anchored noise
+///    fog that covers tiles inside a zone with Niebla=true. Uses
+///    `fog_zone.gdshader`. Supports free_smoke multi-directional swirl
+///    and player break (local dispersion around the character).
 ///
-/// Mask regeneration is gated by a dirty flag — callers invoke MarkDirty()
-/// when they modify the map in a way that affects fog (paint, zone edit,
-/// layer change, etc.) so we don't re-upload the GPU texture every frame.
+/// Each mode has its own Sprite2D + ShaderMaterial + R8 mask texture.
+/// Both sprites live under a shared Node2D (`_worldLayer`) that's
+/// transformed each frame by the camera offset+zoom. Using Sprite2D
+/// with a 1x1 transparent canvas texture means fallback rendering
+/// (if a shader fails to compile) is INVISIBLE rather than opaque
+/// white like ColorRect would give.
+///
+/// The masks are rebuilt only when the map changes (MarkDirty()) so
+/// frame cost is minimal.
 /// </summary>
 public class ZoneFogRenderer
 {
     private const int TileSize = 32;
 
     private Node2D? _worldLayer;
-    private Sprite2D? _fogSprite;
-    private Shader? _shader;
     private NoiseTexture2D? _noiseTexture;
-    private ImageTexture? _canvasTexture; // 1x1 transparent, used as the sprite's "canvas"
+    private ImageTexture? _canvasTexture; // 1x1 transparent shared between sprites
 
-    // Mask state
-    private Image? _maskImage;
-    private ImageTexture? _maskTexture;
+    // --- Humo (painted smoke) ---
+    private Sprite2D? _humoSprite;
+    private Shader? _humoShader;
+    private Image? _humoMaskImage;
+    private ImageTexture? _humoMaskTexture;
+
+    // --- Niebla de zona (animated noise fog) ---
+    private Sprite2D? _zoneSprite;
+    private Shader? _zoneShader;
+    private Image? _zoneMaskImage;
+    private ImageTexture? _zoneMaskTexture;
+
+    // Shared mask state
     private int _maskW, _maskH;
     private bool _maskDirty = true;
 
     public void AttachTo(Node parent)
     {
-        _shader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
-        GD.Print($"[ZoneFogRenderer] AttachTo: shader load result = {(_shader != null ? "OK" : "NULL")}");
-        if (_shader == null)
+        _humoShader = GD.Load<Shader>("res://Shaders/fog_humo.gdshader");
+        _zoneShader = GD.Load<Shader>("res://Shaders/fog_zone.gdshader");
+        GD.Print($"[ZoneFogRenderer] AttachTo: humo_shader={(_humoShader != null ? "OK" : "NULL")} zone_shader={(_zoneShader != null ? "OK" : "NULL")}");
+
+        if (_humoShader == null && _zoneShader == null)
         {
-            GD.PushWarning("[ZoneFogRenderer] fog_overlay.gdshader not found — fog disabled");
+            GD.PushWarning("[ZoneFogRenderer] both fog shaders missing — fog disabled");
             return;
         }
 
@@ -62,8 +74,7 @@ public class ZoneFogRenderer
             Seamless = true,
         };
 
-        // 1x1 transparent canvas: if the shader ever fails to compile, the
-        // Sprite2D fallback is `canvasTexture * modulate` = invisible.
+        // Shared 1x1 transparent canvas for both sprites
         var canvasImg = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
         canvasImg.SetPixel(0, 0, new Color(0, 0, 0, 0));
         _canvasTexture = ImageTexture.CreateFromImage(canvasImg);
@@ -71,29 +82,43 @@ public class ZoneFogRenderer
         _worldLayer = new Node2D { Name = "ZoneFogWorldLayer" };
         parent.AddChild(_worldLayer);
 
-        var mat = new ShaderMaterial { Shader = _shader };
-        mat.SetShaderParameter("noise_texture", _noiseTexture);
-
-        _fogSprite = new Sprite2D
+        if (_humoShader != null)
         {
-            Texture = _canvasTexture,
-            Centered = false,
-            Material = mat,
-            Visible = false,
-            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
-        };
-        _worldLayer.AddChild(_fogSprite);
-        GD.Print($"[ZoneFogRenderer] AttachTo: Sprite2D created under WorldLayer, material assigned");
+            var humoMat = new ShaderMaterial { Shader = _humoShader };
+            _humoSprite = new Sprite2D
+            {
+                Texture = _canvasTexture,
+                Centered = false,
+                Material = humoMat,
+                Visible = false,
+                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            };
+            _worldLayer.AddChild(_humoSprite);
+        }
+
+        if (_zoneShader != null)
+        {
+            var zoneMat = new ShaderMaterial { Shader = _zoneShader };
+            zoneMat.SetShaderParameter("noise_texture", _noiseTexture);
+            _zoneSprite = new Sprite2D
+            {
+                Texture = _canvasTexture,
+                Centered = false,
+                Material = zoneMat,
+                Visible = false,
+                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+                ZIndex = 1, // drawn above the humo sprite so layered zones overlap correctly
+            };
+            _worldLayer.AddChild(_zoneSprite);
+        }
     }
 
-    /// <summary>Mark the tile mask as stale. Call after any map edit that
+    /// <summary>Mark both masks as stale. Call after any map edit that
     /// could affect fog coverage: PaintFog, EraseFog, zone edit, layer paint.</summary>
     public void MarkDirty() => _maskDirty = true;
 
-    /// <summary>
-    /// Call each frame. Positions the world layer under the camera, rebuilds
-    /// the mask if dirty, and pushes all shader uniforms.
-    /// </summary>
+    /// <summary>Per-frame update — positions the world layer under the camera,
+    /// rebuilds masks if dirty, and pushes shader uniforms for both modes.</summary>
     public void Update(
         Vector2 cameraOffset,
         float zoom,
@@ -101,92 +126,142 @@ public class ZoneFogRenderer
         MapData? map,
         Vector2 playerWorldPx)
     {
-        if (_worldLayer == null || _fogSprite == null || _shader == null) return;
-        if (map == null) { _fogSprite.Visible = false; return; }
+        if (_worldLayer == null) return;
+        if (map == null)
+        {
+            if (_humoSprite != null) _humoSprite.Visible = false;
+            if (_zoneSprite != null) _zoneSprite.Visible = false;
+            return;
+        }
 
         _worldLayer.Position = cameraOffset;
         _worldLayer.Scale = new Vector2(zoom, zoom);
 
-        // Determine whether there's any fog to render at all
+        // Determine which fog modes are active this frame
         bool hasPaintedFog = map.PaintedFogTiles.Count > 0 && map.PaintedFogDensity > 0;
         bool hasZoneFog = false;
         for (int i = 0; i < zones.Count; i++)
         {
             if (zones[i].Niebla && zones[i].NieblaDensity > 0) { hasZoneFog = true; break; }
         }
-        if (!hasPaintedFog && !hasZoneFog)
-        {
-            _fogSprite.Visible = false;
-            return;
-        }
 
-        // Rebuild mask if dirty or map size changed
+        // Rebuild both masks if dirty
         if (_maskDirty || _maskW != map.Width || _maskH != map.Height)
         {
-            RebuildMask(map, zones);
+            if (hasPaintedFog) RebuildHumoMask(map);
+            if (hasZoneFog) RebuildZoneMask(map, zones);
+            _maskW = map.Width;
+            _maskH = map.Height;
             _maskDirty = false;
         }
 
-        // Sprite2D with 1x1 texture scaled to cover the whole map in world px.
         float worldW = map.Width * TileSize;
         float worldH = map.Height * TileSize;
-        _fogSprite.Position = Vector2.Zero;
-        _fogSprite.Scale = new Vector2(worldW, worldH);
-        bool wasVisible = _fogSprite.Visible;
-        _fogSprite.Visible = true;
-        if (!wasVisible)
-            GD.Print($"[ZoneFogRenderer] Fog visible: worldW={worldW} worldH={worldH} hasPainted={hasPaintedFog} hasZone={hasZoneFog} maskExists={_maskTexture != null}");
+        var spriteScale = new Vector2(worldW, worldH);
+        var mapSize = new Vector2(map.Width, map.Height);
 
-        if (_fogSprite.Material is ShaderMaterial sm)
+        // --- Humo sprite ---
+        if (_humoSprite != null)
         {
-            // Global style — use map's painted-fog settings, or the first zone
-            // with niebla as fallback.
-            int density = map.PaintedFogDensity;
-            int r = map.PaintedFogR, g = map.PaintedFogG, b = map.PaintedFogB;
-            int sx = map.PaintedFogSpeedX, sy = map.PaintedFogSpeedY;
-            if (!hasPaintedFog && hasZoneFog)
+            _humoSprite.Position = Vector2.Zero;
+            _humoSprite.Scale = spriteScale;
+            _humoSprite.Visible = hasPaintedFog && _humoMaskTexture != null;
+            if (_humoSprite.Visible && _humoSprite.Material is ShaderMaterial sm && _humoMaskTexture != null)
             {
+                sm.SetShaderParameter("humo_mask", _humoMaskTexture);
+                sm.SetShaderParameter("map_tile_size", mapSize);
+                sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
+                sm.SetShaderParameter("rect_world_size", spriteScale);
+                sm.SetShaderParameter("humo_density", map.PaintedFogDensity / 255f);
+                sm.SetShaderParameter("humo_color",
+                    new Color(map.PaintedFogR / 255f, map.PaintedFogG / 255f, map.PaintedFogB / 255f, 1f));
+            }
+        }
+
+        // --- Zone sprite ---
+        if (_zoneSprite != null)
+        {
+            _zoneSprite.Position = Vector2.Zero;
+            _zoneSprite.Scale = spriteScale;
+            _zoneSprite.Visible = hasZoneFog && _zoneMaskTexture != null;
+            if (_zoneSprite.Visible && _zoneSprite.Material is ShaderMaterial sm && _zoneMaskTexture != null)
+            {
+                // Use the first zone with niebla as the style source
+                int dens = 90, r = 128, g = 140, b = 160, sx = 5, sy = 2;
                 for (int i = 0; i < zones.Count; i++)
                 {
                     var z = zones[i];
                     if (z.Niebla && z.NieblaDensity > 0)
                     {
-                        density = z.NieblaDensity;
+                        dens = z.NieblaDensity;
                         r = z.NieblaR; g = z.NieblaG; b = z.NieblaB;
                         sx = z.NieblaSpeedX; sy = z.NieblaSpeedY;
                         break;
                     }
                 }
+                sm.SetShaderParameter("zone_mask", _zoneMaskTexture);
+                sm.SetShaderParameter("map_tile_size", mapSize);
+                sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
+                sm.SetShaderParameter("rect_world_size", spriteScale);
+                sm.SetShaderParameter("density", dens / 255f);
+                sm.SetShaderParameter("fog_color", new Color(r / 255f, g / 255f, b / 255f, 1f));
+                sm.SetShaderParameter("speed", new Vector2(sx / 100f, sy / 100f));
+                sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
+                sm.SetShaderParameter("player_world_pos", playerWorldPx);
+                sm.SetShaderParameter("player_break_radius", 144f);
             }
-
-            sm.SetShaderParameter("density", density / 255f);
-            sm.SetShaderParameter("fog_color", new Color(r / 255f, g / 255f, b / 255f, 1f));
-            sm.SetShaderParameter("speed", new Vector2(sx / 100f, sy / 100f));
-            if (_maskTexture != null)
-                sm.SetShaderParameter("fog_mask", _maskTexture);
-            sm.SetShaderParameter("map_tile_size", new Vector2(map.Width, map.Height));
-            sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
-            sm.SetShaderParameter("rect_world_size", new Vector2(worldW, worldH));
-            sm.SetShaderParameter("player_world_pos", playerWorldPx);
-            sm.SetShaderParameter("player_break_radius", 144f);
-            sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
         }
     }
 
-    /// <summary>Build the R8 mask image: white for tiles that should show fog,
-    /// black elsewhere. Subtracts tiles occluded by layer 2/3/4 content.</summary>
-    private void RebuildMask(MapData map, IReadOnlyList<ZoneInfo> zones)
+    /// <summary>Build the R8 mask for painted humo tiles. Subtracts layer
+    /// 2/3/4-occluded tiles so objects poke through cleanly.</summary>
+    private void RebuildHumoMask(MapData map)
     {
         int W = map.Width, H = map.Height;
-
-        if (_maskImage == null || _maskImage.GetWidth() != W || _maskImage.GetHeight() != H)
+        if (_humoMaskImage == null || _humoMaskImage.GetWidth() != W || _humoMaskImage.GetHeight() != H)
         {
-            _maskImage = Image.CreateEmpty(W, H, false, Image.Format.R8);
-            _maskTexture = null; // recreate to pick up new size
+            _humoMaskImage = Image.CreateEmpty(W, H, false, Image.Format.R8);
+            _humoMaskTexture = null;
         }
-        _maskImage.Fill(Colors.Black);
+        _humoMaskImage.Fill(Colors.Black);
 
-        // 1) Zone fog — set pixels for tiles inside every zone with niebla
+        // Painted tiles → white
+        foreach (var t in map.PaintedFogTiles)
+        {
+            if (t.X >= 1 && t.X <= W && t.Y >= 1 && t.Y <= H)
+                _humoMaskImage.SetPixel(t.X - 1, t.Y - 1, Colors.White);
+        }
+
+        // Subtract layer 2/3/4 content — trees/buildings break the fog
+        for (int y = 1; y <= H; y++)
+        {
+            for (int x = 1; x <= W; x++)
+            {
+                ref var tile = ref map.Tiles[x, y];
+                if (tile.Layer2 != 0 || tile.Layer3 != 0 || tile.Layer4 != 0)
+                    _humoMaskImage.SetPixel(x - 1, y - 1, Colors.Black);
+            }
+        }
+
+        if (_humoMaskTexture == null)
+            _humoMaskTexture = ImageTexture.CreateFromImage(_humoMaskImage);
+        else
+            _humoMaskTexture.Update(_humoMaskImage);
+    }
+
+    /// <summary>Build the R8 mask for zone niebla tiles. Subtracts layer
+    /// 2/3/4-occluded tiles.</summary>
+    private void RebuildZoneMask(MapData map, IReadOnlyList<ZoneInfo> zones)
+    {
+        int W = map.Width, H = map.Height;
+        if (_zoneMaskImage == null || _zoneMaskImage.GetWidth() != W || _zoneMaskImage.GetHeight() != H)
+        {
+            _zoneMaskImage = Image.CreateEmpty(W, H, false, Image.Format.R8);
+            _zoneMaskTexture = null;
+        }
+        _zoneMaskImage.Fill(Colors.Black);
+
+        // Zones with niebla → white inside their rect
         for (int i = 0; i < zones.Count; i++)
         {
             var z = zones[i];
@@ -195,50 +270,41 @@ public class ZoneFogRenderer
             int y1 = Mathf.Max(1, z.Y1), y2 = Mathf.Min(H, z.Y2);
             for (int y = y1; y <= y2; y++)
                 for (int x = x1; x <= x2; x++)
-                    _maskImage.SetPixel(x - 1, y - 1, Colors.White);
+                    _zoneMaskImage.SetPixel(x - 1, y - 1, Colors.White);
         }
 
-        // 2) Painted fog tiles
-        if (map.PaintedFogDensity > 0)
-        {
-            foreach (var t in map.PaintedFogTiles)
-            {
-                if (t.X >= 1 && t.X <= W && t.Y >= 1 && t.Y <= H)
-                    _maskImage.SetPixel(t.X - 1, t.Y - 1, Colors.White);
-            }
-        }
-
-        // 3) Subtract tiles with layer 2/3/4 content — objects break the fog
+        // Subtract layer 2/3/4 content
         for (int y = 1; y <= H; y++)
         {
             for (int x = 1; x <= W; x++)
             {
                 ref var tile = ref map.Tiles[x, y];
                 if (tile.Layer2 != 0 || tile.Layer3 != 0 || tile.Layer4 != 0)
-                    _maskImage.SetPixel(x - 1, y - 1, Colors.Black);
+                    _zoneMaskImage.SetPixel(x - 1, y - 1, Colors.Black);
             }
         }
 
-        // Upload
-        if (_maskTexture == null)
-            _maskTexture = ImageTexture.CreateFromImage(_maskImage);
+        if (_zoneMaskTexture == null)
+            _zoneMaskTexture = ImageTexture.CreateFromImage(_zoneMaskImage);
         else
-            _maskTexture.Update(_maskImage);
-
-        _maskW = W;
-        _maskH = H;
+            _zoneMaskTexture.Update(_zoneMaskImage);
     }
 
     public void Cleanup()
     {
-        if (_fogSprite != null && GodotObject.IsInstanceValid(_fogSprite)) _fogSprite.QueueFree();
-        _fogSprite = null;
+        if (_humoSprite != null && GodotObject.IsInstanceValid(_humoSprite)) _humoSprite.QueueFree();
+        _humoSprite = null;
+        if (_zoneSprite != null && GodotObject.IsInstanceValid(_zoneSprite)) _zoneSprite.QueueFree();
+        _zoneSprite = null;
         if (_worldLayer != null && GodotObject.IsInstanceValid(_worldLayer)) _worldLayer.QueueFree();
         _worldLayer = null;
-        _maskImage = null;
-        _maskTexture = null;
+        _humoMaskImage = null;
+        _humoMaskTexture = null;
+        _zoneMaskImage = null;
+        _zoneMaskTexture = null;
         _canvasTexture = null;
-        _shader = null;
+        _humoShader = null;
+        _zoneShader = null;
         _noiseTexture = null;
     }
 }
