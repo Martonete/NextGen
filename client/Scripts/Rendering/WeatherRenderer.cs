@@ -76,11 +76,17 @@ public partial class WeatherRenderer : Node2D
     private const float FadeInSpeed = 1.5f;  // per second
     private const float FadeOutSpeed = 2.0f;
 
-    // Fog shader overlay — world-space per-zone.
-    // _fogWorldLayer has its Position/Scale driven each frame from the camera
-    // transform so the _fogShaderRect child stays glued to the zone's tiles.
+    // Fog shader overlay — world-space mask-based fog.
+    // A single ColorRect covers the whole map. The shader samples a fog mask
+    // (1 pixel per tile) to decide where to draw fog. Layer 2/3/4 occlude.
+    // The player's world position is passed for the smoke-break fade.
     private Node2D? _fogWorldLayer;
     private ColorRect? _fogShaderRect;
+    private Image? _fogMaskImage;
+    private ImageTexture? _fogMaskTexture;
+    private int _fogMaskW, _fogMaskH;
+    private bool _fogMaskDirty = true;
+    private int _fogMaskZoneX1, _fogMaskZoneY1, _fogMaskZoneX2, _fogMaskZoneY2;
 
     public void Init(GameState state, SoundManager? soundManager, IResourceProvider? resources = null)
     {
@@ -392,20 +398,20 @@ public partial class WeatherRenderer : Node2D
             _lightningFlashAlpha = 0f;
         }
 
-        // Update world-space fog shader overlay.
-        // Fog is visible ONLY over the zone's tile rectangle — outside the zone
-        // the rect is absent, so players in a neighbouring area see the fog on
-        // the zone's tiles but not over themselves.
-        if (_fogShaderRect != null && _fogWorldLayer != null)
+        // Update world-space mask-based fog shader overlay.
+        // One ColorRect covers the whole map. The mask texture says which
+        // tiles have fog (zone bounds minus layer-occluded tiles). The shader
+        // also reads player_world_pos to dissolve fog locally around the
+        // character (smoke-breaking effect).
+        if (_fogShaderRect != null && _fogWorldLayer != null && _state.MapData != null)
         {
             bool hasZoneBounds = _state.CurrentZoneX2 > 0 && _state.CurrentZoneY2 > 0;
             bool showFog = _state.ZoneNiebla && _state.ZoneFogDensity > 0 && hasZoneBounds;
             _fogShaderRect.Visible = showFog;
             if (showFog)
             {
-                // Match WorldRenderer camera transform:
-                //   tile t at screenX = (t - uX + hX) * TileSize + offX
-                // → world pixel 0 at screenX = (1 - uX + hX) * TileSize + offX
+                // Match WorldRenderer camera transform so the fog rect lines up
+                // with the drawn tiles. World pixel 0 → (1 - uX + hX) * TS + offX.
                 var cam = WorldRenderer.CurrentCamera;
                 const float TS = 32f;
                 float hX = ResolutionManager.HalfTilesX;
@@ -414,19 +420,26 @@ public partial class WeatherRenderer : Node2D
                     (1 - cam.UserX + hX) * TS + cam.PixelOffsetX,
                     (1 - cam.UserY + hY) * TS + cam.PixelOffsetY);
 
-                // Position/size the rect at the zone's world rectangle PLUS bleed
-                // padding so the fog softly fades past the zone border.
-                const float BleedPadPx = 128f;
-                float innerX = (_state.CurrentZoneX1 - 1) * TS;
-                float innerY = (_state.CurrentZoneY1 - 1) * TS;
-                float innerW = (_state.CurrentZoneX2 - _state.CurrentZoneX1 + 1) * TS;
-                float innerH = (_state.CurrentZoneY2 - _state.CurrentZoneY1 + 1) * TS;
-                float x = innerX - BleedPadPx;
-                float y = innerY - BleedPadPx;
-                float w = innerW + BleedPadPx * 2f;
-                float h = innerH + BleedPadPx * 2f;
-                _fogShaderRect.Position = new Vector2(x, y);
-                _fogShaderRect.Size = new Vector2(w, h);
+                // Rect covers the entire map so the shader can sample the mask
+                // at any tile inside the map bounds.
+                int mapW = _state.MapData.Width;
+                int mapH = _state.MapData.Height;
+                float worldW = mapW * TS;
+                float worldH = mapH * TS;
+                _fogShaderRect.Position = Vector2.Zero;
+                _fogShaderRect.Size = new Vector2(worldW, worldH);
+
+                // Rebuild mask when zone bounds change OR map changed
+                if (_fogMaskDirty
+                    || _fogMaskW != mapW || _fogMaskH != mapH
+                    || _fogMaskZoneX1 != _state.CurrentZoneX1
+                    || _fogMaskZoneY1 != _state.CurrentZoneY1
+                    || _fogMaskZoneX2 != _state.CurrentZoneX2
+                    || _fogMaskZoneY2 != _state.CurrentZoneY2)
+                {
+                    RebuildFogMask(mapW, mapH);
+                    _fogMaskDirty = false;
+                }
 
                 if (_fogShaderRect.Material is ShaderMaterial sm)
                 {
@@ -435,12 +448,17 @@ public partial class WeatherRenderer : Node2D
                         new Color(_state.ZoneFogR / 255f, _state.ZoneFogG / 255f, _state.ZoneFogB / 255f, 1f));
                     sm.SetShaderParameter("speed",
                         new Vector2(_state.ZoneFogSpeedX / 100f, _state.ZoneFogSpeedY / 100f));
-                    // Scale noise to give ~512 world-px clouds regardless of zone size
-                    float rectMax = Math.Max(w, h);
-                    sm.SetShaderParameter("noise_scale", Math.Max(0.5f, rectMax / 512f));
-                    // Edge-fade covers exactly the padding in UV units
-                    sm.SetShaderParameter("edge_fade_x", BleedPadPx / w);
-                    sm.SetShaderParameter("edge_fade_y", BleedPadPx / h);
+                    if (_fogMaskTexture != null)
+                        sm.SetShaderParameter("fog_mask", _fogMaskTexture);
+                    sm.SetShaderParameter("map_tile_size", new Vector2(mapW, mapH));
+                    sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
+                    sm.SetShaderParameter("rect_world_size", new Vector2(worldW, worldH));
+                    // Player's world position (tile center). Fog dissolves inside the break radius.
+                    float playerWorldX = (_state.UserPosX - 0.5f) * TS;
+                    float playerWorldY = (_state.UserPosY - 0.5f) * TS;
+                    sm.SetShaderParameter("player_world_pos", new Vector2(playerWorldX, playerWorldY));
+                    sm.SetShaderParameter("player_break_radius", 144f);
+                    sm.SetShaderParameter("noise_world_scale", 512f);
                 }
             }
         }
@@ -455,6 +473,54 @@ public partial class WeatherRenderer : Node2D
         var snowColor = new Color(1f, 1f, 1f, SnowAlpha);
         for (int i = 0; i < MaxSnowFlakes; i++)
             DrawCircle(new Vector2(_snowX[i], _snowY[i]), SnowRadius, snowColor);
+    }
+
+    /// <summary>Called from outside (e.g., map change, zone change) to force
+    /// the fog mask to rebuild on the next _Process tick.</summary>
+    public void MarkFogMaskDirty() => _fogMaskDirty = true;
+
+    /// <summary>Build the R8 per-tile fog mask for the current map + zone.
+    /// 1 = tile has fog (inside zone rect, no layer 2/3/4 content), 0 otherwise.</summary>
+    private void RebuildFogMask(int mapW, int mapH)
+    {
+        if (_state == null || _state.MapData == null) return;
+
+        if (_fogMaskImage == null || _fogMaskImage.GetWidth() != mapW || _fogMaskImage.GetHeight() != mapH)
+        {
+            _fogMaskImage = Image.CreateEmpty(mapW, mapH, false, Image.Format.R8);
+            _fogMaskTexture = null;
+        }
+        _fogMaskImage.Fill(Colors.Black);
+
+        int zx1 = Math.Max(1, (int)_state.CurrentZoneX1);
+        int zy1 = Math.Max(1, (int)_state.CurrentZoneY1);
+        int zx2 = Math.Min(mapW, (int)_state.CurrentZoneX2);
+        int zy2 = Math.Min(mapH, (int)_state.CurrentZoneY2);
+
+        for (int y = zy1; y <= zy2; y++)
+        {
+            for (int x = zx1; x <= zx2; x++)
+            {
+                ref var tile = ref _state.MapData.Tiles[x, y];
+                // Skip tiles with upper-layer content — objects/trees/roofs
+                // break the fog, so it flows around them cleanly.
+                if (tile.Layer2 != 0 || tile.Layer3 != 0 || tile.Layer4 != 0)
+                    continue;
+                _fogMaskImage.SetPixel(x - 1, y - 1, Colors.White);
+            }
+        }
+
+        if (_fogMaskTexture == null)
+            _fogMaskTexture = ImageTexture.CreateFromImage(_fogMaskImage);
+        else
+            _fogMaskTexture.Update(_fogMaskImage);
+
+        _fogMaskW = mapW;
+        _fogMaskH = mapH;
+        _fogMaskZoneX1 = _state.CurrentZoneX1;
+        _fogMaskZoneY1 = _state.CurrentZoneY1;
+        _fogMaskZoneX2 = _state.CurrentZoneX2;
+        _fogMaskZoneY2 = _state.CurrentZoneY2;
     }
 
     public override void _Draw()

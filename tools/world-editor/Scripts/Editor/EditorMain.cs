@@ -1815,7 +1815,7 @@ public partial class EditorMain : Control
         // Load zone data for this map
         _mapZones = MapZoneData.Load(_state.MapDir, mapNumber);
         if (_zonePanel != null) { _zonePanel.ZoneData = _mapZones; _zonePanel.RebuildList(); }
-        if (_viewport != null) _viewport.ZoneData = _mapZones;
+        if (_viewport != null) { _viewport.ZoneData = _mapZones; _viewport.MarkFogMaskDirty(); }
         UpdateViewport();
         UpdateNavBar();
         int zoneCount = _mapZones?.Zones.Count ?? 0;

@@ -253,7 +253,12 @@ public partial class WalkModePanel : Control
             var zoneList = Zones != null
                 ? (System.Collections.Generic.IReadOnlyList<ZoneInfo>)Zones.Zones
                 : System.Array.Empty<ZoneInfo>();
-            _zoneFog.Update(camOffset, 1f, zoneList, Map);
+            // Character world position = tile center in world pixels
+            // (plus current smooth-move offset which is pixel-wise).
+            var playerWorldPx = new Vector2(
+                (CharX - 0.5f) * 32f - _moveOffsetX,
+                (CharY - 0.5f) * 32f - _moveOffsetY);
+            _zoneFog.Update(camOffset, 1f, zoneList, Map, playerWorldPx);
         }
 
         if (_isMoving)

@@ -199,7 +199,16 @@ public partial class MapViewport : Control
             var zones = ZoneData != null
                 ? (System.Collections.Generic.IReadOnlyList<ZoneInfo>)ZoneData.Zones
                 : System.Array.Empty<ZoneInfo>();
-            _zoneFog.Update(State.CameraOffset, State.Zoom, zones, Map);
+            // In the editor there is no "character"; use the hovered tile as
+            // the player position so hovering dissolves fog like a cursor probe.
+            Vector2 playerWorldPx = new Vector2(-1e6f, -1e6f);
+            if (State.HoverValid && Map != null && Map.InBounds(State.HoverX, State.HoverY))
+            {
+                playerWorldPx = new Vector2(
+                    (State.HoverX - 0.5f) * 32f,
+                    (State.HoverY - 0.5f) * 32f);
+            }
+            _zoneFog.Update(State.CameraOffset, State.Zoom, zones, Map, playerWorldPx);
         }
 
         // Keyboard panning (WASD / Arrow keys)
@@ -2311,15 +2320,16 @@ public partial class MapViewport : Control
         QueueRedraw();
     }
 
-    /// <summary>Paint a fog blob on a tile (left-click + drag). Fog is world-space,
-    /// so each painted tile becomes a soft blob roughly 9 tiles wide via the bleed + fade.</summary>
+    /// <summary>Paint a fog tile — marks it in the per-map fog set. The
+    /// ZoneFogRenderer will dissolve it into a soft blob via the mask.</summary>
     private void PaintFogAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y) || State == null) return;
         int key = y * 10000 + x;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
-        Map.PaintedFogTiles.Add(new Godot.Vector2I(x, y));
+        if (Map.PaintedFogTiles.Add(new Godot.Vector2I(x, y)))
+            _zoneFog.MarkDirty();
         QueueRedraw();
     }
 
@@ -2327,9 +2337,14 @@ public partial class MapViewport : Control
     private void EraseFogAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y)) return;
-        Map.PaintedFogTiles.Remove(new Godot.Vector2I(x, y));
+        if (Map.PaintedFogTiles.Remove(new Godot.Vector2I(x, y)))
+            _zoneFog.MarkDirty();
         QueueRedraw();
     }
+
+    /// <summary>Exposed so external systems (layer paint, zone edits, map load)
+    /// can invalidate the fog mask after modifying the map.</summary>
+    public void MarkFogMaskDirty() => _zoneFog.MarkDirty();
 
     /// <summary>Erase the particle group from a tile (right-click).</summary>
     private void EraseParticleAt(int x, int y)
@@ -2493,6 +2508,8 @@ public partial class MapViewport : Control
             case 3: tile.Layer3 = grhIdx; break;
             case 4: tile.Layer4 = grhIdx; break;
         }
+        // Layer 2/3/4 content occludes fog — mask needs to rebuild
+        if (layer >= 2) _zoneFog.MarkDirty();
     }
 
     private int GetLayerGrh(ref MapTile tile, int layer)
