@@ -458,9 +458,7 @@ public partial class WeatherRenderer : Node2D
                     float playerWorldY = (_state.UserPosY - 0.5f) * TS;
                     sm.SetShaderParameter("player_world_pos", new Vector2(playerWorldX, playerWorldY));
                     sm.SetShaderParameter("player_break_radius", 144f);
-                    sm.SetShaderParameter("noise_world_scale", 512f);
-                    sm.SetShaderParameter("free_smoke", 0); // TODO: plumb from server packet
-                    sm.SetShaderParameter("free_smoke_intensity", 0.55f);
+                    sm.SetShaderParameter("free_smoke", 0.0f); // TODO: plumb from server packet
                 }
             }
         }

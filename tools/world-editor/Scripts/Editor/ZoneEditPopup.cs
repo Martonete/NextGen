@@ -223,8 +223,7 @@ public partial class ZoneEditPopup : Window
                 previewMat.SetShaderParameter("speed", new Vector2(
                     (float)(_fogSpeedXSpin?.Value ?? 5) / 100f,
                     (float)(_fogSpeedYSpin?.Value ?? 2) / 100f));
-                previewMat.SetShaderParameter("free_smoke", (_freeSmokeCheck?.ButtonPressed ?? false) ? 1 : 0);
-                previewMat.SetShaderParameter("free_smoke_intensity", 0.55f);
+                previewMat.SetShaderParameter("free_smoke", (_freeSmokeCheck?.ButtonPressed ?? false) ? 1.0f : 0.0f);
             }
 
             if (_fogDensitySpin != null) _fogDensitySpin.ValueChanged += (_) => UpdateFogPreview();
