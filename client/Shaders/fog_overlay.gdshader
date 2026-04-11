@@ -1,17 +1,19 @@
 shader_type canvas_item;
 
+// Screen-locked animated fog. The ColorRect fills the viewport and the
+// sampled UV stays constant while the character walks — the pattern
+// is pinned to the screen. The only motion is the slow drift from
+// `speed * TIME`, which is independently configurable per zone
+// (set Speed X/Y to 0 for a completely static fog).
+
 uniform sampler2D noise_texture : repeat_enable, filter_linear;
 uniform float density : hint_range(0.0, 1.0) = 0.35;
 uniform vec2 speed = vec2(0.02, 0.01);
 uniform vec4 fog_color : source_color = vec4(0.5, 0.55, 0.63, 1.0);
 uniform float noise_scale : hint_range(0.1, 8.0) = 1.5;
-// World-space offset in UV units. The runtime pushes the camera/character
-// world position here each frame so the noise pattern stays anchored to
-// the world instead of sliding with the viewport.
-uniform vec2 world_offset = vec2(0.0, 0.0);
 
 void fragment() {
-    vec2 uv = UV * noise_scale + world_offset + speed * TIME;
+    vec2 uv = UV * noise_scale + speed * TIME;
     float noise = texture(noise_texture, uv).r;
     float fog = clamp(noise * 2.0 - 1.0, 0.0, 1.0);
     COLOR = vec4(fog_color.rgb, fog * density);

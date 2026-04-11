@@ -22,10 +22,6 @@ public class WeatherFx
     public int FogB = 160;
     public int FogSpeedX = 5;
     public int FogSpeedY = 2;
-    /// <summary>World-space offset for the fog noise UV, in pixels.
-    /// The renderer normalizes and passes this to the shader so the
-    /// noise pattern stays anchored to the world when the camera/character moves.</summary>
-    public Vector2 FogWorldOffsetPx;
 
     private ColorRect? _fogRect;
 
@@ -78,10 +74,6 @@ public class WeatherFx
                 sm.SetShaderParameter("density", FogDensity / 255f);
                 sm.SetShaderParameter("fog_color", new Color(FogR / 255f, FogG / 255f, FogB / 255f, 1f));
                 sm.SetShaderParameter("speed", new Vector2(FogSpeedX / 100f, FogSpeedY / 100f));
-                // Normalize world offset: one full noise repeat every 512 world px.
-                // Negate so as the camera pans right (CameraOffset.x decreases),
-                // the pattern slides left — i.e., it stays anchored to the world.
-                sm.SetShaderParameter("world_offset", FogWorldOffsetPx / 512f);
             }
         }
 

@@ -246,13 +246,6 @@ public partial class WalkModePanel : Control
         _weather.FogB = currentZone?.NieblaB ?? 160;
         _weather.FogSpeedX = currentZone?.NieblaSpeedX ?? 5;
         _weather.FogSpeedY = currentZone?.NieblaSpeedY ?? 2;
-        // World-anchor fog: use the character's world pixel position (plus smooth-move
-        // offset) so panning/walking shifts the UV sample and the noise pattern stays
-        // glued to tiles instead of the screen.
-        const int TileSz = 32;
-        _weather.FogWorldOffsetPx = new Vector2(
-            CharX * TileSz + _moveOffsetX,
-            CharY * TileSz + _moveOffsetY);
         _weather.Update((float)delta, Size);
 
         if (_isMoving)
