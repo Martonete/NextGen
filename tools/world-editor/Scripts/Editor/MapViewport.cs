@@ -169,8 +169,16 @@ public partial class MapViewport : Control
 
         // Tick weather simulation (zone-driven, draw happens in _Draw)
         // Set flags BEFORE Update so Update spawns the right particles this same frame.
+        // Priority: hovered tile's zone > selected zone in the sidebar.
+        // This makes fog visible immediately when mousing over a zone's area,
+        // instead of only when a zone is explicitly selected.
         ZoneInfo? weatherZone = null;
-        if (ZonePanelRef != null && ZoneData != null)
+        if (ZoneData != null && State != null && State.HoverValid && Map != null
+            && Map.InBounds(State.HoverX, State.HoverY))
+        {
+            weatherZone = ZoneData.GetZoneAt(State.HoverX, State.HoverY);
+        }
+        if (weatherZone == null && ZonePanelRef != null && ZoneData != null)
         {
             int selId = ZonePanelRef.SelectedZoneId;
             if (selId >= 0)

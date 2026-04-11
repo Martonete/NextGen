@@ -212,8 +212,18 @@ public partial class ZoneEditPopup : Window
 
         vbox.AddChild(_fogParamsBox);
 
-        // Toggle fog params visibility with niebla checkbox
-        _nieblaCheck.Toggled += (on) => { if (_fogParamsBox != null) _fogParamsBox.Visible = on; };
+        // Toggle fog params visibility with niebla checkbox.
+        // When turning Niebla ON for the first time (density still 0), auto-bump
+        // density to 90 so the effect is immediately visible without the user
+        // having to discover the slider.
+        _nieblaCheck.Toggled += (on) =>
+        {
+            if (_fogParamsBox != null) _fogParamsBox.Visible = on;
+            if (on && _fogDensitySpin != null && (int)_fogDensitySpin.Value == 0)
+            {
+                _fogDensitySpin.Value = 90;
+            }
+        };
 
         // Color picker label
         var ambLabel = EditorTheme.MakeLabel("Color ambiente (oscuridad/tinte de la zona):", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
