@@ -131,8 +131,6 @@ public partial class WeatherRenderer : Node2D
 
             _fogShaderRect = new ColorRect
             {
-                // Transparent base — if shader fails, no white flash
-                Color = new Color(0, 0, 0, 0),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
                 Material = material,
                 Visible = false,

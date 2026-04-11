@@ -209,8 +209,6 @@ public partial class ZoneEditPopup : Window
 
             var fogPreview = new ColorRect
             {
-                // Transparent base so a shader compile failure doesn't flash white
-                Color = new Color(0, 0, 0, 0),
                 CustomMinimumSize = new Vector2(120, 40),
                 Material = previewMat,
             };

@@ -62,10 +62,6 @@ public class ZoneFogRenderer
 
         _fogRect = new ColorRect
         {
-            // Transparent base color — if the shader ever fails to compile or
-            // isn't assigned, Godot falls back to the ColorRect.Color which
-            // defaults to WHITE. Setting transparent keeps the viewport clean.
-            Color = new Color(0, 0, 0, 0),
             MouseFilter = Control.MouseFilterEnum.Ignore,
             Material = mat,
             Visible = false,
