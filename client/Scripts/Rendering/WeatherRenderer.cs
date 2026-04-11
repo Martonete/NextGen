@@ -131,6 +131,8 @@ public partial class WeatherRenderer : Node2D
 
             _fogShaderRect = new ColorRect
             {
+                // Transparent base — if shader fails, no white flash
+                Color = new Color(0, 0, 0, 0),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
                 Material = material,
                 Visible = false,
@@ -459,7 +461,7 @@ public partial class WeatherRenderer : Node2D
                     sm.SetShaderParameter("player_world_pos", new Vector2(playerWorldX, playerWorldY));
                     sm.SetShaderParameter("player_break_radius", 144f);
                     sm.SetShaderParameter("noise_world_scale", 512f);
-                    sm.SetShaderParameter("free_smoke", false); // TODO: plumb from server packet
+                    sm.SetShaderParameter("free_smoke", 0); // TODO: plumb from server packet
                     sm.SetShaderParameter("free_smoke_intensity", 0.55f);
                 }
             }

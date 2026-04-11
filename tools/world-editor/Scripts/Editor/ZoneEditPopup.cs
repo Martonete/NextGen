@@ -209,6 +209,8 @@ public partial class ZoneEditPopup : Window
 
             var fogPreview = new ColorRect
             {
+                // Transparent base so a shader compile failure doesn't flash white
+                Color = new Color(0, 0, 0, 0),
                 CustomMinimumSize = new Vector2(120, 40),
                 Material = previewMat,
             };
@@ -223,7 +225,7 @@ public partial class ZoneEditPopup : Window
                 previewMat.SetShaderParameter("speed", new Vector2(
                     (float)(_fogSpeedXSpin?.Value ?? 5) / 100f,
                     (float)(_fogSpeedYSpin?.Value ?? 2) / 100f));
-                previewMat.SetShaderParameter("free_smoke", _freeSmokeCheck?.ButtonPressed ?? false);
+                previewMat.SetShaderParameter("free_smoke", (_freeSmokeCheck?.ButtonPressed ?? false) ? 1 : 0);
                 previewMat.SetShaderParameter("free_smoke_intensity", 0.55f);
             }
 

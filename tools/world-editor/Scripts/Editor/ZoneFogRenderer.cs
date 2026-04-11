@@ -62,6 +62,10 @@ public class ZoneFogRenderer
 
         _fogRect = new ColorRect
         {
+            // Transparent base color — if the shader ever fails to compile or
+            // isn't assigned, Godot falls back to the ColorRect.Color which
+            // defaults to WHITE. Setting transparent keeps the viewport clean.
+            Color = new Color(0, 0, 0, 0),
             MouseFilter = Control.MouseFilterEnum.Ignore,
             Material = mat,
             Visible = false,
@@ -151,7 +155,7 @@ public class ZoneFogRenderer
             sm.SetShaderParameter("player_world_pos", playerWorldPx);
             sm.SetShaderParameter("player_break_radius", 144f);
             sm.SetShaderParameter("noise_world_scale", 512f);
-            sm.SetShaderParameter("free_smoke", map.FogFreeSmoke);
+            sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1 : 0);
             sm.SetShaderParameter("free_smoke_intensity", 0.55f);
         }
     }

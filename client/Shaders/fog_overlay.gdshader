@@ -1,7 +1,6 @@
 shader_type canvas_item;
 
-// World-anchored animated fog with per-tile mask + player disruption.
-// See the world-editor copy of this shader for the full explanation.
+// See the world-editor copy for documentation.
 
 uniform sampler2D noise_texture : repeat_enable, filter_linear;
 uniform sampler2D fog_mask : filter_linear;
@@ -14,7 +13,7 @@ uniform vec2 speed = vec2(0.02, 0.01);
 uniform vec4 fog_color : source_color = vec4(0.5, 0.55, 0.63, 1.0);
 uniform float noise_world_scale : hint_range(64.0, 2048.0) = 512.0;
 
-uniform bool free_smoke = false;
+uniform int free_smoke = 0;
 uniform float free_smoke_intensity : hint_range(0.0, 1.5) = 0.55;
 
 uniform vec2 player_world_pos = vec2(-100000.0, -100000.0);
@@ -35,18 +34,18 @@ void fragment() {
     }
 
     vec2 base_uv = world_px / noise_world_scale;
-    vec2 n_uv;
-    if (free_smoke) {
-        float t = TIME * 0.15;
-        vec2 q = vec2(
-            texture(noise_texture, base_uv + vec2(t, -t * 0.7) + vec2(0.12, 0.0)).r,
-            texture(noise_texture, base_uv + vec2(-t * 0.9, t * 0.6) + vec2(0.0, 0.19)).r
-        );
-        q = q * 2.0 - 1.0;
-        n_uv = base_uv + q * free_smoke_intensity + vec2(0.0, t * 0.25);
-    } else {
-        n_uv = base_uv + speed * TIME;
+    vec2 n_uv = base_uv + speed * TIME;
+
+    if (free_smoke > 0) {
+        float t = TIME * 0.12;
+        vec2 w1 = base_uv + vec2(t, 0.0);
+        vec2 w2 = base_uv + vec2(0.0, t);
+        float wx = texture(noise_texture, w1).r * 2.0 - 1.0;
+        float wy = texture(noise_texture, w2).r * 2.0 - 1.0;
+        vec2 q = vec2(wx, wy) * free_smoke_intensity;
+        n_uv = base_uv + q + vec2(0.0, t * 0.3);
     }
+
     float n = texture(noise_texture, n_uv).r;
     float fog = clamp(n * 2.0 - 1.0, 0.0, 1.0);
 
