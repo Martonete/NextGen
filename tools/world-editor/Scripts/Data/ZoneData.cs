@@ -56,6 +56,12 @@ public class ZoneInfo
     public bool Lluvia;
     public bool Nieve;
     public bool Niebla;
+    public int NieblaDensity = 0;   // 0-255, 0=off → falls back to CPU rect
+    public int NieblaR = 128;
+    public int NieblaG = 140;
+    public int NieblaB = 160;
+    public int NieblaSpeedX = 5;    // -100..100 (roughly)
+    public int NieblaSpeedY = 2;
     public int AmbientR, AmbientG, AmbientB;
     public string Terreno = "";
 
@@ -180,6 +186,12 @@ public class MapZoneData
             sb.AppendLine($"Lluvia={(z.Lluvia ? 1 : 0)}");
             sb.AppendLine($"Nieve={(z.Nieve ? 1 : 0)}");
             sb.AppendLine($"Niebla={(z.Niebla ? 1 : 0)}");
+            sb.AppendLine($"FogDensity={z.NieblaDensity}");
+            sb.AppendLine($"FogR={z.NieblaR}");
+            sb.AppendLine($"FogG={z.NieblaG}");
+            sb.AppendLine($"FogB={z.NieblaB}");
+            sb.AppendLine($"FogSpeedX={z.NieblaSpeedX}");
+            sb.AppendLine($"FogSpeedY={z.NieblaSpeedY}");
             sb.AppendLine($"AmbientR={z.AmbientR}");
             sb.AppendLine($"AmbientG={z.AmbientG}");
             sb.AppendLine($"AmbientB={z.AmbientB}");
@@ -238,6 +250,12 @@ public class MapZoneData
             case "LLUVIA": z.Lluvia = val == "1"; break;
             case "NIEVE": z.Nieve = val == "1"; break;
             case "NIEBLA": z.Niebla = val == "1"; break;
+            case "FOGDENSITY": z.NieblaDensity = int.TryParse(val, out int fd) ? fd : 0; break;
+            case "FOGR": z.NieblaR = int.TryParse(val, out int fr) ? fr : 128; break;
+            case "FOGG": z.NieblaG = int.TryParse(val, out int fg) ? fg : 140; break;
+            case "FOGB": z.NieblaB = int.TryParse(val, out int fb) ? fb : 160; break;
+            case "FOGSPEEDX": z.NieblaSpeedX = int.TryParse(val, out int fsx) ? fsx : 5; break;
+            case "FOGSPEEDY": z.NieblaSpeedY = int.TryParse(val, out int fsy) ? fsy : 2; break;
             case "AMBIENTR": z.AmbientR = int.TryParse(val, out int r) ? r : 0; break;
             case "AMBIENTG": z.AmbientG = int.TryParse(val, out int g) ? g : 0; break;
             case "AMBIENTB": z.AmbientB = int.TryParse(val, out int b) ? b : 0; break;

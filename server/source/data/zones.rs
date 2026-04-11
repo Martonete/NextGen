@@ -65,6 +65,12 @@ pub struct ZoneData {
     pub lluvia: bool,
     pub nieve: bool,
     pub niebla: bool,
+    pub niebla_density: u8, // 0-255, 0 = off
+    pub niebla_r: u8,       // fog tint R, default 128
+    pub niebla_g: u8,       // fog tint G, default 140
+    pub niebla_b: u8,       // fog tint B, default 160
+    pub niebla_speed_x: i8, // wind X, default 5
+    pub niebla_speed_y: i8, // wind Y, default 2
     pub ambient_r: i32,
     pub ambient_g: i32,
     pub ambient_b: i32,
@@ -104,6 +110,12 @@ impl Default for ZoneData {
             lluvia: false,
             nieve: false,
             niebla: false,
+            niebla_density: 0,
+            niebla_r: 128,
+            niebla_g: 140,
+            niebla_b: 160,
+            niebla_speed_x: 5,
+            niebla_speed_y: 2,
             ambient_r: 0,
             ambient_g: 0,
             ambient_b: 0,
@@ -257,6 +269,12 @@ fn parse_zone_field(zone: &mut ZoneData, key: &str, val: &str) {
         "LLUVIA" => zone.lluvia = val == "1",
         "NIEVE" => zone.nieve = val == "1",
         "NIEBLA" => zone.niebla = val == "1",
+        "FOGDENSITY" => zone.niebla_density = val.parse().unwrap_or(0),
+        "FOGR" => zone.niebla_r = val.parse().unwrap_or(128),
+        "FOGG" => zone.niebla_g = val.parse().unwrap_or(140),
+        "FOGB" => zone.niebla_b = val.parse().unwrap_or(160),
+        "FOGSPEEDX" => zone.niebla_speed_x = val.parse().unwrap_or(5),
+        "FOGSPEEDY" => zone.niebla_speed_y = val.parse().unwrap_or(2),
         "AMBIENTR" => zone.ambient_r = val.parse().unwrap_or(0),
         "AMBIENTG" => zone.ambient_g = val.parse().unwrap_or(0),
         "AMBIENTB" => zone.ambient_b = val.parse().unwrap_or(0),
@@ -322,6 +340,12 @@ pub fn save_zone_file(base_dir: &str, map_num: i32, zones: &MapZones) -> Result<
         content.push_str(&format!("Lluvia={}\n", zone.lluvia as i32));
         content.push_str(&format!("Nieve={}\n", zone.nieve as i32));
         content.push_str(&format!("Niebla={}\n", zone.niebla as i32));
+        content.push_str(&format!("FogDensity={}\n", zone.niebla_density));
+        content.push_str(&format!("FogR={}\n", zone.niebla_r));
+        content.push_str(&format!("FogG={}\n", zone.niebla_g));
+        content.push_str(&format!("FogB={}\n", zone.niebla_b));
+        content.push_str(&format!("FogSpeedX={}\n", zone.niebla_speed_x));
+        content.push_str(&format!("FogSpeedY={}\n", zone.niebla_speed_y));
         content.push_str(&format!(
             "AmbientR={}\nAmbientG={}\nAmbientB={}\n",
             zone.ambient_r, zone.ambient_g, zone.ambient_b

@@ -910,6 +910,19 @@ public partial class PacketHandler
             ambB = bq.ReadByte();
         }
 
+        // Optional fog bytes (6 bytes appended by newer server versions)
+        byte fogDensity = 0, fogR = 128, fogG = 140, fogB = 160;
+        sbyte fogSpeedX = 5, fogSpeedY = 2;
+        if (bq.Available >= 6)
+        {
+            fogDensity = bq.ReadByte();
+            fogR = bq.ReadByte();
+            fogG = bq.ReadByte();
+            fogB = bq.ReadByte();
+            fogSpeedX = (sbyte)bq.ReadByte();
+            fogSpeedY = (sbyte)bq.ReadByte();
+        }
+
         _state.CurrentZoneName = zoneName;
         _state.CurrentZoneType = zoneType;
         _state.CurrentZoneSafe = isSafe;
@@ -930,5 +943,13 @@ public partial class PacketHandler
         _state.ZoneAmbientG = ambG;
         _state.ZoneAmbientB = ambB;
         _state.LightsDirty = true;
+
+        // Store fog shader parameters
+        _state.ZoneFogDensity = fogDensity;
+        _state.ZoneFogR = fogR;
+        _state.ZoneFogG = fogG;
+        _state.ZoneFogB = fogB;
+        _state.ZoneFogSpeedX = fogSpeedX;
+        _state.ZoneFogSpeedY = fogSpeedY;
     }
 }

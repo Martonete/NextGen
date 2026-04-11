@@ -126,6 +126,8 @@ public partial class WalkModePanel : Control
         particleOverlay.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(particleOverlay);
         _particleOverlay = particleOverlay;
+
+        _weather.AttachTo(this);
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
@@ -238,6 +240,12 @@ public partial class WalkModePanel : Control
         _weather.Lluvia = currentZone?.Lluvia ?? false;
         _weather.Nieve  = currentZone?.Nieve  ?? false;
         _weather.Niebla = currentZone?.Niebla ?? false;
+        _weather.FogDensity = currentZone?.NieblaDensity ?? 0;
+        _weather.FogR = currentZone?.NieblaR ?? 128;
+        _weather.FogG = currentZone?.NieblaG ?? 140;
+        _weather.FogB = currentZone?.NieblaB ?? 160;
+        _weather.FogSpeedX = currentZone?.NieblaSpeedX ?? 5;
+        _weather.FogSpeedY = currentZone?.NieblaSpeedY ?? 2;
         _weather.Update((float)delta, Size);
 
         if (_isMoving)

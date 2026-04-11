@@ -419,7 +419,9 @@ pub fn write_level_up(skill_points: i16) -> Vec<u8> {
 /// Wire: string zone_name, byte zone_type, byte is_safe, i16 music,
 ///       byte lluvia, byte nieve, byte niebla,
 ///       i16 x1, i16 y1, i16 x2, i16 y2 (zone bounds for client fog rendering),
-///       byte ambient_r, byte ambient_g, byte ambient_b (ambient light override; 0,0,0 = map default)
+///       byte ambient_r, byte ambient_g, byte ambient_b (ambient light override; 0,0,0 = map default),
+///       u8 fog_density, u8 fog_r, u8 fog_g, u8 fog_b,
+///       i8 fog_speed_x, i8 fog_speed_y  (signed speeds sent as bytes; client casts back to sbyte)
 pub fn write_zone_change(
     zone_name: &str,
     zone_type: u8,
@@ -435,6 +437,12 @@ pub fn write_zone_change(
     ambient_r: u8,
     ambient_g: u8,
     ambient_b: u8,
+    fog_density: u8,
+    fog_r: u8,
+    fog_g: u8,
+    fog_b: u8,
+    fog_speed_x: i8,
+    fog_speed_y: i8,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ZoneChange.to_byte());
@@ -452,12 +460,18 @@ pub fn write_zone_change(
     pkt.write_byte(ambient_r);
     pkt.write_byte(ambient_g);
     pkt.write_byte(ambient_b);
+    pkt.write_byte(fog_density);
+    pkt.write_byte(fog_r);
+    pkt.write_byte(fog_g);
+    pkt.write_byte(fog_b);
+    pkt.write_byte(fog_speed_x as u8);
+    pkt.write_byte(fog_speed_y as u8);
     pkt.into_bytes()
 }
 
 /// ID 252: Zone change to "wilderness" (no zone — map defaults).
 pub fn write_zone_change_wilderness(map_name: &str, is_safe: bool, music: i16) -> Vec<u8> {
     write_zone_change(
-        map_name, 0, is_safe, music, false, false, false, 0, 0, 0, 0, 0, 0, 0,
+        map_name, 0, is_safe, music, false, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     )
 }

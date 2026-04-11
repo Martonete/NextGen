@@ -76,6 +76,9 @@ public partial class WeatherRenderer : Node2D
     private const float FadeInSpeed = 1.5f;  // per second
     private const float FadeOutSpeed = 2.0f;
 
+    // Fog shader overlay
+    private ColorRect? _fogShaderRect;
+
     public void Init(GameState state, SoundManager? soundManager, IResourceProvider? resources = null)
     {
         _state = state;
@@ -95,6 +98,49 @@ public partial class WeatherRenderer : Node2D
 
         // Try to load rain sound
         TryLoadRainSound();
+
+        // Set up animated fog shader overlay
+        var fogShader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
+        if (fogShader != null)
+        {
+            var noise = new FastNoiseLite { Seed = 42 };
+            var noiseTexture = new NoiseTexture2D
+            {
+                Noise = noise,
+                Seamless = true,
+                Width = 512,
+                Height = 512
+            };
+            var material = new ShaderMaterial { Shader = fogShader };
+            material.SetShaderParameter("noise_texture", noiseTexture);
+
+            _fogShaderRect = new ColorRect
+            {
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                Visible = false
+            };
+            _fogShaderRect.Material = material;
+
+            // Put the fog rect inside a CanvasLayer so it renders on top of the world,
+            // but size it explicitly to the viewport since anchors don't propagate from
+            // CanvasLayer to Control children. Track viewport size changes.
+            var canvasLayer = new CanvasLayer { Layer = 15 };
+            AddChild(canvasLayer);
+            canvasLayer.AddChild(_fogShaderRect);
+
+            var vp = GetViewport();
+            if (vp != null)
+            {
+                var vpSize = vp.GetVisibleRect().Size;
+                _fogShaderRect.Position = Vector2.Zero;
+                _fogShaderRect.Size = vpSize;
+                vp.SizeChanged += () =>
+                {
+                    if (_fogShaderRect != null)
+                        _fogShaderRect.Size = GetViewport().GetVisibleRect().Size;
+                };
+            }
+        }
     }
 
     private void TryLoadRainSound()
@@ -356,6 +402,19 @@ public partial class WeatherRenderer : Node2D
             _lightningFlashAlpha = 0f;
         }
 
+        // Update fog shader overlay
+        if (_fogShaderRect != null)
+        {
+            bool showFog = _state.ZoneNiebla && _state.ZoneFogDensity > 0;
+            _fogShaderRect.Visible = showFog;
+            if (showFog && _fogShaderRect.Material is ShaderMaterial sm)
+            {
+                sm.SetShaderParameter("density", _state.ZoneFogDensity / 255f);
+                sm.SetShaderParameter("fog_color", new Color(_state.ZoneFogR / 255f, _state.ZoneFogG / 255f, _state.ZoneFogB / 255f, 1f));
+                sm.SetShaderParameter("speed", new Vector2(_state.ZoneFogSpeedX / 100f, _state.ZoneFogSpeedY / 100f));
+            }
+        }
+
         // Redraw when any effect is active
         if (_rainIntensity > 0f || _lightningFlashAlpha > 0f || _state.ZoneNieve || _state.ZoneNiebla)
             QueueRedraw();
@@ -379,7 +438,8 @@ public partial class WeatherRenderer : Node2D
 
         // Snow and niebla are independent of rain intensity
         if (_state.ZoneNieve) DrawSnow();
-        if (_state.ZoneNiebla) DrawNiebla();
+        // CPU fog rect: only when niebla is active but no shader fog density (backwards compat)
+        if (_state.ZoneNiebla && _state.ZoneFogDensity == 0) DrawNiebla();
 
         if (_rainIntensity <= 0f) return;
 

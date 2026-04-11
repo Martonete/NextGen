@@ -26,6 +26,8 @@ public partial class ZoneEditPopup : Window
     private SpinBox? _minLevelSpin, _maxLevelSpin;
     private SpinBox? _musicaSpin;
     private CheckBox? _lluviaCheck, _nieveCheck, _nieblaCheck;
+    private VBoxContainer? _fogParamsBox;
+    private SpinBox? _fogDensitySpin, _fogRSpin, _fogGSpin, _fogBSpin, _fogSpeedXSpin, _fogSpeedYSpin;
     private SpinBox? _ambRSpin, _ambGSpin, _ambBSpin;
     private SpinBox? _salidaMapSpin, _salidaXSpin, _salidaYSpin;
 
@@ -140,6 +142,79 @@ public partial class ZoneEditPopup : Window
         _nieblaCheck = AddCheckInline(weatherRow, "Niebla", Zone.Niebla);
         vbox.AddChild(weatherRow);
 
+        // Fog shader parameters (shown only when Niebla is checked)
+        _fogParamsBox = new VBoxContainer();
+        _fogParamsBox.AddThemeConstantOverride("separation", 4);
+        _fogParamsBox.Visible = Zone.Niebla;
+
+        var fogDensityRow = new HBoxContainer();
+        fogDensityRow.AddThemeConstantOverride("separation", 8);
+        AddSpinWithLabel(fogDensityRow, "Densidad:", 0, 255, Zone.NieblaDensity, out _fogDensitySpin);
+        _fogParamsBox.AddChild(fogDensityRow);
+
+        var fogColorRow = new HBoxContainer();
+        fogColorRow.AddThemeConstantOverride("separation", 8);
+        AddSpinWithLabel(fogColorRow, "R:", 0, 255, Zone.NieblaR, out _fogRSpin);
+        AddSpinWithLabel(fogColorRow, "G:", 0, 255, Zone.NieblaG, out _fogGSpin);
+        AddSpinWithLabel(fogColorRow, "B:", 0, 255, Zone.NieblaB, out _fogBSpin);
+        _fogParamsBox.AddChild(fogColorRow);
+
+        var fogSpeedRow = new HBoxContainer();
+        fogSpeedRow.AddThemeConstantOverride("separation", 8);
+        AddSpinWithLabel(fogSpeedRow, "Speed X:", -100, 100, Zone.NieblaSpeedX, out _fogSpeedXSpin);
+        AddSpinWithLabel(fogSpeedRow, "Speed Y:", -100, 100, Zone.NieblaSpeedY, out _fogSpeedYSpin);
+        _fogParamsBox.AddChild(fogSpeedRow);
+
+        // Live preview ColorRect for the fog shader
+        var fogShader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
+        if (fogShader != null)
+        {
+            var previewNoise = new NoiseTexture2D();
+            var previewFnl = new FastNoiseLite();
+            previewFnl.Seed = 42;
+            previewNoise.Noise = previewFnl;
+            previewNoise.Width = 256;
+            previewNoise.Height = 256;
+            previewNoise.Seamless = true;
+
+            var previewMat = new ShaderMaterial();
+            previewMat.Shader = fogShader;
+            previewMat.SetShaderParameter("noise_texture", previewNoise);
+
+            var fogPreview = new ColorRect
+            {
+                CustomMinimumSize = new Vector2(120, 40),
+                Material = previewMat,
+            };
+
+            void UpdateFogPreview()
+            {
+                previewMat.SetShaderParameter("density", (float)(_fogDensitySpin?.Value ?? 0) / 255f);
+                previewMat.SetShaderParameter("fog_color", new Color(
+                    (float)(_fogRSpin?.Value ?? 128) / 255f,
+                    (float)(_fogGSpin?.Value ?? 140) / 255f,
+                    (float)(_fogBSpin?.Value ?? 160) / 255f, 1f));
+                previewMat.SetShaderParameter("speed", new Vector2(
+                    (float)(_fogSpeedXSpin?.Value ?? 5) / 100f,
+                    (float)(_fogSpeedYSpin?.Value ?? 2) / 100f));
+            }
+
+            if (_fogDensitySpin != null) _fogDensitySpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogRSpin != null) _fogRSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogGSpin != null) _fogGSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogBSpin != null) _fogBSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogSpeedXSpin != null) _fogSpeedXSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogSpeedYSpin != null) _fogSpeedYSpin.ValueChanged += (_) => UpdateFogPreview();
+
+            UpdateFogPreview();
+            _fogParamsBox.AddChild(fogPreview);
+        }
+
+        vbox.AddChild(_fogParamsBox);
+
+        // Toggle fog params visibility with niebla checkbox
+        _nieblaCheck.Toggled += (on) => { if (_fogParamsBox != null) _fogParamsBox.Visible = on; };
+
         // Color picker label
         var ambLabel = EditorTheme.MakeLabel("Color ambiente (oscuridad/tinte de la zona):", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
         vbox.AddChild(ambLabel);
@@ -239,6 +314,14 @@ public partial class ZoneEditPopup : Window
         Zone.Lluvia = _lluviaCheck?.ButtonPressed ?? false;
         Zone.Nieve = _nieveCheck?.ButtonPressed ?? false;
         Zone.Niebla = _nieblaCheck?.ButtonPressed ?? false;
+        // Fallbacks match ZoneInfo field defaults so null-guarded spinboxes
+        // never produce a black/zero fog config.
+        Zone.NieblaDensity = (int)(_fogDensitySpin?.Value ?? 0);
+        Zone.NieblaR = (int)(_fogRSpin?.Value ?? 128);
+        Zone.NieblaG = (int)(_fogGSpin?.Value ?? 140);
+        Zone.NieblaB = (int)(_fogBSpin?.Value ?? 160);
+        Zone.NieblaSpeedX = (int)(_fogSpeedXSpin?.Value ?? 5);
+        Zone.NieblaSpeedY = (int)(_fogSpeedYSpin?.Value ?? 2);
         Zone.AmbientR = (int)(_ambRSpin?.Value ?? 0);
         Zone.AmbientG = (int)(_ambGSpin?.Value ?? 0);
         Zone.AmbientB = (int)(_ambBSpin?.Value ?? 0);

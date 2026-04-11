@@ -107,6 +107,12 @@ public class GameState
 	public bool ZoneChanged; // flag consumed by Main._Process to update HUD
 	public bool ZoneLluvia, ZoneNieve, ZoneNiebla;
 	public byte ZoneAmbientR, ZoneAmbientG, ZoneAmbientB; // 0,0,0 = use map ambient
+	public byte ZoneFogDensity;   // 0 = off / fallback to flat niebla rect
+	public byte ZoneFogR = 128;
+	public byte ZoneFogG = 140;
+	public byte ZoneFogB = 160;
+	public sbyte ZoneFogSpeedX = 5;
+	public sbyte ZoneFogSpeedY = 2;
 
 	// User status flags
 	public bool Raining;

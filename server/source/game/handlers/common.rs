@@ -79,6 +79,12 @@ pub(super) async fn check_zone_change(state: &mut GameState, conn_id: Connection
                 zone.ambient_r.clamp(0, 255) as u8,
                 zone.ambient_g.clamp(0, 255) as u8,
                 zone.ambient_b.clamp(0, 255) as u8,
+                zone.niebla_density,
+                zone.niebla_r,
+                zone.niebla_g,
+                zone.niebla_b,
+                zone.niebla_speed_x,
+                zone.niebla_speed_y,
             )
         } else {
             // Wilderness — no zone

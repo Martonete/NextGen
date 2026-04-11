@@ -15,6 +15,16 @@ public class WeatherFx
     public bool Nieve;
     public bool Niebla;
 
+    // Shader-based fog parameters
+    public int FogDensity;
+    public int FogR = 128;
+    public int FogG = 140;
+    public int FogB = 160;
+    public int FogSpeedX = 5;
+    public int FogSpeedY = 2;
+
+    private ColorRect? _fogRect;
+
     private struct Particle
     {
         public float X, Y, VelX, VelY, Alpha, Life;
@@ -24,8 +34,49 @@ public class WeatherFx
     private readonly List<Particle> _particles = new(MaxParticles);
     private readonly Random _rng = new();
 
+    /// <summary>
+    /// Call once from _Ready of the owning Control. Loads the fog shader and creates a
+    /// full-rect ColorRect child for the shader overlay. Safe to call if shader is missing.
+    /// </summary>
+    public void AttachTo(Control parent)
+    {
+        var shader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
+        if (shader == null) return;
+
+        var noise = new NoiseTexture2D();
+        var fnl = new FastNoiseLite();
+        fnl.Seed = 42;
+        noise.Noise = fnl;
+        noise.Width = 256;
+        noise.Height = 256;
+        noise.Seamless = true;
+
+        var mat = new ShaderMaterial();
+        mat.Shader = shader;
+        mat.SetShaderParameter("noise_texture", noise);
+
+        _fogRect = new ColorRect();
+        _fogRect.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _fogRect.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _fogRect.Material = mat;
+        _fogRect.Visible = false;
+        parent.AddChild(_fogRect);
+    }
+
     public void Update(float delta, Vector2 panelSize)
     {
+        // Update shader-based fog rect visibility and parameters
+        if (_fogRect != null)
+        {
+            _fogRect.Visible = Niebla && FogDensity > 0;
+            if (_fogRect.Visible && _fogRect.Material is ShaderMaterial sm)
+            {
+                sm.SetShaderParameter("density", FogDensity / 255f);
+                sm.SetShaderParameter("fog_color", new Color(FogR / 255f, FogG / 255f, FogB / 255f, 1f));
+                sm.SetShaderParameter("speed", new Vector2(FogSpeedX / 100f, FogSpeedY / 100f));
+            }
+        }
+
         if (!Lluvia && !Nieve)
         {
             _particles.Clear();
@@ -61,8 +112,8 @@ public class WeatherFx
 
     public void Draw(Control canvas, Vector2 panelSize)
     {
-        // Niebla: semi-transparent dark gray-blue overlay
-        if (Niebla)
+        // Niebla CPU fallback: only draw gray rect when shader overlay is off (FogDensity == 0)
+        if (Niebla && FogDensity == 0)
         {
             canvas.DrawRect(new Rect2(Vector2.Zero, panelSize),
                 new Color(0.5f, 0.55f, 0.6f, 0.35f));
