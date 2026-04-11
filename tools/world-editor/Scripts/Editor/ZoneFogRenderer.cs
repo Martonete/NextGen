@@ -45,6 +45,7 @@ public class ZoneFogRenderer
     public void AttachTo(Node parent)
     {
         _shader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
+        GD.Print($"[ZoneFogRenderer] AttachTo: shader load result = {(_shader != null ? "OK" : "NULL")}");
         if (_shader == null)
         {
             GD.PushWarning("[ZoneFogRenderer] fog_overlay.gdshader not found — fog disabled");
@@ -82,6 +83,7 @@ public class ZoneFogRenderer
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
         };
         _worldLayer.AddChild(_fogSprite);
+        GD.Print($"[ZoneFogRenderer] AttachTo: Sprite2D created under WorldLayer, material assigned");
     }
 
     /// <summary>Mark the tile mask as stale. Call after any map edit that
@@ -126,13 +128,14 @@ public class ZoneFogRenderer
         }
 
         // Sprite2D with 1x1 texture scaled to cover the whole map in world px.
-        // The fragment shader gets UV in [0, 1] across this quad regardless of
-        // the texture size, which is what we want for computing world_px from UV.
         float worldW = map.Width * TileSize;
         float worldH = map.Height * TileSize;
         _fogSprite.Position = Vector2.Zero;
         _fogSprite.Scale = new Vector2(worldW, worldH);
+        bool wasVisible = _fogSprite.Visible;
         _fogSprite.Visible = true;
+        if (!wasVisible)
+            GD.Print($"[ZoneFogRenderer] Fog visible: worldW={worldW} worldH={worldH} hasPainted={hasPaintedFog} hasZone={hasZoneFog} maskExists={_maskTexture != null}");
 
         if (_fogSprite.Material is ShaderMaterial sm)
         {
