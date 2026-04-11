@@ -57,10 +57,10 @@ public class ZoneFogRenderer
 
     /// <summary>
     /// Call each frame. cameraOffset + zoom position the world layer so children
-    /// use world pixel coordinates. zones is iterated and each one with
-    /// Niebla && NieblaDensity > 0 gets a rect from the pool.
+    /// use world pixel coordinates. Renders BOTH zone fog (X1..X2 Y1..Y2 rects)
+    /// AND per-tile painted fog blobs from MapData.PaintedFogTiles.
     /// </summary>
-    public void Update(Vector2 cameraOffset, float zoom, IReadOnlyList<ZoneInfo> zones)
+    public void Update(Vector2 cameraOffset, float zoom, IReadOnlyList<ZoneInfo> zones, MapData? map)
     {
         if (_worldLayer == null) return;
 
@@ -68,46 +68,67 @@ public class ZoneFogRenderer
         _worldLayer.Scale = new Vector2(zoom, zoom);
 
         int idx = 0;
+
+        // 1) Zone fog — one ColorRect per zone with niebla
         for (int i = 0; i < zones.Count; i++)
         {
             var zone = zones[i];
             if (!zone.Niebla || zone.NieblaDensity <= 0) continue;
 
-            var rect = Acquire(idx++);
-            // Inner zone rect in world pixels
             float innerX = (zone.X1 - 1) * (float)TileSize;
             float innerY = (zone.Y1 - 1) * (float)TileSize;
             float innerW = (zone.X2 - zone.X1 + 1) * (float)TileSize;
             float innerH = (zone.Y2 - zone.Y1 + 1) * (float)TileSize;
-            // Padded rect — fog bleeds BleedPadPx outside the zone on each side
-            float x = innerX - BleedPadPx;
-            float y = innerY - BleedPadPx;
-            float w = innerW + BleedPadPx * 2f;
-            float h = innerH + BleedPadPx * 2f;
-            rect.Position = new Vector2(x, y);
-            rect.Size = new Vector2(w, h);
-            rect.Visible = true;
+            PlaceRect(idx++, innerX, innerY, innerW, innerH,
+                zone.NieblaDensity, zone.NieblaR, zone.NieblaG, zone.NieblaB,
+                zone.NieblaSpeedX, zone.NieblaSpeedY);
+        }
 
-            if (rect.Material is ShaderMaterial sm)
+        // 2) Painted fog — one small ColorRect per tile. Each tile is a
+        // single-tile inner rect, padded to 288x288 by the bleed, so the
+        // soft alpha fade from the shader turns each stamp into a fog blob.
+        // Adjacent painted tiles overlap → cluster becomes one large cloud.
+        if (map != null && map.PaintedFogTiles.Count > 0 && map.PaintedFogDensity > 0)
+        {
+            foreach (var t in map.PaintedFogTiles)
             {
-                sm.SetShaderParameter("density", zone.NieblaDensity / 255f);
-                sm.SetShaderParameter("fog_color",
-                    new Color(zone.NieblaR / 255f, zone.NieblaG / 255f, zone.NieblaB / 255f, 1f));
-                sm.SetShaderParameter("speed",
-                    new Vector2(zone.NieblaSpeedX / 100f, zone.NieblaSpeedY / 100f));
-                // Scale noise so clouds are ~512 world-pixels regardless of zone size.
-                float rectMax = Mathf.Max(w, h);
-                sm.SetShaderParameter("noise_scale", Mathf.Max(0.5f, rectMax / 512f));
-                // Edge-fade the outer BleedPadPx of the rect in UV space so the
-                // fog fades in/out smoothly. Fading covers exactly the padding.
-                sm.SetShaderParameter("edge_fade_x", BleedPadPx / w);
-                sm.SetShaderParameter("edge_fade_y", BleedPadPx / h);
+                float innerX = (t.X - 1) * (float)TileSize;
+                float innerY = (t.Y - 1) * (float)TileSize;
+                PlaceRect(idx++, innerX, innerY, TileSize, TileSize,
+                    map.PaintedFogDensity, map.PaintedFogR, map.PaintedFogG, map.PaintedFogB,
+                    map.PaintedFogSpeedX, map.PaintedFogSpeedY);
             }
         }
 
         // Hide unused pool entries
         for (int i = idx; i < _pool.Count; i++)
             _pool[i].Visible = false;
+    }
+
+    /// <summary>Position and configure a pooled fog rect at world coords.</summary>
+    private void PlaceRect(int poolIdx, float innerX, float innerY, float innerW, float innerH,
+        int density, int r, int g, int b, int speedX, int speedY)
+    {
+        var rect = Acquire(poolIdx);
+        // Padded rect — fog bleeds BleedPadPx outside the inner bounds on each side
+        float x = innerX - BleedPadPx;
+        float y = innerY - BleedPadPx;
+        float w = innerW + BleedPadPx * 2f;
+        float h = innerH + BleedPadPx * 2f;
+        rect.Position = new Vector2(x, y);
+        rect.Size = new Vector2(w, h);
+        rect.Visible = true;
+
+        if (rect.Material is ShaderMaterial sm)
+        {
+            sm.SetShaderParameter("density", density / 255f);
+            sm.SetShaderParameter("fog_color", new Color(r / 255f, g / 255f, b / 255f, 1f));
+            sm.SetShaderParameter("speed", new Vector2(speedX / 100f, speedY / 100f));
+            float rectMax = Mathf.Max(w, h);
+            sm.SetShaderParameter("noise_scale", Mathf.Max(0.5f, rectMax / 512f));
+            sm.SetShaderParameter("edge_fade_x", BleedPadPx / w);
+            sm.SetShaderParameter("edge_fade_y", BleedPadPx / h);
+        }
     }
 
     private ColorRect Acquire(int index)

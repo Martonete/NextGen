@@ -194,9 +194,12 @@ public partial class MapViewport : Control
         // World-space fog: render ALL zones with niebla at once, each anchored
         // to its own world rect. Visible from anywhere on the map (not tied to
         // hover/selection) — the fog is ambient to the zone area.
-        if (ZoneData != null && State != null)
+        if (State != null && State.ShowFog)
         {
-            _zoneFog.Update(State.CameraOffset, State.Zoom, ZoneData.Zones);
+            var zones = ZoneData != null
+                ? (System.Collections.Generic.IReadOnlyList<ZoneInfo>)ZoneData.Zones
+                : System.Array.Empty<ZoneInfo>();
+            _zoneFog.Update(State.CameraOffset, State.Zoom, zones, Map);
         }
 
         // Keyboard panning (WASD / Arrow keys)
@@ -1584,6 +1587,12 @@ public partial class MapViewport : Control
                 EraseParticleAt(tile.X, tile.Y);
                 return;
             }
+            if (mb.Pressed && State?.ActiveTool == EditorTool.Fog)
+            {
+                var tile = ScreenToTile(mb.Position);
+                EraseFogAt(tile.X, tile.Y);
+                return;
+            }
             if (State?.ActiveTool == EditorTool.Trigger)
             {
                 if (mb.Pressed)
@@ -1846,6 +1855,11 @@ public partial class MapViewport : Control
                         Undo?.BeginBatch("Paint Particle");
                         PlaceParticleAt(tile.X, tile.Y);
                         break;
+                    case EditorTool.Fog:
+                        _isPainting = true;
+                        _paintedThisStroke.Clear();
+                        PaintFogAt(tile.X, tile.Y);
+                        break;
                     case EditorTool.Exit:
                         State.ShowTileProperties = true;
                         State.PropTileX = tile.X;
@@ -1983,6 +1997,8 @@ public partial class MapViewport : Control
                 PlaceLightAt(tile.X, tile.Y);
             else if (State.ActiveTool == EditorTool.Particle)
                 PlaceParticleAt(tile.X, tile.Y);
+            else if (State.ActiveTool == EditorTool.Fog)
+                PaintFogAt(tile.X, tile.Y);
             else if (State.ActiveTool == EditorTool.Trigger)
             {
                 // Left-click drag paints; right-click drag erases (determined by which button started _isPainting)
@@ -2292,6 +2308,26 @@ public partial class MapViewport : Control
         Map.Tiles[x, y].ParticleGroup = (short)State.SelectedParticleGroup;
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
         Particles?.BuildStreamsFromMap(Map);
+        QueueRedraw();
+    }
+
+    /// <summary>Paint a fog blob on a tile (left-click + drag). Fog is world-space,
+    /// so each painted tile becomes a soft blob roughly 9 tiles wide via the bleed + fade.</summary>
+    private void PaintFogAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y) || State == null) return;
+        int key = y * 10000 + x;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+        Map.PaintedFogTiles.Add(new Godot.Vector2I(x, y));
+        QueueRedraw();
+    }
+
+    /// <summary>Erase fog from a tile (right-click or drag).</summary>
+    private void EraseFogAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        Map.PaintedFogTiles.Remove(new Godot.Vector2I(x, y));
         QueueRedraw();
     }
 

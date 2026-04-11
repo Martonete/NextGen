@@ -310,6 +310,7 @@ public partial class EditorMain : Control
             (EditorTool.Exit,     "\u2197", "Salida"),
             (EditorTool.Trigger,  "\u26a1", "Trigger"),
             (EditorTool.Particle, "\u2728", "Partículas"),
+            (EditorTool.Fog,      "\u2601", "Niebla"),
         };
         var extButtons = new Button[propToolDefs.Length];
         for (int i = 0; i < propToolDefs.Length; i++)
@@ -1807,6 +1808,7 @@ public partial class EditorMain : Control
         }
 
         _map = MapLoader.Load(_state.MapDir, mapNumber);
+        _map.LoadPaintedFog(_state.MapDir);
         _state.CurrentMapNumber = mapNumber;
         _undo.Clear();
         _state.ResetDirty();
@@ -1832,6 +1834,7 @@ public partial class EditorMain : Control
                 _state.MapDir = dir;
                 _state.ScanAvailableMaps(dir);
                 _map = MapLoader.Load(dir, mapNum);
+                _map.LoadPaintedFog(dir);
                 _state.CurrentMapNumber = mapNum;
                 _undo.Clear();
                 _state.ResetDirty();
@@ -1869,6 +1872,14 @@ public partial class EditorMain : Control
         {
             _mapZones.Save(_serverMapDir, _map.MapNumber);
             GD.Print($"[Editor] Saved {_mapZones.Zones.Count} zones for map {_map.MapNumber}");
+        }
+
+        // Save .aofog (painted fog tiles) alongside the map
+        if (_map.MapNumber > 0 && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+        {
+            _map.SavePaintedFog(_serverMapDir);
+            if (_map.PaintedFogTiles.Count > 0)
+                GD.Print($"[Editor] Saved {_map.PaintedFogTiles.Count} painted fog tiles");
         }
 
         _state.ResetDirty();
@@ -2837,7 +2848,7 @@ public partial class EditorMain : Control
         EditorTool.Select,
         EditorTool.Pick, EditorTool.Eyedrop, EditorTool.Block,
         // property tools (after separator)
-        EditorTool.Light, EditorTool.Exit, EditorTool.Trigger, EditorTool.Particle,
+        EditorTool.Light, EditorTool.Exit, EditorTool.Trigger, EditorTool.Particle, EditorTool.Fog,
     };
 
     private void SyncToolBar()

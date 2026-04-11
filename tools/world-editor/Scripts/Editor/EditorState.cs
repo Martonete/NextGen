@@ -69,6 +69,10 @@ public class EditorState
     // Trigger tool: selected trigger type to paint (0 = erase)
     public short SelectedTriggerType = 1;
 
+    // Fog paint tool: density 0..255 to stamp on tiles (0 = erase)
+    public int SelectedFogDensity = 90;
+    public bool ShowFog = true;
+
     // Zone system (editor metadata for sub-regions)
     public List<MapZone> Zones { get; } = new();
     public int SelectedZoneIndex = -1;
@@ -274,4 +278,5 @@ public enum EditorTool
     Object,   // Place Object (opens properties)
     Trigger,  // Set trigger type (opens properties)
     Particle, // Paint particle group on tiles
+    Fog,      // Paint per-tile fog blobs (soft world-space fog)
 }

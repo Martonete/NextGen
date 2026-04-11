@@ -246,12 +246,14 @@ public partial class WalkModePanel : Control
         // Camera transform matches the tile-rendering formula:
         //   tile (tx, ty) → panel x = (tx + _halfTilesX - CharX) * 32 + _moveOffsetX
         // so world pixel (0,0) maps to panel ((_halfTilesX - CharX + 1) * 32 + _moveOffsetX, ...)
-        if (Zones != null)
         {
             var camOffset = new Vector2(
                 (_halfTilesX - CharX + 1) * 32f + _moveOffsetX,
                 (_halfTilesY - CharY + 1) * 32f + _moveOffsetY);
-            _zoneFog.Update(camOffset, 1f, Zones.Zones);
+            var zoneList = Zones != null
+                ? (System.Collections.Generic.IReadOnlyList<ZoneInfo>)Zones.Zones
+                : System.Array.Empty<ZoneInfo>();
+            _zoneFog.Update(camOffset, 1f, zoneList, Map);
         }
 
         if (_isMoving)

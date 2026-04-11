@@ -1,4 +1,9 @@
 #nullable enable
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using Godot;
+
 namespace AOWorldEditor.Data;
 
 /// <summary>
@@ -56,6 +61,18 @@ public class MapData
 
     public int MapNumber; // The map file number (e.g. 1 for Mapa1.map)
 
+    // ── Painted fog (per-tile click-to-place blobs) ──
+    // Each entry is a tile coord (x, y) that has been marked by the Fog paint tool.
+    // Rendered as a soft world-space blob centered on that tile.
+    public HashSet<Vector2I> PaintedFogTiles = new();
+    // Shared style for painted fog (one set per map — users can tune once).
+    public int PaintedFogDensity = 90;
+    public int PaintedFogR = 128;
+    public int PaintedFogG = 140;
+    public int PaintedFogB = 160;
+    public int PaintedFogSpeedX = 5;
+    public int PaintedFogSpeedY = 2;
+
     public MapData(int width = 100, int height = 100)
     {
         Width = width;
@@ -82,4 +99,63 @@ public class MapData
     }
 
     public bool InBounds(int x, int y) => x >= 1 && x <= Width && y >= 1 && y <= Height;
+
+    /// <summary>Save painted fog data to `Mapa{N}.aofog` in the given directory.
+    /// If no tiles are painted, any existing file is deleted so the map stays clean.</summary>
+    public void SavePaintedFog(string dir)
+    {
+        if (string.IsNullOrEmpty(dir) || MapNumber <= 0) return;
+        string path = Path.Combine(dir, $"Mapa{MapNumber}.aofog");
+        if (PaintedFogTiles.Count == 0)
+        {
+            if (File.Exists(path)) File.Delete(path);
+            return;
+        }
+        var sb = new StringBuilder();
+        sb.AppendLine($"Density={PaintedFogDensity}");
+        sb.AppendLine($"R={PaintedFogR}");
+        sb.AppendLine($"G={PaintedFogG}");
+        sb.AppendLine($"B={PaintedFogB}");
+        sb.AppendLine($"SpeedX={PaintedFogSpeedX}");
+        sb.AppendLine($"SpeedY={PaintedFogSpeedY}");
+        foreach (var t in PaintedFogTiles)
+            sb.AppendLine($"T={t.X},{t.Y}");
+        File.WriteAllText(path, sb.ToString());
+    }
+
+    /// <summary>Load painted fog data from `Mapa{N}.aofog` if it exists. No-op if missing.</summary>
+    public void LoadPaintedFog(string dir)
+    {
+        if (string.IsNullOrEmpty(dir) || MapNumber <= 0) return;
+        string path = Path.Combine(dir, $"Mapa{MapNumber}.aofog");
+        PaintedFogTiles.Clear();
+        if (!File.Exists(path)) return;
+        foreach (var rawLine in File.ReadAllLines(path))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0 || line.StartsWith("#")) continue;
+            int eq = line.IndexOf('=');
+            if (eq <= 0) continue;
+            string key = line.Substring(0, eq).Trim();
+            string val = line.Substring(eq + 1).Trim();
+            switch (key.ToUpperInvariant())
+            {
+                case "DENSITY": if (int.TryParse(val, out var d)) PaintedFogDensity = d; break;
+                case "R": if (int.TryParse(val, out var r)) PaintedFogR = r; break;
+                case "G": if (int.TryParse(val, out var g)) PaintedFogG = g; break;
+                case "B": if (int.TryParse(val, out var b)) PaintedFogB = b; break;
+                case "SPEEDX": if (int.TryParse(val, out var sx)) PaintedFogSpeedX = sx; break;
+                case "SPEEDY": if (int.TryParse(val, out var sy)) PaintedFogSpeedY = sy; break;
+                case "T":
+                    var parts = val.Split(',');
+                    if (parts.Length == 2
+                        && int.TryParse(parts[0], out var tx)
+                        && int.TryParse(parts[1], out var ty))
+                    {
+                        PaintedFogTiles.Add(new Vector2I(tx, ty));
+                    }
+                    break;
+            }
+        }
+    }
 }
