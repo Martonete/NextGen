@@ -85,6 +85,12 @@ public class ZoneFogRenderer
         Vector2 playerWorldPx)
     {
         if (_worldLayer == null || _fogRect == null || _shader == null) return;
+        // TEMP DEBUG: hard-disable the fog rect to prove whether it's the
+        // source of the white screen. If user reports the map is visible
+        // again, the fog rect (shader or ColorRect fallback) is the problem.
+        _fogRect.Visible = false;
+        return;
+        #pragma warning disable CS0162 // Unreachable code
         if (map == null) { _fogRect.Visible = false; return; }
 
         _worldLayer.Position = cameraOffset;
@@ -152,6 +158,7 @@ public class ZoneFogRenderer
             sm.SetShaderParameter("player_break_radius", 144f);
             sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
         }
+        #pragma warning restore CS0162
     }
 
     /// <summary>Build the R8 mask image: white for tiles that should show fog,
