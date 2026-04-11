@@ -1,0 +1,130 @@
+#nullable enable
+using System.Collections.Generic;
+using AOWorldEditor.Data;
+using Godot;
+
+namespace AOWorldEditor.Editor;
+
+/// <summary>
+/// World-space per-zone fog shader renderer. Creates one ColorRect per zone
+/// with niebla enabled, positioned at the zone's world rect (X1..X2, Y1..Y2
+/// in tile coords × 32 px). The parent Node2D is transformed by the camera
+/// each frame so the fog rects stay glued to the tiles they cover —
+/// walking/panning moves the rects with the world, and the pattern stays
+/// fixed to those tiles.
+///
+/// Usage:
+/// - Construct once, call AttachTo(Node) in _Ready
+/// - Each frame call Update(cameraOffset, zoom, zones)
+/// - Cleanup calls QueueFree on everything
+/// </summary>
+public class ZoneFogRenderer
+{
+    private const int TileSize = 32;
+
+    private Node2D? _worldLayer;
+    private readonly List<ColorRect> _pool = new();
+    private Shader? _shader;
+    private NoiseTexture2D? _noiseTexture;
+
+    /// <summary>Attach once from the owning Node's _Ready method.</summary>
+    public void AttachTo(Node parent)
+    {
+        _shader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
+        if (_shader == null)
+        {
+            GD.PushWarning("[ZoneFogRenderer] fog_overlay.gdshader not found — fog disabled");
+            return;
+        }
+
+        var fnl = new FastNoiseLite();
+        fnl.Seed = 42;
+        _noiseTexture = new NoiseTexture2D
+        {
+            Noise = fnl,
+            Width = 256,
+            Height = 256,
+            Seamless = true,
+        };
+
+        _worldLayer = new Node2D { Name = "ZoneFogWorldLayer" };
+        parent.AddChild(_worldLayer);
+    }
+
+    /// <summary>
+    /// Call each frame. cameraOffset + zoom position the world layer so children
+    /// use world pixel coordinates. zones is iterated and each one with
+    /// Niebla && NieblaDensity > 0 gets a rect from the pool.
+    /// </summary>
+    public void Update(Vector2 cameraOffset, float zoom, IReadOnlyList<ZoneInfo> zones)
+    {
+        if (_worldLayer == null) return;
+
+        _worldLayer.Position = cameraOffset;
+        _worldLayer.Scale = new Vector2(zoom, zoom);
+
+        int idx = 0;
+        for (int i = 0; i < zones.Count; i++)
+        {
+            var zone = zones[i];
+            if (!zone.Niebla || zone.NieblaDensity <= 0) continue;
+
+            var rect = Acquire(idx++);
+            float x = (zone.X1 - 1) * (float)TileSize;
+            float y = (zone.Y1 - 1) * (float)TileSize;
+            float w = (zone.X2 - zone.X1 + 1) * (float)TileSize;
+            float h = (zone.Y2 - zone.Y1 + 1) * (float)TileSize;
+            rect.Position = new Vector2(x, y);
+            rect.Size = new Vector2(w, h);
+            rect.Visible = true;
+
+            if (rect.Material is ShaderMaterial sm)
+            {
+                sm.SetShaderParameter("density", zone.NieblaDensity / 255f);
+                sm.SetShaderParameter("fog_color",
+                    new Color(zone.NieblaR / 255f, zone.NieblaG / 255f, zone.NieblaB / 255f, 1f));
+                sm.SetShaderParameter("speed",
+                    new Vector2(zone.NieblaSpeedX / 100f, zone.NieblaSpeedY / 100f));
+                // Scale noise so clouds are ~512 world-pixels regardless of zone size.
+                // Bigger zone = more noise repeats = natural multi-cloud look.
+                float rectMax = Mathf.Max(w, h);
+                sm.SetShaderParameter("noise_scale", Mathf.Max(0.5f, rectMax / 512f));
+            }
+        }
+
+        // Hide unused pool entries
+        for (int i = idx; i < _pool.Count; i++)
+            _pool[i].Visible = false;
+    }
+
+    private ColorRect Acquire(int index)
+    {
+        while (_pool.Count <= index)
+        {
+            var mat = new ShaderMaterial { Shader = _shader };
+            if (_noiseTexture != null)
+                mat.SetShaderParameter("noise_texture", _noiseTexture);
+            var rect = new ColorRect
+            {
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                Material = mat,
+                Visible = false,
+            };
+            _worldLayer!.AddChild(rect);
+            _pool.Add(rect);
+        }
+        return _pool[index];
+    }
+
+    public void Cleanup()
+    {
+        foreach (var r in _pool)
+            if (GodotObject.IsInstanceValid(r)) r.QueueFree();
+        _pool.Clear();
+        if (_worldLayer != null && GodotObject.IsInstanceValid(_worldLayer))
+            _worldLayer.QueueFree();
+        _worldLayer = null;
+        _shader = null;
+        _noiseTexture = null;
+    }
+}

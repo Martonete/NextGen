@@ -107,6 +107,7 @@ public partial class WalkModePanel : Control
 
     // ── Weather FX ──
     private readonly WeatherFx _weather = new();
+    private readonly ZoneFogRenderer _zoneFog = new();
 
     // ── Particle overlay (additive-blend child CanvasItem for correct particle glow) ──
     private WalkParticleOverlay? _particleOverlay;
@@ -127,7 +128,7 @@ public partial class WalkModePanel : Control
         AddChild(particleOverlay);
         _particleOverlay = particleOverlay;
 
-        _weather.AttachTo(this);
+        _zoneFog.AttachTo(this);
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
@@ -235,18 +236,23 @@ public partial class WalkModePanel : Control
         // Step the shared particle simulation so streams animate in walk mode too
         Particles?.Update((float)delta);
 
-        // Update weather from current zone
+        // Update weather from current zone (rain/snow only — fog is world-space)
         var currentZone = Zones?.GetZoneAt(CharX, CharY);
         _weather.Lluvia = currentZone?.Lluvia ?? false;
         _weather.Nieve  = currentZone?.Nieve  ?? false;
-        _weather.Niebla = currentZone?.Niebla ?? false;
-        _weather.FogDensity = currentZone?.NieblaDensity ?? 0;
-        _weather.FogR = currentZone?.NieblaR ?? 128;
-        _weather.FogG = currentZone?.NieblaG ?? 140;
-        _weather.FogB = currentZone?.NieblaB ?? 160;
-        _weather.FogSpeedX = currentZone?.NieblaSpeedX ?? 5;
-        _weather.FogSpeedY = currentZone?.NieblaSpeedY ?? 2;
         _weather.Update((float)delta, Size);
+
+        // World-space fog: render every zone with niebla at its own world rect.
+        // Camera transform matches the tile-rendering formula:
+        //   tile (tx, ty) → panel x = (tx + _halfTilesX - CharX) * 32 + _moveOffsetX
+        // so world pixel (0,0) maps to panel ((_halfTilesX - CharX + 1) * 32 + _moveOffsetX, ...)
+        if (Zones != null)
+        {
+            var camOffset = new Vector2(
+                (_halfTilesX - CharX + 1) * 32f + _moveOffsetX,
+                (_halfTilesY - CharY + 1) * 32f + _moveOffsetY);
+            _zoneFog.Update(camOffset, 1f, Zones.Zones);
+        }
 
         if (_isMoving)
         {

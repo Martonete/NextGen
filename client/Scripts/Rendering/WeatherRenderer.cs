@@ -76,7 +76,10 @@ public partial class WeatherRenderer : Node2D
     private const float FadeInSpeed = 1.5f;  // per second
     private const float FadeOutSpeed = 2.0f;
 
-    // Fog shader overlay
+    // Fog shader overlay — world-space per-zone.
+    // _fogWorldLayer has its Position/Scale driven each frame from the camera
+    // transform so the _fogShaderRect child stays glued to the zone's tiles.
+    private Node2D? _fogWorldLayer;
     private ColorRect? _fogShaderRect;
 
     public void Init(GameState state, SoundManager? soundManager, IResourceProvider? resources = null)
@@ -99,7 +102,10 @@ public partial class WeatherRenderer : Node2D
         // Try to load rain sound
         TryLoadRainSound();
 
-        // Set up animated fog shader overlay
+        // Set up world-space fog shader overlay. The fog is a ColorRect positioned
+        // at the zone's world rectangle (X1..X2 × Y1..Y2 tile coords × 32 px).
+        // Its parent Node2D gets Position = camera offset each frame (mirroring
+        // WorldRenderer's transform), so the rect stays glued to the tiles.
         var fogShader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
         if (fogShader != null)
         {
@@ -109,37 +115,21 @@ public partial class WeatherRenderer : Node2D
                 Noise = noise,
                 Seamless = true,
                 Width = 512,
-                Height = 512
+                Height = 512,
             };
             var material = new ShaderMaterial { Shader = fogShader };
             material.SetShaderParameter("noise_texture", noiseTexture);
 
+            _fogWorldLayer = new Node2D { Name = "FogWorldLayer", ZIndex = 10 };
+            AddChild(_fogWorldLayer);
+
             _fogShaderRect = new ColorRect
             {
                 MouseFilter = Control.MouseFilterEnum.Ignore,
-                Visible = false
+                Material = material,
+                Visible = false,
             };
-            _fogShaderRect.Material = material;
-
-            // Put the fog rect inside a CanvasLayer so it renders on top of the world,
-            // but size it explicitly to the viewport since anchors don't propagate from
-            // CanvasLayer to Control children. Track viewport size changes.
-            var canvasLayer = new CanvasLayer { Layer = 15 };
-            AddChild(canvasLayer);
-            canvasLayer.AddChild(_fogShaderRect);
-
-            var vp = GetViewport();
-            if (vp != null)
-            {
-                var vpSize = vp.GetVisibleRect().Size;
-                _fogShaderRect.Position = Vector2.Zero;
-                _fogShaderRect.Size = vpSize;
-                vp.SizeChanged += () =>
-                {
-                    if (_fogShaderRect != null)
-                        _fogShaderRect.Size = GetViewport().GetVisibleRect().Size;
-                };
-            }
+            _fogWorldLayer.AddChild(_fogShaderRect);
         }
     }
 
@@ -402,19 +392,47 @@ public partial class WeatherRenderer : Node2D
             _lightningFlashAlpha = 0f;
         }
 
-        // Update fog shader overlay
-        if (_fogShaderRect != null)
+        // Update world-space fog shader overlay.
+        // Fog is visible ONLY over the zone's tile rectangle — outside the zone
+        // the rect is absent, so players in a neighbouring area see the fog on
+        // the zone's tiles but not over themselves.
+        if (_fogShaderRect != null && _fogWorldLayer != null)
         {
-            bool showFog = _state.ZoneNiebla && _state.ZoneFogDensity > 0;
+            bool hasZoneBounds = _state.CurrentZoneX2 > 0 && _state.CurrentZoneY2 > 0;
+            bool showFog = _state.ZoneNiebla && _state.ZoneFogDensity > 0 && hasZoneBounds;
             _fogShaderRect.Visible = showFog;
-            if (showFog && _fogShaderRect.Material is ShaderMaterial sm)
+            if (showFog)
             {
-                sm.SetShaderParameter("density", _state.ZoneFogDensity / 255f);
-                sm.SetShaderParameter("fog_color", new Color(_state.ZoneFogR / 255f, _state.ZoneFogG / 255f, _state.ZoneFogB / 255f, 1f));
-                sm.SetShaderParameter("speed", new Vector2(_state.ZoneFogSpeedX / 100f, _state.ZoneFogSpeedY / 100f));
-                // Fog is screen-locked: no world_offset uniform. Character motion
-                // must not shift the noise pattern. The only movement is the
-                // `speed * TIME` drift from the shader, configurable per zone.
+                // Match WorldRenderer camera transform:
+                //   tile t at screenX = (t - uX + hX) * TileSize + offX
+                // → world pixel 0 at screenX = (1 - uX + hX) * TileSize + offX
+                var cam = WorldRenderer.CurrentCamera;
+                const float TS = 32f;
+                float hX = ResolutionManager.HalfTilesX;
+                float hY = ResolutionManager.HalfTilesY;
+                _fogWorldLayer.Position = new Vector2(
+                    (1 - cam.UserX + hX) * TS + cam.PixelOffsetX,
+                    (1 - cam.UserY + hY) * TS + cam.PixelOffsetY);
+
+                // Position/size the rect at the zone's world rectangle
+                float x = (_state.CurrentZoneX1 - 1) * TS;
+                float y = (_state.CurrentZoneY1 - 1) * TS;
+                float w = (_state.CurrentZoneX2 - _state.CurrentZoneX1 + 1) * TS;
+                float h = (_state.CurrentZoneY2 - _state.CurrentZoneY1 + 1) * TS;
+                _fogShaderRect.Position = new Vector2(x, y);
+                _fogShaderRect.Size = new Vector2(w, h);
+
+                if (_fogShaderRect.Material is ShaderMaterial sm)
+                {
+                    sm.SetShaderParameter("density", _state.ZoneFogDensity / 255f);
+                    sm.SetShaderParameter("fog_color",
+                        new Color(_state.ZoneFogR / 255f, _state.ZoneFogG / 255f, _state.ZoneFogB / 255f, 1f));
+                    sm.SetShaderParameter("speed",
+                        new Vector2(_state.ZoneFogSpeedX / 100f, _state.ZoneFogSpeedY / 100f));
+                    // Scale noise to give ~512 world-px clouds regardless of zone size
+                    float rectMax = Math.Max(w, h);
+                    sm.SetShaderParameter("noise_scale", Math.Max(0.5f, rectMax / 512f));
+                }
             }
         }
 
@@ -430,19 +448,14 @@ public partial class WeatherRenderer : Node2D
             DrawCircle(new Vector2(_snowX[i], _snowY[i]), SnowRadius, snowColor);
     }
 
-    private void DrawNiebla()
-    {
-        DrawRect(new Rect2(0, 0, ViewW, ViewH), new Color(0.5f, 0.55f, 0.6f, 0.35f));
-    }
-
     public override void _Draw()
     {
         if (_state == null) return;
 
-        // Snow and niebla are independent of rain intensity
+        // Niebla is rendered by the world-space fog ColorRect (see Init) —
+        // not by _Draw. The old full-screen CPU rect was removed because fog
+        // must be bounded to the zone's world rect, not the entire viewport.
         if (_state.ZoneNieve) DrawSnow();
-        // CPU fog rect: only when niebla is active but no shader fog density (backwards compat)
-        if (_state.ZoneNiebla && _state.ZoneFogDensity == 0) DrawNiebla();
 
         if (_rainIntensity <= 0f) return;
 

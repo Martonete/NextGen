@@ -89,6 +89,9 @@ public partial class MapViewport : Control
     // Weather FX driven by the currently selected zone in ZonePanel
     public ZonePanel? ZonePanelRef;  // set by EditorMain after creation
     private readonly WeatherFx _weather = new();
+    // World-space per-zone fog shader — one ColorRect per zone with niebla,
+    // positioned at the zone's world rect and transformed by the camera.
+    private readonly ZoneFogRenderer _zoneFog = new();
 
     public override void _Ready()
     {
@@ -98,7 +101,7 @@ public partial class MapViewport : Control
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
 
-        _weather.AttachTo(this);
+        _zoneFog.AttachTo(this);
     }
 
     /// <summary>Request a CPU per-tile lighting rebuild on the next draw.</summary>
@@ -186,14 +189,15 @@ public partial class MapViewport : Control
         }
         _weather.Lluvia = weatherZone?.Lluvia ?? false;
         _weather.Nieve  = weatherZone?.Nieve  ?? false;
-        _weather.Niebla = weatherZone?.Niebla ?? false;
-        _weather.FogDensity = weatherZone?.NieblaDensity ?? 0;
-        _weather.FogR = weatherZone?.NieblaR ?? 128;
-        _weather.FogG = weatherZone?.NieblaG ?? 140;
-        _weather.FogB = weatherZone?.NieblaB ?? 160;
-        _weather.FogSpeedX = weatherZone?.NieblaSpeedX ?? 5;
-        _weather.FogSpeedY = weatherZone?.NieblaSpeedY ?? 2;
         _weather.Update((float)delta, Size);
+
+        // World-space fog: render ALL zones with niebla at once, each anchored
+        // to its own world rect. Visible from anywhere on the map (not tied to
+        // hover/selection) — the fog is ambient to the zone area.
+        if (ZoneData != null && State != null)
+        {
+            _zoneFog.Update(State.CameraOffset, State.Zoom, ZoneData.Zones);
+        }
 
         // Keyboard panning (WASD / Arrow keys)
         // Pressing W = view moves UP on map = tiles with lower Y become visible
