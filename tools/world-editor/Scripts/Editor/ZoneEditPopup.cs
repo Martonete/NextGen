@@ -12,6 +12,7 @@ public partial class ZoneEditPopup : Window
 {
     public ZoneInfo? Zone;
     public MapZoneData? ZoneData;
+    public MapData? Map; // map-level settings (like FogFreeSmoke)
     public Action? OnSaved;
     /// <summary>Called when user clicks "Seleccionar en mapa" — host should activate Select tool and wire selection back.</summary>
     public Action? OnRequestMapSelect;
@@ -28,6 +29,7 @@ public partial class ZoneEditPopup : Window
     private CheckBox? _lluviaCheck, _nieveCheck, _nieblaCheck;
     private VBoxContainer? _fogParamsBox;
     private SpinBox? _fogDensitySpin, _fogRSpin, _fogGSpin, _fogBSpin, _fogSpeedXSpin, _fogSpeedYSpin;
+    private CheckBox? _freeSmokeCheck;
     private SpinBox? _ambRSpin, _ambGSpin, _ambBSpin;
     private SpinBox? _salidaMapSpin, _salidaXSpin, _salidaYSpin;
 
@@ -165,6 +167,17 @@ public partial class ZoneEditPopup : Window
         AddSpinWithLabel(fogSpeedRow, "Speed Y:", -100, 100, Zone.NieblaSpeedY, out _fogSpeedYSpin);
         _fogParamsBox.AddChild(fogSpeedRow);
 
+        // Humo libre — global map toggle (domain-warped multi-directional swirl).
+        // When on, the speed vector is ignored and fog swirls chaotically like
+        // real smoke. Stored on MapData (not the zone) since the shader runs
+        // with a single global uniform for the whole map.
+        _freeSmokeCheck = new CheckBox
+        {
+            Text = "Humo libre (global — swirl multi-direccional)",
+            ButtonPressed = Map?.FogFreeSmoke ?? false,
+        };
+        _fogParamsBox.AddChild(_freeSmokeCheck);
+
         // Live preview ColorRect for the fog shader
         var fogShader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
         if (fogShader != null)
@@ -180,6 +193,19 @@ public partial class ZoneEditPopup : Window
             var previewMat = new ShaderMaterial();
             previewMat.Shader = fogShader;
             previewMat.SetShaderParameter("noise_texture", previewNoise);
+
+            // Fake 1x1 white mask so the shader's mask check passes (the main
+            // renderer uses a real map-sized mask, but the preview doesn't
+            // need one — just show fog everywhere).
+            var whiteMaskImg = Image.CreateEmpty(1, 1, false, Image.Format.R8);
+            whiteMaskImg.SetPixel(0, 0, Colors.White);
+            var whiteMaskTex = ImageTexture.CreateFromImage(whiteMaskImg);
+            previewMat.SetShaderParameter("fog_mask", whiteMaskTex);
+            previewMat.SetShaderParameter("map_tile_size", new Vector2(1, 1));
+            previewMat.SetShaderParameter("rect_world_origin", Vector2.Zero);
+            previewMat.SetShaderParameter("rect_world_size", new Vector2(32, 32));
+            // Keep the player break far away so the preview doesn't get disrupted
+            previewMat.SetShaderParameter("player_world_pos", new Vector2(-1e6f, -1e6f));
 
             var fogPreview = new ColorRect
             {
@@ -197,6 +223,8 @@ public partial class ZoneEditPopup : Window
                 previewMat.SetShaderParameter("speed", new Vector2(
                     (float)(_fogSpeedXSpin?.Value ?? 5) / 100f,
                     (float)(_fogSpeedYSpin?.Value ?? 2) / 100f));
+                previewMat.SetShaderParameter("free_smoke", _freeSmokeCheck?.ButtonPressed ?? false);
+                previewMat.SetShaderParameter("free_smoke_intensity", 0.55f);
             }
 
             if (_fogDensitySpin != null) _fogDensitySpin.ValueChanged += (_) => UpdateFogPreview();
@@ -205,6 +233,7 @@ public partial class ZoneEditPopup : Window
             if (_fogBSpin != null) _fogBSpin.ValueChanged += (_) => UpdateFogPreview();
             if (_fogSpeedXSpin != null) _fogSpeedXSpin.ValueChanged += (_) => UpdateFogPreview();
             if (_fogSpeedYSpin != null) _fogSpeedYSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_freeSmokeCheck != null) _freeSmokeCheck.Toggled += (_) => UpdateFogPreview();
 
             UpdateFogPreview();
             _fogParamsBox.AddChild(fogPreview);
@@ -332,6 +361,9 @@ public partial class ZoneEditPopup : Window
         Zone.NieblaB = (int)(_fogBSpin?.Value ?? 160);
         Zone.NieblaSpeedX = (int)(_fogSpeedXSpin?.Value ?? 5);
         Zone.NieblaSpeedY = (int)(_fogSpeedYSpin?.Value ?? 2);
+        // Humo libre is global — writes back to the map, not the zone
+        if (Map != null && _freeSmokeCheck != null)
+            Map.FogFreeSmoke = _freeSmokeCheck.ButtonPressed;
         Zone.AmbientR = (int)(_ambRSpin?.Value ?? 0);
         Zone.AmbientG = (int)(_ambGSpin?.Value ?? 0);
         Zone.AmbientB = (int)(_ambBSpin?.Value ?? 0);

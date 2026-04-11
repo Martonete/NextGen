@@ -151,6 +151,8 @@ public class ZoneFogRenderer
             sm.SetShaderParameter("player_world_pos", playerWorldPx);
             sm.SetShaderParameter("player_break_radius", 144f);
             sm.SetShaderParameter("noise_world_scale", 512f);
+            sm.SetShaderParameter("free_smoke", map.FogFreeSmoke);
+            sm.SetShaderParameter("free_smoke_intensity", 0.55f);
         }
     }
 

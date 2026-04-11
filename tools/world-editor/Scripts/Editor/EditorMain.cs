@@ -3464,11 +3464,13 @@ public partial class EditorMain : Control
         {
             Zone = zone,
             ZoneData = _mapZones,
+            Map = _map,
         };
         popup.OnSaved += () =>
         {
             _zonePanel?.RebuildList();
             _viewport?.MarkLightmapDirty();
+            _viewport?.MarkFogMaskDirty(); // zone changes (Niebla flag, bounds, FreeSmoke) invalidate the fog mask
             _viewport?.QueueRedraw();
             _state.MarkDirty();
         };

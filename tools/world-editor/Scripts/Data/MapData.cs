@@ -72,6 +72,9 @@ public class MapData
     public int PaintedFogB = 160;
     public int PaintedFogSpeedX = 5;
     public int PaintedFogSpeedY = 2;
+    // Global map-level toggle: when true, fog uses domain-warped multi-directional
+    // swirl ("humo libre" / free smoke) instead of the straight-line wind drift.
+    public bool FogFreeSmoke = false;
 
     public MapData(int width = 100, int height = 100)
     {
@@ -118,6 +121,7 @@ public class MapData
         sb.AppendLine($"B={PaintedFogB}");
         sb.AppendLine($"SpeedX={PaintedFogSpeedX}");
         sb.AppendLine($"SpeedY={PaintedFogSpeedY}");
+        sb.AppendLine($"FreeSmoke={(FogFreeSmoke ? 1 : 0)}");
         foreach (var t in PaintedFogTiles)
             sb.AppendLine($"T={t.X},{t.Y}");
         File.WriteAllText(path, sb.ToString());
@@ -146,6 +150,7 @@ public class MapData
                 case "B": if (int.TryParse(val, out var b)) PaintedFogB = b; break;
                 case "SPEEDX": if (int.TryParse(val, out var sx)) PaintedFogSpeedX = sx; break;
                 case "SPEEDY": if (int.TryParse(val, out var sy)) PaintedFogSpeedY = sy; break;
+                case "FREESMOKE": FogFreeSmoke = val == "1" || val.ToLowerInvariant() == "true"; break;
                 case "T":
                     var parts = val.Split(',');
                     if (parts.Length == 2

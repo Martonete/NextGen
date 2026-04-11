@@ -14,6 +14,9 @@ uniform vec2 speed = vec2(0.02, 0.01);
 uniform vec4 fog_color : source_color = vec4(0.5, 0.55, 0.63, 1.0);
 uniform float noise_world_scale : hint_range(64.0, 2048.0) = 512.0;
 
+uniform bool free_smoke = false;
+uniform float free_smoke_intensity : hint_range(0.0, 1.5) = 0.55;
+
 uniform vec2 player_world_pos = vec2(-100000.0, -100000.0);
 uniform float player_break_radius : hint_range(0.0, 512.0) = 144.0;
 
@@ -31,7 +34,19 @@ void fragment() {
         return;
     }
 
-    vec2 n_uv = world_px / noise_world_scale + speed * TIME;
+    vec2 base_uv = world_px / noise_world_scale;
+    vec2 n_uv;
+    if (free_smoke) {
+        float t = TIME * 0.15;
+        vec2 q = vec2(
+            texture(noise_texture, base_uv + vec2(t, -t * 0.7) + vec2(0.12, 0.0)).r,
+            texture(noise_texture, base_uv + vec2(-t * 0.9, t * 0.6) + vec2(0.0, 0.19)).r
+        );
+        q = q * 2.0 - 1.0;
+        n_uv = base_uv + q * free_smoke_intensity + vec2(0.0, t * 0.25);
+    } else {
+        n_uv = base_uv + speed * TIME;
+    }
     float n = texture(noise_texture, n_uv).r;
     float fog = clamp(n * 2.0 - 1.0, 0.0, 1.0);
 

@@ -2,18 +2,11 @@ shader_type canvas_item;
 
 // World-anchored animated fog with per-tile mask + player disruption.
 //
-// The ColorRect covers the whole map rectangle in world space. The
-// `fog_mask` texture has 1 R8 pixel per map tile:
-//   1.0 → this tile has fog (zone or painted)
-//   0.0 → no fog here (either empty area OR occluded by layer 2/3/4)
+// Two movement modes:
+//   free_smoke = false → unidirectional wind drift (speed * TIME shifts noise)
+//   free_smoke = true  → domain warping for swirly multi-directional "real smoke"
 //
-// Near the player's world position the alpha fades to 0 within
-// `player_break_radius` pixels, giving a "smoke breaking apart" look
-// as the character walks through.
-//
-// The noise is sampled in world space so the cloud pattern stays glued
-// to the tiles regardless of camera/character movement. The only drift
-// is the slow `speed * TIME` wind.
+// See the other uniforms for mask / player break documentation.
 
 uniform sampler2D noise_texture : repeat_enable, filter_linear;
 uniform sampler2D fog_mask : filter_linear;
@@ -24,9 +17,11 @@ uniform vec2 rect_world_size  = vec2(3200.0, 3200.0);
 uniform float density : hint_range(0.0, 1.0) = 0.35;
 uniform vec2 speed = vec2(0.02, 0.01);
 uniform vec4 fog_color : source_color = vec4(0.5, 0.55, 0.63, 1.0);
-// How "big" the noise cells are in world pixels (one cell = one repeat).
-// 512 = 16 tiles per cell → soft rolling clouds.
 uniform float noise_world_scale : hint_range(64.0, 2048.0) = 512.0;
+
+// Free-smoke mode: domain-warped sampling for multi-directional swirl.
+uniform bool free_smoke = false;
+uniform float free_smoke_intensity : hint_range(0.0, 1.5) = 0.55;
 
 // Player "smoke" disruption
 uniform vec2 player_world_pos = vec2(-100000.0, -100000.0);
@@ -48,7 +43,25 @@ void fragment() {
     }
 
     // --- Noise pattern, world-anchored ---
-    vec2 n_uv = world_px / noise_world_scale + speed * TIME;
+    vec2 base_uv = world_px / noise_world_scale;
+    vec2 n_uv;
+    if (free_smoke) {
+        // Domain warping: sample the noise twice at offset positions to build
+        // a 2D displacement field, then use it to warp the main sample.
+        // Creates organic swirls instead of a rigid unidirectional drift.
+        // Each warp sample advances in TIME at a slightly different rate so
+        // the displacement field itself evolves → chaotic smoke motion.
+        float t = TIME * 0.15;
+        vec2 q = vec2(
+            texture(noise_texture, base_uv + vec2(t, -t * 0.7) + vec2(0.12, 0.0)).r,
+            texture(noise_texture, base_uv + vec2(-t * 0.9, t * 0.6) + vec2(0.0, 0.19)).r
+        );
+        q = q * 2.0 - 1.0;  // [0,1] → [-1,1]
+        n_uv = base_uv + q * free_smoke_intensity + vec2(0.0, t * 0.25);
+    } else {
+        // Simple wind: noise drifts in a fixed direction at speed
+        n_uv = base_uv + speed * TIME;
+    }
     float n = texture(noise_texture, n_uv).r;
     float fog = clamp(n * 2.0 - 1.0, 0.0, 1.0);
 
