@@ -1,11 +1,20 @@
 shader_type canvas_item;
 
-// MINIMAL DIAGNOSTIC — unconditional red output.
-// If you see 50% red covering the whole map viewport area, the shader
-// pipeline works and any visibility issue was in the mask / uniforms.
-// If you see nothing (transparent), the shader is not running at all
-// (compile failure, material not assigned, sprite culled, etc.).
+// STEP 1 — mask-based visibility. Red wherever the mask is set.
+// If you see red ONLY on tiles you painted (or inside a zone with
+// niebla), the mask + UV math works and we can add the real fog
+// rendering (noise, color, density, player break, free smoke) next.
+
+uniform sampler2D fog_mask : filter_linear;
+uniform vec2 map_tile_size = vec2(100.0, 100.0);
+uniform vec2 rect_world_origin = vec2(0.0, 0.0);
+uniform vec2 rect_world_size = vec2(3200.0, 3200.0);
 
 void fragment() {
-    COLOR = vec4(1.0, 0.0, 0.0, 0.5);
+    vec2 world_px = rect_world_origin + UV * rect_world_size;
+    vec2 tile_xy = world_px / 32.0;
+    vec2 mask_uv = tile_xy / map_tile_size;
+
+    float m = texture(fog_mask, mask_uv).r;
+    COLOR = vec4(1.0, 0.0, 0.0, m * 0.6);
 }
