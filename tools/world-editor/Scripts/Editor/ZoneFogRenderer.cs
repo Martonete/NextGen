@@ -21,6 +21,10 @@ namespace AOWorldEditor.Editor;
 public class ZoneFogRenderer
 {
     private const int TileSize = 32;
+    // Extend each fog rect by this many pixels on each side so the fog
+    // spills past the zone boundary. Combined with the shader's edge-fade
+    // the result is a soft, organic falloff instead of a hard rectangle.
+    private const float BleedPadPx = 128f;
 
     private Node2D? _worldLayer;
     private readonly List<ColorRect> _pool = new();
@@ -70,10 +74,16 @@ public class ZoneFogRenderer
             if (!zone.Niebla || zone.NieblaDensity <= 0) continue;
 
             var rect = Acquire(idx++);
-            float x = (zone.X1 - 1) * (float)TileSize;
-            float y = (zone.Y1 - 1) * (float)TileSize;
-            float w = (zone.X2 - zone.X1 + 1) * (float)TileSize;
-            float h = (zone.Y2 - zone.Y1 + 1) * (float)TileSize;
+            // Inner zone rect in world pixels
+            float innerX = (zone.X1 - 1) * (float)TileSize;
+            float innerY = (zone.Y1 - 1) * (float)TileSize;
+            float innerW = (zone.X2 - zone.X1 + 1) * (float)TileSize;
+            float innerH = (zone.Y2 - zone.Y1 + 1) * (float)TileSize;
+            // Padded rect — fog bleeds BleedPadPx outside the zone on each side
+            float x = innerX - BleedPadPx;
+            float y = innerY - BleedPadPx;
+            float w = innerW + BleedPadPx * 2f;
+            float h = innerH + BleedPadPx * 2f;
             rect.Position = new Vector2(x, y);
             rect.Size = new Vector2(w, h);
             rect.Visible = true;
@@ -86,9 +96,12 @@ public class ZoneFogRenderer
                 sm.SetShaderParameter("speed",
                     new Vector2(zone.NieblaSpeedX / 100f, zone.NieblaSpeedY / 100f));
                 // Scale noise so clouds are ~512 world-pixels regardless of zone size.
-                // Bigger zone = more noise repeats = natural multi-cloud look.
                 float rectMax = Mathf.Max(w, h);
                 sm.SetShaderParameter("noise_scale", Mathf.Max(0.5f, rectMax / 512f));
+                // Edge-fade the outer BleedPadPx of the rect in UV space so the
+                // fog fades in/out smoothly. Fading covers exactly the padding.
+                sm.SetShaderParameter("edge_fade_x", BleedPadPx / w);
+                sm.SetShaderParameter("edge_fade_y", BleedPadPx / h);
             }
         }
 

@@ -414,11 +414,17 @@ public partial class WeatherRenderer : Node2D
                     (1 - cam.UserX + hX) * TS + cam.PixelOffsetX,
                     (1 - cam.UserY + hY) * TS + cam.PixelOffsetY);
 
-                // Position/size the rect at the zone's world rectangle
-                float x = (_state.CurrentZoneX1 - 1) * TS;
-                float y = (_state.CurrentZoneY1 - 1) * TS;
-                float w = (_state.CurrentZoneX2 - _state.CurrentZoneX1 + 1) * TS;
-                float h = (_state.CurrentZoneY2 - _state.CurrentZoneY1 + 1) * TS;
+                // Position/size the rect at the zone's world rectangle PLUS bleed
+                // padding so the fog softly fades past the zone border.
+                const float BleedPadPx = 128f;
+                float innerX = (_state.CurrentZoneX1 - 1) * TS;
+                float innerY = (_state.CurrentZoneY1 - 1) * TS;
+                float innerW = (_state.CurrentZoneX2 - _state.CurrentZoneX1 + 1) * TS;
+                float innerH = (_state.CurrentZoneY2 - _state.CurrentZoneY1 + 1) * TS;
+                float x = innerX - BleedPadPx;
+                float y = innerY - BleedPadPx;
+                float w = innerW + BleedPadPx * 2f;
+                float h = innerH + BleedPadPx * 2f;
                 _fogShaderRect.Position = new Vector2(x, y);
                 _fogShaderRect.Size = new Vector2(w, h);
 
@@ -432,6 +438,9 @@ public partial class WeatherRenderer : Node2D
                     // Scale noise to give ~512 world-px clouds regardless of zone size
                     float rectMax = Math.Max(w, h);
                     sm.SetShaderParameter("noise_scale", Math.Max(0.5f, rectMax / 512f));
+                    // Edge-fade covers exactly the padding in UV units
+                    sm.SetShaderParameter("edge_fade_x", BleedPadPx / w);
+                    sm.SetShaderParameter("edge_fade_y", BleedPadPx / h);
                 }
             }
         }
