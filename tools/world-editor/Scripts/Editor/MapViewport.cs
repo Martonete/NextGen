@@ -193,6 +193,9 @@ public partial class MapViewport : Control
         _weather.FogB = weatherZone?.NieblaB ?? 160;
         _weather.FogSpeedX = weatherZone?.NieblaSpeedX ?? 5;
         _weather.FogSpeedY = weatherZone?.NieblaSpeedY ?? 2;
+        // World-anchor the fog: negate camera offset so the pattern stays fixed
+        // to tiles instead of sliding with the viewport when panning.
+        _weather.FogWorldOffsetPx = State != null ? -State.CameraOffset : Vector2.Zero;
         _weather.Update((float)delta, Size);
 
         // Keyboard panning (WASD / Arrow keys)

@@ -412,6 +412,13 @@ public partial class WeatherRenderer : Node2D
                 sm.SetShaderParameter("density", _state.ZoneFogDensity / 255f);
                 sm.SetShaderParameter("fog_color", new Color(_state.ZoneFogR / 255f, _state.ZoneFogG / 255f, _state.ZoneFogB / 255f, 1f));
                 sm.SetShaderParameter("speed", new Vector2(_state.ZoneFogSpeedX / 100f, _state.ZoneFogSpeedY / 100f));
+                // World-anchor the fog: pass the player's world pixel position so the
+                // noise pattern stays glued to tiles and doesn't slide with the viewport
+                // when the player walks. Normalized so 1 UV repeat = 512 world px.
+                const float TileSize = 32f;
+                float worldPxX = _state.UserPosX * TileSize + _state.ScreenOffsetX;
+                float worldPxY = _state.UserPosY * TileSize + _state.ScreenOffsetY;
+                sm.SetShaderParameter("world_offset", new Vector2(worldPxX, worldPxY) / 512f);
             }
         }
 
