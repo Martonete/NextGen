@@ -6,13 +6,19 @@ using Godot;
 namespace AOWorldEditor.Editor;
 
 /// <summary>
-/// World-space fog renderer using a single ColorRect covering the whole
+/// World-space fog renderer using a single Sprite2D covering the whole
 /// map and a per-tile mask texture to control where fog appears.
+///
+/// Using Sprite2D with a 1x1 TRANSPARENT texture so that if the shader
+/// ever fails to compile (driver/GPU issue), the fallback rendering is
+/// `texture * modulate` = invisible, instead of the opaque white fallback
+/// that ColorRect gives you. That used to cover the entire viewport in
+/// white and made the map impossible to see.
 ///
 /// - Zones with Niebla=true mark their tile rect as "has fog"
 /// - Painted fog tiles (MapData.PaintedFogTiles) also mark their tile
-/// - Tiles with content on Layer 2/3/4 are SUBTRACTED from the mask
-///   so objects like trees/buildings poke through the fog cleanly
+/// - Tiles with content on Layer 2/3/4 are SUBTRACTED from the mask so
+///   objects like trees/buildings poke through the fog cleanly
 /// - A `player_world_pos` uniform makes the fog fade locally around the
 ///   character, giving a smoke-breaking effect as the player walks through
 ///
@@ -25,9 +31,10 @@ public class ZoneFogRenderer
     private const int TileSize = 32;
 
     private Node2D? _worldLayer;
-    private ColorRect? _fogRect;
+    private Sprite2D? _fogSprite;
     private Shader? _shader;
     private NoiseTexture2D? _noiseTexture;
+    private ImageTexture? _canvasTexture; // 1x1 transparent, used as the sprite's "canvas"
 
     // Mask state
     private Image? _maskImage;
@@ -54,19 +61,27 @@ public class ZoneFogRenderer
             Seamless = true,
         };
 
+        // 1x1 transparent canvas: if the shader ever fails to compile, the
+        // Sprite2D fallback is `canvasTexture * modulate` = invisible.
+        var canvasImg = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
+        canvasImg.SetPixel(0, 0, new Color(0, 0, 0, 0));
+        _canvasTexture = ImageTexture.CreateFromImage(canvasImg);
+
         _worldLayer = new Node2D { Name = "ZoneFogWorldLayer" };
         parent.AddChild(_worldLayer);
 
         var mat = new ShaderMaterial { Shader = _shader };
         mat.SetShaderParameter("noise_texture", _noiseTexture);
 
-        _fogRect = new ColorRect
+        _fogSprite = new Sprite2D
         {
-            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Texture = _canvasTexture,
+            Centered = false,
             Material = mat,
             Visible = false,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
         };
-        _worldLayer.AddChild(_fogRect);
+        _worldLayer.AddChild(_fogSprite);
     }
 
     /// <summary>Mark the tile mask as stale. Call after any map edit that
@@ -84,14 +99,8 @@ public class ZoneFogRenderer
         MapData? map,
         Vector2 playerWorldPx)
     {
-        if (_worldLayer == null || _fogRect == null || _shader == null) return;
-        // TEMP DEBUG: hard-disable the fog rect to prove whether it's the
-        // source of the white screen. If user reports the map is visible
-        // again, the fog rect (shader or ColorRect fallback) is the problem.
-        _fogRect.Visible = false;
-        return;
-        #pragma warning disable CS0162 // Unreachable code
-        if (map == null) { _fogRect.Visible = false; return; }
+        if (_worldLayer == null || _fogSprite == null || _shader == null) return;
+        if (map == null) { _fogSprite.Visible = false; return; }
 
         _worldLayer.Position = cameraOffset;
         _worldLayer.Scale = new Vector2(zoom, zoom);
@@ -105,7 +114,7 @@ public class ZoneFogRenderer
         }
         if (!hasPaintedFog && !hasZoneFog)
         {
-            _fogRect.Visible = false;
+            _fogSprite.Visible = false;
             return;
         }
 
@@ -116,18 +125,19 @@ public class ZoneFogRenderer
             _maskDirty = false;
         }
 
-        // Cover the whole map — one rect, world coordinates
+        // Sprite2D with 1x1 texture scaled to cover the whole map in world px.
+        // The fragment shader gets UV in [0, 1] across this quad regardless of
+        // the texture size, which is what we want for computing world_px from UV.
         float worldW = map.Width * TileSize;
         float worldH = map.Height * TileSize;
-        _fogRect.Position = Vector2.Zero;
-        _fogRect.Size = new Vector2(worldW, worldH);
-        _fogRect.Visible = true;
+        _fogSprite.Position = Vector2.Zero;
+        _fogSprite.Scale = new Vector2(worldW, worldH);
+        _fogSprite.Visible = true;
 
-        if (_fogRect.Material is ShaderMaterial sm)
+        if (_fogSprite.Material is ShaderMaterial sm)
         {
             // Global style — use map's painted-fog settings, or the first zone
-            // with niebla as fallback. Per-zone colors would need a separate
-            // color mask texture; keep it simple for now.
+            // with niebla as fallback.
             int density = map.PaintedFogDensity;
             int r = map.PaintedFogR, g = map.PaintedFogG, b = map.PaintedFogB;
             int sx = map.PaintedFogSpeedX, sy = map.PaintedFogSpeedY;
@@ -158,7 +168,6 @@ public class ZoneFogRenderer
             sm.SetShaderParameter("player_break_radius", 144f);
             sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
         }
-        #pragma warning restore CS0162
     }
 
     /// <summary>Build the R8 mask image: white for tiles that should show fog,
@@ -219,12 +228,13 @@ public class ZoneFogRenderer
 
     public void Cleanup()
     {
-        if (_fogRect != null && GodotObject.IsInstanceValid(_fogRect)) _fogRect.QueueFree();
-        _fogRect = null;
+        if (_fogSprite != null && GodotObject.IsInstanceValid(_fogSprite)) _fogSprite.QueueFree();
+        _fogSprite = null;
         if (_worldLayer != null && GodotObject.IsInstanceValid(_worldLayer)) _worldLayer.QueueFree();
         _worldLayer = null;
         _maskImage = null;
         _maskTexture = null;
+        _canvasTexture = null;
         _shader = null;
         _noiseTexture = null;
     }
