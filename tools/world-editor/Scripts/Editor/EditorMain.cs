@@ -454,6 +454,9 @@ public partial class EditorMain : Control
         _viewport.OnPendingCancel += CancelPendingPlacement;
         _viewport.OnSelectionCompleted += OnSelectionCompleted;
         _viewport.OnLightEditRequested += OnLightEditRequested;
+        // Live-refresh the humo layers sidebar whenever the user paints a fog
+        // tile so the 'N tiles' count in each row updates in real time.
+        _viewport.OnFogPainted += () => _humoLayersPanel?.Rebuild();
         AddChild(_viewport);
 
         // Opaque header background — covers viewport overflow in toolbar/navbar area

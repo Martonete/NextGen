@@ -2324,6 +2324,10 @@ public partial class MapViewport : Control
         QueueRedraw();
     }
 
+    /// <summary>Fires after any fog paint/erase so external panels (like the
+    /// Humo layers sidebar) can refresh their tile-count labels in real time.</summary>
+    public System.Action? OnFogPainted;
+
     /// <summary>Paint a fog tile — adds it to the currently active layer
     /// (auto-creating one from the default style if none exists).</summary>
     private void PaintFogAt(int x, int y)
@@ -2344,7 +2348,10 @@ public partial class MapViewport : Control
 
         var layer = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
         if (layer.Tiles.Add(new Godot.Vector2I(x, y)))
+        {
             _zoneFog.MarkDirty();
+            OnFogPainted?.Invoke();
+        }
         QueueRedraw();
     }
 
@@ -2359,7 +2366,11 @@ public partial class MapViewport : Control
         {
             if (layer.Tiles.Remove(tile)) removed = true;
         }
-        if (removed) _zoneFog.MarkDirty();
+        if (removed)
+        {
+            _zoneFog.MarkDirty();
+            OnFogPainted?.Invoke();
+        }
         QueueRedraw();
     }
 
