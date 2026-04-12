@@ -48,7 +48,9 @@ uniform float normal_strength = 0.6; // 0 = flat (no normal effect), 1 = full
 uniform vec2  character_pos = vec2(-1.0, -1.0);
 uniform float character_half = 10.0;
 
-const int RAY_STEPS = 16;
+// More steps = smoother shadow edges. 48 is high quality for an editor.
+// Each step samples the occlusion mask along the ray from pixel to light.
+const int RAY_STEPS = 48;
 
 // Estimate surface normal from the occlusion mask gradient (Sobel filter).
 // Returns a vec3 normal where (0, 0, 1) = flat facing camera.
@@ -133,31 +135,25 @@ void fragment() {
         vec3  col  = light_colors[i].rgb;
         float dist = distance(world_px, L.xy);
         float r    = L.z;
-        if (dist > r) continue;
+        // Allow 30% beyond nominal radius for the Gaussian tail glow.
+        // At 1.3× radius, exp(-(1.3)²×3) ≈ 0.6% — barely visible but
+        // prevents a hard cut-off at the edge.
+        if (dist > r * 1.3) continue;
 
-        // Smooth Hermite falloff: bright center, gradual soft edge.
+        // Gaussian falloff: exp(-t²×k). Unlike smoothstep, this NEVER has
+        // a visible hard edge — it fades out gradually toward infinity.
+        // k=3.0 means at t=1.0 (nominal radius), intensity is ~5% of max.
+        // The light extends slightly past the nominal radius as a soft glow.
         float t = dist / r;
-        float falloff = smoothstep(1.0, 0.0, t);
+        float falloff = exp(-t * t * 3.0);
 
-        // With multiply blending, output is clamped to [0,1] naturally —
-        // over-energized lights just push the lit area closer to full
-        // scene preservation, never wash-out. No pre-scaling needed.
-        // Slider: 0.3=candle, 0.8=torch, 1.5=campfire, 3=beacon.
         float energy = L.w * light_energy_mults[i];
 
         // Shadow raycast — checks for occluders BETWEEN this pixel
         // and the light (skipping the first 40px to avoid self-shadow).
         if (is_occluded(world_px, L.xy)) continue;
 
-        // Normal-based shading for 2.5D relief. Edges of sprites get
-        // angled normals from the Sobel filter, creating directional
-        // lighting (bright on light-facing side, dim on the back).
-        // Flat ground pixels have normal ≈ (0,0,1) → ndotl ≈ 1.0.
-        vec3 normal = estimate_normal(world_px);
-        vec3 light_dir = normalize(vec3(L.xy - world_px, 80.0));
-        float ndotl = max(dot(normal, light_dir), 0.25);
-
-        light_accum += col * falloff * energy * ndotl;
+        light_accum += col * falloff * energy;
     }
 
     // Final output: ambient + accumulated light, clamped to [0, 1].
