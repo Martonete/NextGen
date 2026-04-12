@@ -25,8 +25,11 @@ uniform vec2 rect_world_origin = vec2(0.0, 0.0);
 uniform vec2 rect_world_size  = vec2(3200.0, 3200.0);
 
 // Ambient color — the "darkness" that unlit areas fall to.
-// (0.05, 0.05, 0.08) = dark blue night.  (1.0, 1.0, 1.0) = full daylight (no effect).
-uniform vec3 ambient = vec3(0.08, 0.06, 0.12);
+// With multiply blending, scene × ambient = final unlit color.
+// (0.3, 0.3, 0.4) = visible night (can still see terrain shapes).
+// (0.08, 0.06, 0.12) = near-pitch-black night.
+// (1.0, 1.0, 1.0) = full daylight (no darkening).
+uniform vec3 ambient = vec3(0.3, 0.3, 0.4);
 
 // Up to 32 lights. Each vec4 = (worldX, worldY, radiusWorldPx, energy).
 uniform vec4 lights[32];
@@ -87,12 +90,18 @@ void fragment() {
         float r    = L.z;
         if (dist > r) continue;
 
-        // Smooth Hermite falloff
+        // Smooth falloff: linear fade with soft edge via smoothstep.
+        // NOT squared — squaring made the light too dim and concentrated.
+        // smoothstep alone gives a natural cubic S-curve:
+        //   center (t=0) → 1.0, edge (t=1) → 0.0, with gentle transitions.
         float t = dist / r;
         float falloff = smoothstep(1.0, 0.0, t);
-        // Extra smoothing for softer edges
-        falloff *= falloff;
 
+        // Energy directly scales the light contribution. With multiply
+        // blending, the output is clamped to [0,1] so high energy just
+        // pushes the lit area closer to fully preserving the scene color.
+        // Typical values: 0.5=subtle candle, 1.0=torch, 2.0=campfire,
+        // 5.0=bright beacon.
         float energy = L.w * light_energy_mults[i];
 
         // Self-occluded pixels (inside an L3 sprite) don't receive light

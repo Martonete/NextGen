@@ -116,7 +116,7 @@ public class LightRenderer
         _ambient = new Vector3(c.R, c.G, c.B);
     }
 
-    private Vector3 _ambient = new(0.08f, 0.06f, 0.12f);
+    private Vector3 _ambient = new(0.3f, 0.3f, 0.4f);
 
     public void MarkDirty() => _maskDirty = true;
 
