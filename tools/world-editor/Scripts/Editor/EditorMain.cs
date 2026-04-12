@@ -51,6 +51,7 @@ public partial class EditorMain : Control
     private TilePropertiesPanel? _propsPanel;
     private HumoConfigPanel? _humoPanel;
     private HumoLayersPanel? _humoLayersPanel;
+    private LightToolPanel? _lightPanel;
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
@@ -308,11 +309,12 @@ public partial class EditorMain : Control
 
         var propToolDefs = new (EditorTool tool, string icon, string label)[]
         {
-            (EditorTool.Light,    "\u2600", "Luz"),
-            (EditorTool.Exit,     "\u2197", "Salida"),
-            (EditorTool.Trigger,  "\u26a1", "Trigger"),
-            (EditorTool.Particle, "\u2728", "Partículas"),
-            (EditorTool.Fog,      "\u2601", "Humo"),
+            (EditorTool.Light,         "\u2600", "Luz"),
+            (EditorTool.LightAdvanced, "\u263c", "Luz+"),
+            (EditorTool.Exit,          "\u2197", "Salida"),
+            (EditorTool.Trigger,       "\u26a1", "Trigger"),
+            (EditorTool.Particle,      "\u2728", "Partículas"),
+            (EditorTool.Fog,           "\u2601", "Humo"),
         };
         var extButtons = new Button[propToolDefs.Length];
         for (int i = 0; i < propToolDefs.Length; i++)
@@ -457,6 +459,18 @@ public partial class EditorMain : Control
         // Live-refresh the humo layers sidebar whenever the user paints a fog
         // tile so the 'N tiles' count in each row updates in real time.
         _viewport.OnFogPainted += () => _humoLayersPanel?.Rebuild();
+        // Advanced-light events: keep the LightToolPanel in sync with the map.
+        _viewport.OnAdvancedLightSelected += (idx) =>
+        {
+            if (_lightPanel == null) return;
+            _lightPanel.SelectedLightIndex = idx;
+            _lightPanel.RefreshFromMap();
+        };
+        _viewport.OnAdvancedLightsChanged += () =>
+        {
+            _lightPanel?.RefreshFromMap();
+            _state.MarkDirty();
+        };
         AddChild(_viewport);
 
         // Opaque header background — covers viewport overflow in toolbar/navbar area
@@ -652,6 +666,17 @@ public partial class EditorMain : Control
         _humoPanel = new HumoConfigPanel { Map = _map, Visible = false };
         _humoPanel.OnChanged += () => _viewport?.MarkFogMaskDirty();
         rightVBox.AddChild(_humoPanel);
+
+        // Advanced light editor panel — only visible when Luz+ tool is active.
+        // Edits MapLight entries in Map.LightData. Fires OnChanged when any
+        // slider mutates the active light so the viewport repaints.
+        _lightPanel = new LightToolPanel { Map = _map, Visible = false };
+        _lightPanel.OnChanged += () =>
+        {
+            _viewport?.MarkLightsDirty();
+            _state.MarkDirty();
+        };
+        rightVBox.AddChild(_lightPanel);
 
         _rightSidebar.AddChild(rightVBox);
         AddChild(_rightSidebar);
@@ -1829,13 +1854,14 @@ public partial class EditorMain : Control
 
         _map = MapLoader.Load(_state.MapDir, mapNumber);
         _map.LoadPaintedFog(_state.MapDir);
+        _map.LoadLightData(_state.MapDir);
         _state.CurrentMapNumber = mapNumber;
         _undo.Clear();
         _state.ResetDirty();
         // Load zone data for this map
         _mapZones = MapZoneData.Load(_state.MapDir, mapNumber);
         if (_zonePanel != null) { _zonePanel.ZoneData = _mapZones; _zonePanel.RebuildList(); }
-        if (_viewport != null) { _viewport.ZoneData = _mapZones; _viewport.MarkFogMaskDirty(); }
+        if (_viewport != null) { _viewport.ZoneData = _mapZones; _viewport.MarkFogMaskDirty(); _viewport.MarkLightsDirty(); }
         UpdateViewport();
         UpdateNavBar();
         int zoneCount = _mapZones?.Zones.Count ?? 0;
@@ -1855,6 +1881,7 @@ public partial class EditorMain : Control
                 _state.ScanAvailableMaps(dir);
                 _map = MapLoader.Load(dir, mapNum);
                 _map.LoadPaintedFog(dir);
+                _map.LoadLightData(dir);
                 _state.CurrentMapNumber = mapNum;
                 _undo.Clear();
                 _state.ResetDirty();
@@ -1902,6 +1929,14 @@ public partial class EditorMain : Control
             foreach (var l in _map.PaintedFogLayers) total += l.Tiles.Count;
             if (total > 0)
                 GD.Print($"[Editor] Saved {_map.PaintedFogLayers.Count} humo layers ({total} tiles)");
+        }
+
+        // Save .aolight (advanced light data) alongside the map
+        if (_map.MapNumber > 0 && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+        {
+            _map.SaveLightData(_serverMapDir);
+            if (_map.LightData.Lights.Count > 0)
+                GD.Print($"[Editor] Saved {_map.LightData.Lights.Count} advanced lights");
         }
 
         _state.ResetDirty();
@@ -2870,6 +2905,13 @@ public partial class EditorMain : Control
             _humoLayersPanel.Map = _map;
             if (tool == EditorTool.Fog) _humoLayersPanel.Rebuild();
         }
+        // Show the advanced-light panel on the right only while Luz+ tool is active
+        if (_lightPanel != null)
+        {
+            _lightPanel.Map = _map;
+            _lightPanel.Visible = tool == EditorTool.LightAdvanced;
+            if (_lightPanel.Visible) _lightPanel.RefreshFromMap();
+        }
     }
 
     private void SyncLayerTabs()
@@ -3009,6 +3051,12 @@ public partial class EditorMain : Control
         {
             _humoLayersPanel.Map = _map;
             _humoLayersPanel.Rebuild();
+        }
+        if (_lightPanel != null)
+        {
+            _lightPanel.Map = _map;
+            _lightPanel.SelectedLightIndex = -1;
+            _lightPanel.RefreshFromMap();
         }
         if (_particles != null && _map != null)
         {

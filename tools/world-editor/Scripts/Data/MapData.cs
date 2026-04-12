@@ -76,6 +76,10 @@ public class MapData
     // oscillation offset so the pattern "floats in place" without drift.
     public bool FogFreeSmoke = false;
 
+    // ── Advanced lights (new system, separate from per-tile LightRange) ──
+    // Loaded from / saved to MapaN.aolight. Stays empty for legacy maps.
+    public MapLightData LightData = new();
+
     public MapData(int width = 100, int height = 100)
     {
         Width = width;
@@ -216,5 +220,26 @@ public class MapData
 
         if (PaintedFogLayers.Count > 0)
             ActiveFogLayerIndex = 0;
+    }
+
+    /// <summary>Save advanced-light data to `Mapa{N}.aolight`. Legacy
+    /// per-tile lights (LightRange/R/G/B in MapTile) are unaffected — they
+    /// continue to live in the .aomap file as before.</summary>
+    public void SaveLightData(string dir)
+    {
+        if (string.IsNullOrEmpty(dir) || MapNumber <= 0) return;
+        LightData.Save(dir, MapNumber);
+    }
+
+    /// <summary>Load advanced-light data from `Mapa{N}.aolight` if it exists.
+    /// Missing file → empty LightData (legacy maps show no advanced lights).</summary>
+    public void LoadLightData(string dir)
+    {
+        if (string.IsNullOrEmpty(dir) || MapNumber <= 0)
+        {
+            LightData = new MapLightData();
+            return;
+        }
+        LightData = MapLightData.Load(dir, MapNumber);
     }
 }

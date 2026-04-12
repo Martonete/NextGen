@@ -272,7 +272,9 @@ public enum EditorTool
     Fill,     // Flood fill with texture
     Eyedrop,  // Sample GRH from tile
     Block,    // Toggle blocked flag
-    Light,    // Place/edit light source (opens properties)
+    Light,    // Legacy per-tile light: writes to MapTile.LightRange/R/G/B
+    LightAdvanced, // New Godot-node based light: MapLight in MapData.LightData
+
     Exit,     // Place/edit tile exit (opens properties)
     Npc,      // Place NPC (opens properties)
     Object,   // Place Object (opens properties)

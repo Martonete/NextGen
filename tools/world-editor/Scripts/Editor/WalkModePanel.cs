@@ -75,7 +75,11 @@ public partial class WalkModePanel : Control
     public int ViewHeight => _viewHeight;
 
     /// <summary>Force CPU lighting recalculation (call after editing lights/zones in the main editor).</summary>
-    public void InvalidateLighting() => _cpuLightsDirty = true;
+    public void InvalidateLighting()
+    {
+        _cpuLightsDirty = true;
+        _lightRenderer.MarkDirty();
+    }
 
     // Movement
     private const float PixelsPerSecond = 200f; // VB6 exact: ScrollPixels=8 per 40ms tick = 200px/s
@@ -108,6 +112,7 @@ public partial class WalkModePanel : Control
     // ── Weather FX ──
     private readonly WeatherFx _weather = new();
     private readonly ZoneFogRenderer _zoneFog = new();
+    private readonly LightRenderer _lightRenderer = new();
 
     // ── Particle overlay (additive-blend child CanvasItem for correct particle glow) ──
     private WalkParticleOverlay? _particleOverlay;
@@ -129,6 +134,7 @@ public partial class WalkModePanel : Control
         _particleOverlay = particleOverlay;
 
         _zoneFog.AttachTo(this);
+        _lightRenderer.AttachTo(this);
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
@@ -256,6 +262,7 @@ public partial class WalkModePanel : Control
                 (CharX - _halfTilesX - 1) * 32f - _moveOffsetX,
                 (CharY - _halfTilesY - 1) * 32f - _moveOffsetY);
             _zoneFog.Update(Size, worldOrigin, Size, zoneList, Map, playerWorldPx);
+            _lightRenderer.Update(Size, worldOrigin, Size, Map, (float)delta);
         }
 
         if (_isMoving)

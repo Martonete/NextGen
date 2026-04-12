@@ -21,6 +21,14 @@ public partial class MapViewport : Control
     public Action? OnPendingCancel;   // Fire when user clicks ✗ on pending placement
     public Action? OnSelectionCompleted; // Fire when a drag-selection is released
     public Action? OnLightEditRequested; // Fire when double-click on light with Light tool
+    /// <summary>Fires when user double-clicks on an advanced light with Luz+ tool.
+    /// Payload is the index into Map.LightData.Lights. EditorMain wires this to
+    /// LightToolPanel.SelectedLightIndex + RefreshFromMap().</summary>
+    public Action<int>? OnAdvancedLightSelected;
+    /// <summary>Fires whenever Map.LightData.Lights is mutated by a click
+    /// (place / delete). EditorMain wires this to LightToolPanel.RefreshFromMap
+    /// + viewport dirty mark.</summary>
+    public Action? OnAdvancedLightsChanged;
     public int[]? ObjGrhs;
     public int[]? NpcBodies;
     public int[]? NpcHeads;
@@ -92,6 +100,11 @@ public partial class MapViewport : Control
     // World-space per-zone fog shader — one ColorRect per zone with niebla,
     // positioned at the zone's world rect and transformed by the camera.
     private readonly ZoneFogRenderer _zoneFog = new();
+    // Advanced-light renderer — uses Godot's native PointLight2D /
+    // DirectionalLight2D + LightOccluder2D with a CanvasModulate for
+    // ambient darkness. Consumes Map.LightData.Lights and generates
+    // occluders from L2/L3 tile data.
+    private readonly LightRenderer _lightRenderer = new();
 
     public override void _Ready()
     {
@@ -102,6 +115,7 @@ public partial class MapViewport : Control
         AddChild(_particleOverlay);
 
         _zoneFog.AttachTo(this);
+        _lightRenderer.AttachTo(this);
     }
 
     /// <summary>Request a CPU per-tile lighting rebuild on the next draw.</summary>
@@ -213,6 +227,24 @@ public partial class MapViewport : Control
             var worldOrigin = -State.CameraOffset / z;
             var worldSize = Size / z;
             _zoneFog.Update(Size, worldOrigin, worldSize, zones, Map, playerWorldPx);
+        }
+
+        // Advanced lights: same camera transform but gated on State.ShowLights,
+        // NOT State.ShowFog. The two systems are independent — hiding the fog
+        // overlay should not also hide the lights.
+        if (State != null && State.ShowLights)
+        {
+            float z = Mathf.Max(0.01f, State.Zoom);
+            var worldOrigin = -State.CameraOffset / z;
+            var worldSize = Size / z;
+            _lightRenderer.Update(Size, worldOrigin, worldSize, Map, (float)delta);
+        }
+        else
+        {
+            // When lights are hidden, still tick the renderer once with a
+            // null-equivalent pass so its CanvasModulate hides itself via the
+            // visibility gate. Simpler: just hide the ambient node directly.
+            _lightRenderer.SetVisible(false);
         }
 
         // Keyboard panning (WASD / Arrow keys)
@@ -1594,6 +1626,12 @@ public partial class MapViewport : Control
                 EraseLightAt(tile.X, tile.Y);
                 return;
             }
+            if (mb.Pressed && State?.ActiveTool == EditorTool.LightAdvanced)
+            {
+                var tile = ScreenToTile(mb.Position);
+                EraseAdvancedLightAt(tile.X, tile.Y);
+                return;
+            }
             if (mb.Pressed && State?.ActiveTool == EditorTool.Particle)
             {
                 var tile = ScreenToTile(mb.Position);
@@ -1722,6 +1760,17 @@ public partial class MapViewport : Control
                         State.LightRange = t.LightRange;
                         OnLightEditRequested?.Invoke();
                         return;
+                    }
+                    // Double-click with Luz+ tool → select an existing MapLight
+                    // at this tile so the sidebar panel starts editing it.
+                    if (State.ActiveTool == EditorTool.LightAdvanced)
+                    {
+                        int idx = FindAdvancedLightAt(tile.X, tile.Y);
+                        if (idx >= 0)
+                        {
+                            OnAdvancedLightSelected?.Invoke(idx);
+                            return;
+                        }
                     }
                 }
 
@@ -1861,6 +1910,9 @@ public partial class MapViewport : Control
                         _paintedThisStroke.Clear();
                         Undo?.BeginBatch("Place Light");
                         PlaceLightAt(tile.X, tile.Y);
+                        break;
+                    case EditorTool.LightAdvanced:
+                        PlaceAdvancedLightAt(tile.X, tile.Y);
                         break;
                     case EditorTool.Particle:
                         _isPainting = true;
@@ -2378,6 +2430,68 @@ public partial class MapViewport : Control
     /// can invalidate the fog mask after modifying the map.</summary>
     public void MarkFogMaskDirty() => _zoneFog.MarkDirty();
 
+    /// <summary>Exposed so external systems can invalidate the advanced-light
+    /// pool + occluders after a MapLight list mutation or L2/L3 tile change.</summary>
+    public void MarkLightsDirty() => _lightRenderer.MarkDirty();
+
+    /// <summary>Place a new advanced MapLight at the clicked tile. Seeds the
+    /// new light from the last-placed style (if any) or from the default
+    /// LightAsset "Antorcha" preset. Selects it in the panel.</summary>
+    private void PlaceAdvancedLightAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        var last = Map.LightData.Lights.Count > 0
+            ? Map.LightData.Lights[^1]
+            : null;
+        var nl = new MapLight
+        {
+            X = x,
+            Y = y,
+            Type = last?.Type ?? LightType.Omni,
+            R = last?.R ?? 255,
+            G = last?.G ?? 180,
+            B = last?.B ?? 80,
+            Energy = last?.Energy ?? 1.2f,
+            Radius = last?.Radius ?? 5.0f,
+            DirectionDeg = last?.DirectionDeg ?? 0f,
+            ConeDegrees = last?.ConeDegrees ?? 60f,
+            FlickerPct = last?.FlickerPct ?? 35,
+            PulseHz = last?.PulseHz ?? 0f,
+            ShadowsEnabled = last?.ShadowsEnabled ?? true,
+            Name = last?.Name ?? "",
+        };
+        Map.LightData.Lights.Add(nl);
+        _lightRenderer.MarkDirty();
+        OnAdvancedLightsChanged?.Invoke();
+        OnAdvancedLightSelected?.Invoke(Map.LightData.Lights.Count - 1);
+        QueueRedraw();
+    }
+
+    /// <summary>Remove any advanced light at this tile (right-click erase).</summary>
+    private void EraseAdvancedLightAt(int x, int y)
+    {
+        if (Map == null) return;
+        int idx = FindAdvancedLightAt(x, y);
+        if (idx < 0) return;
+        Map.LightData.Lights.RemoveAt(idx);
+        _lightRenderer.MarkDirty();
+        OnAdvancedLightsChanged?.Invoke();
+        QueueRedraw();
+    }
+
+    /// <summary>Find the index of the first advanced light at tile (x,y),
+    /// or -1 if none. Used for double-click-to-select and erase.</summary>
+    private int FindAdvancedLightAt(int x, int y)
+    {
+        if (Map == null) return -1;
+        for (int i = 0; i < Map.LightData.Lights.Count; i++)
+        {
+            var l = Map.LightData.Lights[i];
+            if (l.X == x && l.Y == y) return i;
+        }
+        return -1;
+    }
+
     /// <summary>Erase the particle group from a tile (right-click).</summary>
     private void EraseParticleAt(int x, int y)
     {
@@ -2542,6 +2656,8 @@ public partial class MapViewport : Control
         }
         // Layer 2/3/4 content occludes fog — mask needs to rebuild
         if (layer >= 2) _zoneFog.MarkDirty();
+        // Layer 2/3 also casts shadows for advanced lights → rebuild occluders
+        if (layer == 2 || layer == 3) _lightRenderer.MarkDirty();
     }
 
     private int GetLayerGrh(ref MapTile tile, int layer)
