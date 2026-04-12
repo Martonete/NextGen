@@ -127,15 +127,29 @@ float shadow_factor(vec2 from_px, vec2 light_px) {
     float jitter = pixel_hash(from_px * 0.1) * 0.5;
     float step_size = (end_t - start_t) / float(RAY_STEPS);
 
+    // Perpendicular to the ray direction, for PCF-style shadow softening.
+    vec2 perp = vec2(-dir.y, dir.x) / len;
+
     for (int i = 0; i < RAY_STEPS; i++) {
         float t = start_t + (float(i) + jitter) * step_size;
         vec2 p = from_px + dir * t;
-        if (sample_occlusion(p) > 0.5) {
-            // Distance from pixel to occluder in world-px.
+
+        // 3-tap PCF: center + 2 perpendicular offsets. Averaging the 3
+        // samples gives softer, more natural shadow edges instead of
+        // the hard binary cut a single sample would produce.
+        float s0 = sample_occlusion(p);
+        float s1 = sample_occlusion(p + perp * 2.0);
+        float s2 = sample_occlusion(p - perp * 2.0);
+        float avg = (s0 + s1 + s2) * 0.3333;
+
+        if (avg > 0.5) {
             float occluder_dist = t * len;
             // Sharp shadow at ≤1 tile, fading to none at 4 tiles.
             float strength = 1.0 - smoothstep(32.0, 128.0, occluder_dist);
-            return 1.0 - strength;
+            // The `avg` value also carries the partial coverage — use it
+            // to soften the shadow strength at the edge.
+            float coverage = smoothstep(0.4, 0.9, avg);
+            return 1.0 - strength * coverage;
         }
     }
     return 1.0;
@@ -158,9 +172,14 @@ void fragment() {
         float r    = L.z;
         if (dist > r * 1.3) continue;
 
-        // Gaussian falloff — no hard edge.
+        // Two-layer falloff for a more atmospheric, "glowing" look:
+        //   halo: wide soft gradient (exp × 3) = the main lit area
+        //   core: tight bright hot-spot (exp × 15) = warm glow at source
+        // Combined gives a bulb/candle feel instead of flat disc.
         float t = dist / r;
-        float falloff = exp(-t * t * 3.0);
+        float halo = exp(-t * t * 3.0);
+        float core = exp(-t * t * 15.0);
+        float falloff = halo + core * 0.4;
 
         float energy = L.w;
 
@@ -176,11 +195,10 @@ void fragment() {
         light_accum += col * falloff * energy * shadow;
     }
 
-    // Final output: ambient + accumulated light, clamped to [0, 1].
-    // Because we use blend_mul, this is MULTIPLIED with the scene:
-    //   lit pixel:   scene × (ambient + light ≈ 1.0) = scene (preserved)
-    //   unlit pixel: scene × ambient ≈ scene × 0.08 = very dark
-    //   shadow:      scene × ambient = dark (light blocked by occluder)
-    vec3 final_color = clamp(ambient + light_accum, 0.0, 1.0);
+    // Atmospheric ambient — slight warm tint (mix of the cool night color
+    // with a faint amber wash) breaks up the monolithic blue-purple.
+    vec3 warm_ambient = ambient + vec3(0.03, 0.01, -0.01);
+
+    vec3 final_color = clamp(warm_ambient + light_accum, 0.0, 1.0);
     COLOR = vec4(final_color, 1.0);
 }
