@@ -299,7 +299,7 @@ public class LightRenderer
                         // Opaque shadow color — without a CanvasModulate we
                         // can't rely on global darkness to show shadows,
                         // so the shadow pass itself must be visible.
-                        ShadowColor = new Color(0f, 0f, 0f, 0.85f),
+                        ShadowColor = new Color(0f, 0f, 0f, 0.5f),
                     };
                     _lightsRoot.AddChild(newDir);
                     _dirPool.Add(newDir);
@@ -322,7 +322,7 @@ public class LightRenderer
                         Visible = false,
                         BlendMode = Light2D.BlendModeEnum.Add,
                         ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
-                        ShadowColor = new Color(0f, 0f, 0f, 0.85f),
+                        ShadowColor = new Color(0f, 0f, 0f, 0.5f),
                         Texture = _lightGradient,
                     };
                     _lightsRoot.AddChild(newOmni);
@@ -551,19 +551,21 @@ public class LightRenderer
             return empty;
         }
 
-        // Alpha > 0.5 is the cutoff for "solid" pixels. Produces a tight
-        // contour without including the anti-aliased halo.
+        // Alpha > 0.25 is the cutoff for "solid" pixels — lower than the
+        // typical 0.5 so we catch faint edges on semi-transparent sprites
+        // (e.g. tree canopies with soft alpha).
         var bitmap = new Bitmap();
-        bitmap.CreateFromImageAlpha(region, 0.5f);
+        bitmap.CreateFromImageAlpha(region, 0.25f);
 
-        // Growing the mask by 1 pixel hides seams between adjacent opaque
-        // regions that would otherwise produce duplicate tiny polygons.
-        bitmap.GrowMask(1, new Rect2I(0, 0, w, h));
+        // NOTE: deliberately NOT calling GrowMask — growing the mask by
+        // 1 pixel tends to merge distinct sub-shapes into a single blobby
+        // outline, which makes the shadow look rectangular for sprites
+        // with multiple disconnected parts (sword piles, fence posts).
 
-        // OpaqueToPolygons returns each contour as a Godot Vector2[]. The
-        // second argument (epsilon) is the polygon simplification tolerance
-        // in pixels; 2.0 gives a good balance of accuracy vs vertex count.
-        var rawPolys = bitmap.OpaqueToPolygons(new Rect2I(0, 0, w, h), 2.0f);
+        // Lower epsilon = finer polygon contours. 1.0 gives a near-pixel
+        // match for typical 32–96 px sprites without exploding vertex
+        // counts on large sprites like buildings.
+        var rawPolys = bitmap.OpaqueToPolygons(new Rect2I(0, 0, w, h), 1.0f);
         if (rawPolys == null || rawPolys.Count == 0)
         { _polygonCache[grhIdx] = empty; return empty; }
 

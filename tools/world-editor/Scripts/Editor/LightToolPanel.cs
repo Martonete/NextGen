@@ -67,20 +67,16 @@ public partial class LightToolPanel : PanelContainer
         CustomMinimumSize = new Vector2(260, 0);
         AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(EditorTheme.BG_PANEL, 4, 8, 6, EditorTheme.BORDER, 1));
 
-        var scroll = new ScrollContainer
-        {
-            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            SizeFlagsVertical = SizeFlags.ExpandFill,
-        };
-        AddChild(scroll);
-
+        // Mirror HumoConfigPanel's layout exactly: direct VBoxContainer child
+        // of the PanelContainer, no ScrollContainer. A ScrollContainer with
+        // SizeFlagsVertical=ExpandFill collapses to zero height inside a
+        // PanelContainer that has no fixed height, hiding the whole panel.
         var vbox = new VBoxContainer
         {
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
         vbox.AddThemeConstantOverride("separation", 6);
-        scroll.AddChild(vbox);
+        AddChild(vbox);
 
         // ── Heading ───────────────────────────────────────────────────
         vbox.AddChild(EditorTheme.Heading("Luz avanzada"));
