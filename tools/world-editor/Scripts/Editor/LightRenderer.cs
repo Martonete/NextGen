@@ -23,12 +23,14 @@ public class LightRenderer
     private const int TileSize = 32;
 
     /// <summary>Mask resolution: each tile produces this many mask pixels per
-    /// axis. 8 means the mask is (mapW*8 × mapH*8) — good accuracy with
-    /// manageable memory. For a 100×100 map: 800×800 = 640KB L8.</summary>
-    private const int MaskPixelsPerTile = 8;
+    /// axis. 16 means the mask is (mapW*16 × mapH*16). For a 100×100 map:
+    /// 1600×1600 = 2.5MB L8 — reasonable, and gives sharp silhouettes on
+    /// tree canopies and other detailed sprites. Each mask pixel covers
+    /// 2×2 world pixels.</summary>
+    private const int MaskPixelsPerTile = 16;
 
-    /// <summary>Ratio of world pixels to mask pixels. With 8 mask-px per tile
-    /// and 32 world-px per tile, each mask pixel covers 4×4 world pixels.</summary>
+    /// <summary>Ratio of world pixels to mask pixels. With 16 mask-px per tile
+    /// and 32 world-px per tile, each mask pixel covers 2×2 world pixels.</summary>
     private const int MaskDownsample = TileSize / MaskPixelsPerTile;
 
     private Node? _parent;

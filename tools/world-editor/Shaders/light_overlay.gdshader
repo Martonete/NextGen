@@ -93,11 +93,17 @@ void fragment() {
         float r     = L.z; // radius in world px
         if (dist > r) continue;
 
-        // Quadratic falloff: bright center, soft edge.
+        // Smooth Hermite falloff: very soft center, gradual fade at edges.
+        // smoothstep(edge0, edge1, x) = clamped cubic Hermite that's 1
+        // at edge0 and 0 at edge1, with zero-derivative at both ends.
+        // This avoids the harsh bright blob from (1-t)^2.
         float t = dist / r;
-        float falloff = (1.0 - t) * (1.0 - t);
+        float falloff = smoothstep(1.0, 0.0, t);
 
-        float energy = L.w * light_energy_mults[i];
+        // Energy is scaled down so 1.0 = a subtle glow, not a searchlight.
+        // The user's energy slider (0-10) maps to visible effect as:
+        //   0.5 = faint candle, 1.0 = torch, 2.0 = campfire, 5.0 = bright
+        float energy = L.w * light_energy_mults[i] * 0.15;
 
         // If this pixel is itself blocked by an occluder, skip.
         if (self_occ > 0.4) continue;
@@ -108,8 +114,9 @@ void fragment() {
         accum += col * falloff * energy;
     }
 
-    // Output as additive overlay. Alpha controls how much the light
-    // adds to the underlying map. 0.9 cap prevents over-burn.
-    float alpha = clamp(length(accum), 0.0, 0.9);
+    // Output as additive overlay. Clamp alpha to prevent over-saturation
+    // while keeping the glow subtle and atmospheric.
+    float brightness = max(accum.r, max(accum.g, accum.b));
+    float alpha = clamp(brightness, 0.0, 0.6);
     COLOR = vec4(accum, alpha);
 }
