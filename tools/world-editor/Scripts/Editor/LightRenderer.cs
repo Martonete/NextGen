@@ -144,19 +144,25 @@ public class LightRenderer
         _lightsRoot = new Node2D { Name = "LightNodes" };
         parent.AddChild(_lightsRoot);
 
-        // Small square polygon (~20 px) for the character. Lives alongside
-        // tile occluders but is never freed during RebuildOccluders — its
-        // Position is updated per-frame from the caller-supplied character
-        // world coordinates.
+        // Character occluder: ~20 wide × 40 tall rectangle anchored at
+        // the FEET (bottom edge), mirroring how an AO character sprite is
+        // drawn — horizontally centered on the tile, extending upward
+        // from the bottom. Caller passes the feet world position; the
+        // polygon extends 40 px upward from there.
+        //
+        // TODO: swap this placeholder rectangle for the actual player
+        // body GRH's alpha-extracted polygon once the light system is
+        // rewritten with a custom shader. Today Light2D's shadow atlas
+        // limitations make fine-grained character silhouettes pointless.
         _characterPolygon = new OccluderPolygon2D
         {
             CullMode = OccluderPolygon2D.CullModeEnum.Disabled,
             Polygon = new Vector2[]
             {
-                new Vector2(-10, -10),
-                new Vector2(10, -10),
-                new Vector2(10, 10),
-                new Vector2(-10, 10),
+                new Vector2(-10, -40),
+                new Vector2(10, -40),
+                new Vector2(10, 0),
+                new Vector2(-10, 0),
             },
         };
         _characterOccluder = new LightOccluder2D
@@ -349,7 +355,14 @@ public class LightRenderer
                         // Opaque shadow color — without a CanvasModulate we
                         // can't rely on global darkness to show shadows,
                         // so the shadow pass itself must be visible.
-                        ShadowColor = new Color(0f, 0f, 0f, 0.25f),
+                        // TRANSPARENT SHADOW COLOR — Godot's Light2D shadow atlas paints
+// ShadowColor across the light's full square AABB regardless of the
+// gradient texture's circular alpha mask, producing hard rectangular
+// shadow blobs when many occluders are in range. Transparent
+// shadow color neuters the visual artifact. Proper pixel-perfect
+// shadows will require abandoning Light2D for a custom shader pass
+// (see the fog system for the pattern).
+ShadowColor = new Color(0f, 0f, 0f, 0f),
                     };
                     _lightsRoot.AddChild(newDir);
                     _dirPool.Add(newDir);
@@ -372,7 +385,14 @@ public class LightRenderer
                         Visible = false,
                         BlendMode = Light2D.BlendModeEnum.Add,
                         ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
-                        ShadowColor = new Color(0f, 0f, 0f, 0.25f),
+                        // TRANSPARENT SHADOW COLOR — Godot's Light2D shadow atlas paints
+// ShadowColor across the light's full square AABB regardless of the
+// gradient texture's circular alpha mask, producing hard rectangular
+// shadow blobs when many occluders are in range. Transparent
+// shadow color neuters the visual artifact. Proper pixel-perfect
+// shadows will require abandoning Light2D for a custom shader pass
+// (see the fog system for the pattern).
+ShadowColor = new Color(0f, 0f, 0f, 0f),
                         Texture = _lightGradient,
                     };
                     _lightsRoot.AddChild(newOmni);
