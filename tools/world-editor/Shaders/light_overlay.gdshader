@@ -24,7 +24,8 @@ uniform vec2 rect_world_size  = vec2(3200.0, 3200.0);
 // 1D shadow map atlas: each ROW is one light's shadow map.
 // Width = 720 (2 samples per degree × 360°), Height = 32 (max lights).
 // Value = normalized distance to nearest occluder (0.0 = at light, 1.0 = at max radius).
-uniform sampler2D shadow_atlas : filter_linear;
+// filter_nearest to prevent row bleeding between lights in the atlas.
+uniform sampler2D shadow_atlas : filter_nearest;
 uniform float shadow_atlas_width = 720.0;
 
 uniform vec3 ambient = vec3(0.4, 0.4, 0.5);

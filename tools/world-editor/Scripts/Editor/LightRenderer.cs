@@ -102,6 +102,14 @@ public class LightRenderer
         parent.AddChild(_sprite);
 
         _rng.Randomize();
+
+        // Create a default shadow atlas filled with 1.0 (no occluders) so
+        // the shader has a valid texture from the very first frame. Without
+        // this, the shader samples an uninitialized texture → 0.0 everywhere
+        // → everything is in shadow → no lights visible.
+        _shadowAtlasImage = Image.CreateEmpty(ShadowMapWidth, MaxLights, false, Image.Format.R8);
+        _shadowAtlasImage.Fill(new Color(1f, 1f, 1f, 1f));
+        _shadowAtlasTexture = ImageTexture.CreateFromImage(_shadowAtlasImage);
     }
 
     /// <summary>Inject graphics resources for mask generation. Call after
@@ -411,12 +419,15 @@ public class LightRenderer
             _shadowAtlasImage.GetWidth() != ShadowMapWidth ||
             _shadowAtlasImage.GetHeight() != MaxLights)
         {
-            _shadowAtlasImage = Image.CreateEmpty(ShadowMapWidth, MaxLights, false, Image.Format.Rf);
+            // R8 = 8-bit single channel, universally supported on all GPUs.
+            // Precision is 1/256 ≈ 0.4% which is more than enough for shadow
+            // distance comparison.
+            _shadowAtlasImage = Image.CreateEmpty(ShadowMapWidth, MaxLights, false, Image.Format.R8);
             _shadowAtlasTexture = null;
         }
 
         // Fill with 1.0 = no occluder (fully lit at all angles).
-        _shadowAtlasImage.Fill(new Color(1f, 0f, 0f, 1f));
+        _shadowAtlasImage.Fill(new Color(1f, 1f, 1f, 1f));
 
         int maskW = _maskImage.GetWidth();
         int maskH = _maskImage.GetHeight();
