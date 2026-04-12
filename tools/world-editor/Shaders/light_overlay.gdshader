@@ -123,12 +123,8 @@ bool is_occluded(vec2 from_px, vec2 light_px) {
 void fragment() {
     vec2 world_px = rect_world_origin + UV * rect_world_size;
 
-    // NOTE: no self-occlusion check here. Pixels ON a sprite's surface
-    // (rock, tree, etc.) CAN receive light — the light-facing side of
-    // the sprite should be illuminated. The raycast's start_t skip
-    // (40px) handles self-shadowing by ignoring the sprite's own mask
-    // near the start of the ray. Only DISTANT occluders between the
-    // pixel and the light actually block illumination.
+    // Check if THIS pixel is on an occluder surface (wall, tree, rock).
+    float self_mask = sample_occlusion(world_px);
 
     vec3 light_accum = vec3(0.0);
 
@@ -139,24 +135,27 @@ void fragment() {
         vec3  col  = light_colors[i].rgb;
         float dist = distance(world_px, L.xy);
         float r    = L.z;
-        // Allow 30% beyond nominal radius for the Gaussian tail glow.
-        // At 1.3× radius, exp(-(1.3)²×3) ≈ 0.6% — barely visible but
-        // prevents a hard cut-off at the edge.
         if (dist > r * 1.3) continue;
 
-        // Gaussian falloff: exp(-t²×k). Unlike smoothstep, this NEVER has
-        // a visible hard edge — it fades out gradually toward infinity.
-        // k=3.0 means at t=1.0 (nominal radius), intensity is ~5% of max.
-        // The light extends slightly past the nominal radius as a soft glow.
+        // Gaussian falloff — no hard edge.
         float t = dist / r;
         float falloff = exp(-t * t * 3.0);
 
-        // Energy already includes flicker/pulse (pre-multiplied on CPU).
         float energy = L.w;
 
-        // Shadow raycast — checks for occluders BETWEEN this pixel
-        // and the light (skipping the first 40px to avoid self-shadow).
-        if (is_occluded(world_px, L.xy)) continue;
+        // Shadow logic depends on whether this pixel is on an occluder:
+        //
+        // OCCLUDER PIXEL (wall/tree/rock — mask > 0.4):
+        //   Always receive light. A wall facing a light IS illuminated.
+        //   No raycast needed — the shadow falls on the GROUND behind
+        //   the wall, not on the wall itself.
+        //
+        // GROUND PIXEL (mask < 0.4):
+        //   Raycast toward the light. If an occluder is in the way,
+        //   this pixel is in shadow (the wall blocks the light).
+        if (self_mask < 0.4) {
+            if (is_occluded(world_px, L.xy)) continue;
+        }
 
         light_accum += col * falloff * energy;
     }
