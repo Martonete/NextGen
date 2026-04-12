@@ -108,9 +108,15 @@ public class LightRenderer
         if (_sprite != null) _sprite.Visible = visible;
     }
 
-    /// <summary>No-op placeholder — CanvasModulate was removed. Kept so
-    /// callers don't need churn when ambient-darkness is wired later.</summary>
-    public void SetAmbient(Color _) { }
+    /// <summary>Set the ambient darkness color. With multiply blending,
+    /// unlit pixels become scene × ambient. A dark value like (0.08, 0.06, 0.12)
+    /// gives a night-blue darkness. (1, 1, 1) = daylight (no darkening).</summary>
+    public void SetAmbient(Color c)
+    {
+        _ambient = new Vector3(c.R, c.G, c.B);
+    }
+
+    private Vector3 _ambient = new(0.08f, 0.06f, 0.12f);
 
     public void MarkDirty() => _maskDirty = true;
 
@@ -163,11 +169,12 @@ public class LightRenderer
         }
 
         // ── Sprite sizing (panel-sized, same trick as fog) ──
+        // Always visible when the tool is active — even with 0 lights the
+        // ambient darkening still applies (the multiply blend dims the scene
+        // to the ambient color everywhere).
         _sprite.Position = Vector2.Zero;
         _sprite.Scale = panelSize;
-        _sprite.Visible = map.LightData.Lights.Count > 0;
-
-        if (!_sprite.Visible) return;
+        _sprite.Visible = true;
 
         // ── Upload uniforms ──
         _material.SetShaderParameter("occlusion_mask", _maskTexture!);
@@ -175,6 +182,7 @@ public class LightRenderer
             new Vector2(map.Width * TileSize, map.Height * TileSize));
         _material.SetShaderParameter("rect_world_origin", worldOrigin);
         _material.SetShaderParameter("rect_world_size", worldSize);
+        _material.SetShaderParameter("ambient", _ambient);
 
         // Light array
         var lights = map.LightData.Lights;

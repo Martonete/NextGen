@@ -1,51 +1,50 @@
 shader_type canvas_item;
+render_mode blend_mul, unshaded;
 
-// Custom pixel-based light compositing that respects L3 sprite alpha.
+// Deferred-style 2D lightmap composited via MULTIPLY blending.
 //
-// Instead of Godot's built-in Light2D (whose shadow atlas paints a hard
-// rectangular dark block around lights), this shader raycasts each pixel
-// toward each light source through an occlusion mask built from the
-// actual L3 GRH sprite alphas. If ANY sample along the ray is opaque,
-// the light is blocked — giving pixel-accurate shadows that match the
-// visible graphic silhouettes exactly.
+// Output = ambient + sum(light contributions).
+// Because blend_mul multiplies the output with the scene:
+//   - vec3(1.0) = no change (fully lit)
+//   - vec3(0.0) = full darkness
+//   - ambient (e.g. 0.05, 0.03, 0.08) = dark night with a hint of blue
 //
-// Architecture mirrors fog_overlay.gdshader: one panel-sized Sprite2D
-// with this material, updated per-frame via uniforms for the camera
-// view mapping and light positions.
+// Lit pixels get ambient + warm light color → close to 1.0 → scene preserved.
+// Unlit pixels get only ambient → close to 0.0 → scene darkened.
+//
+// This is the same technique used by Terraria, Starbound, and the 2.5D
+// Argentum engine (deferred lighting, lights as textured quads, multiply
+// composite). The difference is we do per-pixel raycast shadows through
+// an occlusion mask built from L3 GRH sprite alphas.
+//
+// Reference: https://github.com/mattdesl/lwjgl-basics/wiki/2D-Pixel-Perfect-Shadows
 
 uniform sampler2D occlusion_mask : filter_linear;
-uniform vec2 map_pixel_size = vec2(3200.0, 3200.0); // map width/height in WORLD PIXELS
+uniform vec2 map_pixel_size = vec2(3200.0, 3200.0);
 uniform vec2 rect_world_origin = vec2(0.0, 0.0);
 uniform vec2 rect_world_size  = vec2(3200.0, 3200.0);
 
+// Ambient color — the "darkness" that unlit areas fall to.
+// (0.05, 0.05, 0.08) = dark blue night.  (1.0, 1.0, 1.0) = full daylight (no effect).
+uniform vec3 ambient = vec3(0.08, 0.06, 0.12);
+
 // Up to 32 lights. Each vec4 = (worldX, worldY, radiusWorldPx, energy).
 uniform vec4 lights[32];
-// Per-light color (rgb). Alpha unused.
 uniform vec4 light_colors[32];
 uniform int  num_lights = 0;
-
-// Flicker / pulse packed per light: x = current energy multiplier
-// (pre-computed on CPU each frame so the shader stays simple).
 uniform float light_energy_mults[32];
 
-// Dynamic character occluder — square at this world-pixel position.
-// x < 0 disables. half_size controls the square's half-width.
+// Dynamic character occluder.
 uniform vec2  character_pos = vec2(-1.0, -1.0);
 uniform float character_half = 10.0;
 
-// Number of steps for the shadow raycast. More = finer detail, slower.
-// 16 is a good balance for typical editor zoom levels.
 const int RAY_STEPS = 16;
 
-// Sample the occlusion mask at a world-pixel position. Returns > 0
-// when the pixel is blocked by an L3 sprite or character.
 float sample_occlusion(vec2 world_px) {
-    // Mask UV: world_px / total map pixel size.
     vec2 uv = world_px / map_pixel_size;
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
     float mask = texture(occlusion_mask, uv).r;
 
-    // Also check the dynamic character square.
     if (character_pos.x >= 0.0) {
         vec2 d = abs(world_px - character_pos);
         if (d.x < character_half && d.y < character_half * 2.0) {
@@ -55,15 +54,11 @@ float sample_occlusion(vec2 world_px) {
     return mask;
 }
 
-// Raycast from a pixel toward a light source through the mask.
-// Returns true if the ray is blocked (occluded).
 bool is_occluded(vec2 from_px, vec2 light_px) {
     vec2 dir = light_px - from_px;
     float len = length(dir);
-    if (len < 1.0) return false; // on top of light
+    if (len < 1.0) return false;
 
-    // Skip the first and last ~8 px of the ray so a pixel sitting right
-    // at the edge of an occluder doesn't self-shadow.
     float start_t = clamp(8.0 / len, 0.0, 0.4);
     float end_t   = clamp(1.0 - 8.0 / len, 0.6, 1.0);
 
@@ -78,45 +73,42 @@ bool is_occluded(vec2 from_px, vec2 light_px) {
 void fragment() {
     vec2 world_px = rect_world_origin + UV * rect_world_size;
 
-    // If THIS pixel is inside an occluder, it shouldn't receive light
-    // (the graphic itself stays unlit behind its own silhouette).
     float self_occ = sample_occlusion(world_px);
 
-    vec3 accum = vec3(0.0);
+    // Start with ambient — this is the base darkness for unlit areas.
+    vec3 light_accum = vec3(0.0);
 
     for (int i = 0; i < 32; i++) {
         if (i >= num_lights) break;
 
-        vec4  L     = lights[i];
-        vec3  col   = light_colors[i].rgb;
-        float dist  = distance(world_px, L.xy);
-        float r     = L.z; // radius in world px
+        vec4  L    = lights[i];
+        vec3  col  = light_colors[i].rgb;
+        float dist = distance(world_px, L.xy);
+        float r    = L.z;
         if (dist > r) continue;
 
-        // Smooth Hermite falloff: very soft center, gradual fade at edges.
-        // smoothstep(edge0, edge1, x) = clamped cubic Hermite that's 1
-        // at edge0 and 0 at edge1, with zero-derivative at both ends.
-        // This avoids the harsh bright blob from (1-t)^2.
+        // Smooth Hermite falloff
         float t = dist / r;
         float falloff = smoothstep(1.0, 0.0, t);
+        // Extra smoothing for softer edges
+        falloff *= falloff;
 
-        // Energy is scaled down so 1.0 = a subtle glow, not a searchlight.
-        // The user's energy slider (0-10) maps to visible effect as:
-        //   0.5 = faint candle, 1.0 = torch, 2.0 = campfire, 5.0 = bright
-        float energy = L.w * light_energy_mults[i] * 0.15;
+        float energy = L.w * light_energy_mults[i];
 
-        // If this pixel is itself blocked by an occluder, skip.
+        // Self-occluded pixels (inside an L3 sprite) don't receive light
         if (self_occ > 0.4) continue;
 
-        // Raycast toward the light — skip if occluded.
+        // Shadow raycast
         if (is_occluded(world_px, L.xy)) continue;
 
-        accum += col * falloff * energy;
+        light_accum += col * falloff * energy;
     }
 
-    // Output as additive overlay. Clamp alpha to prevent over-saturation
-    // while keeping the glow subtle and atmospheric.
-    float brightness = max(accum.r, max(accum.g, accum.b));
-    float alpha = clamp(brightness, 0.0, 0.6);
-    COLOR = vec4(accum, alpha);
+    // Final output: ambient + accumulated light, clamped to [0, 1].
+    // Because we use blend_mul, this is MULTIPLIED with the scene:
+    //   lit pixel:   scene × (ambient + light ≈ 1.0) = scene (preserved)
+    //   unlit pixel: scene × ambient ≈ scene × 0.08 = very dark
+    //   shadow:      scene × ambient = dark (light blocked by occluder)
+    vec3 final_color = clamp(ambient + light_accum, 0.0, 1.0);
+    COLOR = vec4(final_color, 1.0);
 }
