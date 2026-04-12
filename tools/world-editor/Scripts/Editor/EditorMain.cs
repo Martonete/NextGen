@@ -1710,6 +1710,9 @@ public partial class EditorMain : Control
         _viewport.NpcHeadOfsY = _npcHeadOfsY;
         _viewport.HeadGrhs = _headGrhs;
         _viewport.NpcDb = _npcDb;
+        // Let the LightRenderer rebuild its polygon cache against the
+        // (possibly freshly-loaded) GRH table + texture manager.
+        _viewport.SyncLightRendererGraphics();
     }
 
     #endregion

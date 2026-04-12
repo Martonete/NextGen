@@ -2434,6 +2434,15 @@ public partial class MapViewport : Control
     /// pool + occluders after a MapLight list mutation or L2/L3 tile change.</summary>
     public void MarkLightsDirty() => _lightRenderer.MarkDirty();
 
+    /// <summary>Forward the current GRH table + TextureManager to the
+    /// LightRenderer so it can compute pixel-accurate occluder polygons
+    /// from each Layer3 sprite's alpha mask. Called from EditorMain
+    /// whenever the graphics resources are (re)loaded.</summary>
+    public void SyncLightRendererGraphics()
+    {
+        _lightRenderer.SetGraphicsResources(Grhs, Textures);
+    }
+
     /// <summary>Place a new advanced MapLight at the clicked tile. Seeds the
     /// new light from the last-placed style (if any) or from the default
     /// LightAsset "Antorcha" preset. Selects it in the panel.</summary>

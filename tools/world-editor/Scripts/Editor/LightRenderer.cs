@@ -53,11 +53,26 @@ public class LightRenderer
     private readonly List<PointLight2D> _omniPool = new();
     private readonly List<DirectionalLight2D> _dirPool = new();
 
-    // Occluders: one 32x32 LightOccluder2D per blocked tile.
+    // Occluders: pool grows as needed. Each shadow-casting tile contributes
+    // 1+ occluders depending on how many polygons the GRH's alpha mask
+    // produced. A Blocked-only tile (no Layer3 graphic) uses the shared
+    // 32x32 square fallback.
     private readonly List<LightOccluder2D> _occluderPool = new();
 
-    // Shared 32x32 axis-aligned square polygon, reused by every occluder.
+    // Shared 32x32 axis-aligned square polygon, reused for Blocked-only tiles.
     private OccluderPolygon2D? _occluderSquare;
+
+    // Graphics resources — injected so we can read each GRH's source image
+    // and extract its alpha mask for pixel-accurate occluder shapes.
+    private GrhData[]? _grhs;
+    private TextureManager? _textures;
+
+    /// <summary>Polygon cache keyed by GRH index. Each entry is the array of
+    /// <see cref="OccluderPolygon2D"/> produced from the sprite's alpha
+    /// contour — reused across every tile that draws the same GRH. An empty
+    /// array means "no opaque pixels", which should never happen but is
+    /// cached so we don't re-scan an all-transparent sprite.</summary>
+    private readonly Dictionary<int, OccluderPolygon2D[]> _polygonCache = new();
 
     private bool _lightsDirty = true;
     private bool _occludersDirty = true;
@@ -121,6 +136,19 @@ public class LightRenderer
 
         _lightsRoot = new Node2D { Name = "LightNodes" };
         parent.AddChild(_lightsRoot);
+    }
+
+    /// <summary>Inject the graphics resources needed to compute pixel-
+    /// accurate occluder polygons from each Layer3 GRH's alpha mask.
+    /// Call after <see cref="AttachTo"/> and whenever the map's texture
+    /// pack is swapped. Passing null clears the cache and falls back to
+    /// 32x32 square occluders per tile.</summary>
+    public void SetGraphicsResources(GrhData[]? grhs, TextureManager? textures)
+    {
+        _grhs = grhs;
+        _textures = textures;
+        _polygonCache.Clear();
+        _occludersDirty = true;
     }
 
     /// <summary>Explicit show/hide hook for the caller. Hides both the
@@ -362,21 +390,25 @@ public class LightRenderer
     }
 
     /// <summary>
-    /// Generate one 32x32 axis-aligned square LightOccluder2D per tile that
-    /// casts a shadow: tiles with Layer3 content (trees, walls, furniture,
-    /// buildings) OR the <c>Blocked</c> movement flag (invisible walls,
-    /// water, cliffs). Layer2 is decoration (tile transitions, overlays)
-    /// and must NOT cast shadows — it would darken every grass seam on the
-    /// map. Layer4 (roofs) also never casts shadows because indoor lights
-    /// would be completely blocked from their own building.
+    /// Generate LightOccluder2D nodes for every shadow-casting tile.
     ///
-    /// Reuses pooled occluders and resizes the pool to match. Polygon
-    /// geometry is the shared 32x32 square — only Position differs between
-    /// occluders.
+    /// Shadow casters are tiles with Layer3 content (trees, walls,
+    /// furniture, buildings) OR the <c>Blocked</c> movement flag
+    /// (invisible walls, water, cliffs). Layer2 is decoration (tile
+    /// transitions, overlays) and must NOT cast shadows — it would
+    /// darken every grass seam on the map. Layer4 (roofs) is also
+    /// skipped because indoor lights would be completely blocked from
+    /// their own building.
     ///
-    /// V1 deliberately does not merge adjacent occluder islands or run
-    /// marching squares. Per-tile occluders are correct, simple, and scale
-    /// fine for typical map sizes (~1000-5000 shadow-casting tiles).
+    /// Occluder shape for Layer3 tiles is pixel-accurate: the polygon
+    /// is extracted from the GRH's alpha mask via
+    /// <see cref="BitMap.OpaqueToPolygons"/> and cached per GRH index.
+    /// The same polygon is reused for every tile that draws the same
+    /// graphic, so even maps with thousands of trees only pay the
+    /// mask-tracing cost once per unique sprite.
+    ///
+    /// Blocked-only tiles (no Layer3 graphic) fall back to the shared
+    /// 32x32 axis-aligned square polygon.
     /// </summary>
     private void RebuildOccluders(MapData map)
     {
@@ -395,32 +427,157 @@ public class LightRenderer
                 // Layer2 is decorative overlays, Layer4 is roofs.
                 if (tile.Layer3 == 0 && !tile.Blocked) continue;
 
-                // World-pixel top-left of this tile.
-                var pos = new Vector2((x - 1) * TileSize, (y - 1) * TileSize);
-
-                LightOccluder2D occ;
-                if (used < _occluderPool.Count)
+                if (tile.Layer3 != 0)
                 {
-                    occ = _occluderPool[used];
-                    occ.Visible = true;
-                }
-                else
-                {
-                    occ = new LightOccluder2D
+                    // Pixel-accurate occluder: resolve GRH → polygons → spawn
+                    // one LightOccluder2D per polygon at the graphic's actual
+                    // draw position (horizontally centered, bottom-anchored
+                    // on the tile — matches MapViewport.DrawTileGrh's
+                    // center:true branch).
+                    var polys = GetPolygonsForGrh(tile.Layer3);
+                    var grh = ResolveGrhFrame(tile.Layer3);
+                    if (polys.Length > 0 && grh != null)
                     {
-                        Occluder = _occluderSquare,
-                    };
-                    _occluderRoot.AddChild(occ);
-                    _occluderPool.Add(occ);
+                        // Same offset formula as MapViewport.DrawTileGrh
+                        // (center:true): horizontally centered on the tile,
+                        // bottom edge aligned with the tile's bottom.
+                        float drawX = (x - 1) * TileSize + (TileSize - grh.PixelWidth) / 2f;
+                        float drawY = (y - 1) * TileSize + (TileSize - grh.PixelHeight);
+                        var drawPos = new Vector2(drawX, drawY);
+
+                        for (int p = 0; p < polys.Length; p++)
+                        {
+                            var occ = AcquireOccluder(used++);
+                            occ.Occluder = polys[p];
+                            occ.Position = drawPos;
+                        }
+                        continue;
+                    }
+                    // Fall through to the 32x32 square fallback when the
+                    // mask couldn't be traced (missing texture, etc).
                 }
-                occ.Position = pos;
-                used++;
+
+                // 32x32 square fallback for Blocked-only tiles or GRHs
+                // whose alpha mask couldn't be extracted.
+                var fallbackOcc = AcquireOccluder(used++);
+                fallbackOcc.Occluder = _occluderSquare;
+                fallbackOcc.Position = new Vector2((x - 1) * TileSize, (y - 1) * TileSize);
             }
         }
 
         // Hide leftover slots from previous (larger) rebuilds.
         for (int i = used; i < _occluderPool.Count; i++)
             _occluderPool[i].Visible = false;
+    }
+
+    /// <summary>Get or create the occluder node at <paramref name="index"/>
+    /// in the pool. Visibility is forced on for newly-acquired slots.</summary>
+    private LightOccluder2D AcquireOccluder(int index)
+    {
+        while (_occluderPool.Count <= index)
+        {
+            var occ = new LightOccluder2D();
+            _occluderRoot!.AddChild(occ);
+            _occluderPool.Add(occ);
+        }
+        var node = _occluderPool[index];
+        node.Visible = true;
+        return node;
+    }
+
+    /// <summary>Resolve an animated GRH down to its first frame so we can
+    /// read a stable PixelWidth/Height/SX/SY. Static GRHs are returned
+    /// as-is. Returns <c>null</c> if the index is out of range or
+    /// <see cref="_grhs"/> hasn't been injected yet.</summary>
+    private GrhData? ResolveGrhFrame(int grhIdx)
+    {
+        if (_grhs == null || grhIdx <= 0 || grhIdx >= _grhs.Length)
+            return null;
+        var g = _grhs[grhIdx];
+        if (g.NumFrames > 1 && g.Frames != null && g.Frames.Length > 0)
+        {
+            int frame0 = g.Frames[0];
+            if (frame0 > 0 && frame0 < _grhs.Length)
+                return _grhs[frame0];
+        }
+        return g;
+    }
+
+    /// <summary>Extract one or more occluder polygons from a GRH's alpha
+    /// mask via <see cref="BitMap.OpaqueToPolygons"/>. Results are cached
+    /// per GRH index so every tile drawing the same sprite shares one
+    /// <see cref="OccluderPolygon2D"/> instance. Returns an empty array
+    /// when resources are unavailable or the sprite is fully transparent.
+    ///
+    /// Polygon coordinates are in the graphic's LOCAL space (0..PixelWidth,
+    /// 0..PixelHeight). The caller positions the occluder node at the
+    /// graphic's draw origin so the polygons end up in world space.
+    /// </summary>
+    private OccluderPolygon2D[] GetPolygonsForGrh(int grhIdx)
+    {
+        if (_polygonCache.TryGetValue(grhIdx, out var cached))
+            return cached;
+
+        var empty = System.Array.Empty<OccluderPolygon2D>();
+        if (_grhs == null || _textures == null) { _polygonCache[grhIdx] = empty; return empty; }
+        if (grhIdx <= 0 || grhIdx >= _grhs.Length) { _polygonCache[grhIdx] = empty; return empty; }
+
+        var grh = ResolveGrhFrame(grhIdx);
+        if (grh == null || grh.PixelWidth <= 0 || grh.PixelHeight <= 0 || grh.FileNum <= 0)
+        { _polygonCache[grhIdx] = empty; return empty; }
+
+        var srcImg = _textures.GetImageCached(grh.FileNum);
+        if (srcImg == null) { _polygonCache[grhIdx] = empty; return empty; }
+
+        // Bound the region to the loaded image so a bad SX/SY + width/height
+        // doesn't throw at Image.GetRegion().
+        int imgW = srcImg.GetWidth();
+        int imgH = srcImg.GetHeight();
+        int sx = Mathf.Clamp(grh.SX, 0, imgW);
+        int sy = Mathf.Clamp(grh.SY, 0, imgH);
+        int w = Mathf.Clamp(grh.PixelWidth, 1, imgW - sx);
+        int h = Mathf.Clamp(grh.PixelHeight, 1, imgH - sy);
+        if (w <= 0 || h <= 0) { _polygonCache[grhIdx] = empty; return empty; }
+
+        Image region;
+        try
+        {
+            region = srcImg.GetRegion(new Rect2I(sx, sy, w, h));
+        }
+        catch (System.Exception e)
+        {
+            GD.PushWarning($"[LightRenderer] GetRegion failed for grh {grhIdx}: {e.Message}");
+            _polygonCache[grhIdx] = empty;
+            return empty;
+        }
+
+        // Alpha > 0.5 is the cutoff for "solid" pixels. Produces a tight
+        // contour without including the anti-aliased halo.
+        var bitmap = new Bitmap();
+        bitmap.CreateFromImageAlpha(region, 0.5f);
+
+        // Growing the mask by 1 pixel hides seams between adjacent opaque
+        // regions that would otherwise produce duplicate tiny polygons.
+        bitmap.GrowMask(1, new Rect2I(0, 0, w, h));
+
+        // OpaqueToPolygons returns each contour as a Godot Vector2[]. The
+        // second argument (epsilon) is the polygon simplification tolerance
+        // in pixels; 2.0 gives a good balance of accuracy vs vertex count.
+        var rawPolys = bitmap.OpaqueToPolygons(new Rect2I(0, 0, w, h), 2.0f);
+        if (rawPolys == null || rawPolys.Count == 0)
+        { _polygonCache[grhIdx] = empty; return empty; }
+
+        var result = new OccluderPolygon2D[rawPolys.Count];
+        for (int i = 0; i < rawPolys.Count; i++)
+        {
+            result[i] = new OccluderPolygon2D
+            {
+                CullMode = OccluderPolygon2D.CullModeEnum.Disabled,
+                Polygon = rawPolys[i],
+            };
+        }
+        _polygonCache[grhIdx] = result;
+        return result;
     }
 
     private void HideAllLights()
@@ -458,6 +615,9 @@ public class LightRenderer
         _lightGradient = null;
         _occluderSquare = null;
         _parent = null;
+        _polygonCache.Clear();
+        _grhs = null;
+        _textures = null;
 
         _lightsDirty = true;
         _occludersDirty = true;
