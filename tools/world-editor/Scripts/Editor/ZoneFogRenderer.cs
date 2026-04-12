@@ -140,12 +140,14 @@ public class ZoneFogRenderer
         // Rebuild masks if dirty or map size changed
         if (_maskDirty || _maskW != map.Width || _maskH != map.Height)
         {
+            int nieblaCount = 0;
+            for (int i = 0; i < zones.Count; i++) if (zones[i].Niebla) nieblaCount++;
+            GD.Print($"[ZoneFogRenderer] Rebuilding — total_zones={zones.Count} niebla_zones={nieblaCount} painted_tiles={map.PaintedFogTiles.Count} density={map.PaintedFogDensity} color=({map.PaintedFogR},{map.PaintedFogG},{map.PaintedFogB})");
             if (hasPaintedFog) RebuildHumoMask(map);
             if (hasZoneFog) RebuildZoneMask(map, zones);
             _maskW = map.Width;
             _maskH = map.Height;
             _maskDirty = false;
-            GD.Print($"[ZoneFogRenderer] Masks rebuilt: humo={_humoMaskTexture != null}({map.PaintedFogTiles.Count} tiles) zone={_zoneMaskTexture != null}({(hasZoneFog ? "yes" : "no")})");
         }
 
         float worldW = map.Width * TileSize;

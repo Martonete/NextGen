@@ -2977,6 +2977,11 @@ public partial class EditorMain : Control
         }
         if (_propsPanel != null)
             _propsPanel.Map = _map;
+        if (_humoPanel != null)
+        {
+            _humoPanel.Map = _map;
+            _humoPanel.RefreshFromMap();
+        }
         if (_particles != null && _map != null)
         {
             _particles.BuildStreamsFromMap(_map);

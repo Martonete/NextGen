@@ -100,11 +100,16 @@ public partial class HumoConfigPanel : PanelContainer
 
     private void ApplyFromUi()
     {
-        if (Map == null) return;
+        if (Map == null)
+        {
+            GD.Print("[HumoConfigPanel] ApplyFromUi: Map is NULL — panel edit is lost!");
+            return;
+        }
         Map.PaintedFogDensity = (int)(_densitySpin?.Value ?? 160);
         Map.PaintedFogR = (int)(_rSpin?.Value ?? 128);
         Map.PaintedFogG = (int)(_gSpin?.Value ?? 140);
         Map.PaintedFogB = (int)(_bSpin?.Value ?? 160);
+        GD.Print($"[HumoConfigPanel] ApplyFromUi: density={Map.PaintedFogDensity} color=({Map.PaintedFogR},{Map.PaintedFogG},{Map.PaintedFogB})");
         UpdateColorPreview();
         OnChanged?.Invoke();
     }
