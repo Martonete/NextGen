@@ -85,6 +85,7 @@ public class ZoneFogRenderer
         if (_humoShader != null)
         {
             var humoMat = new ShaderMaterial { Shader = _humoShader };
+            humoMat.SetShaderParameter("noise_texture", _noiseTexture);
             _humoSprite = new Sprite2D
             {
                 Texture = _canvasTexture,
@@ -137,12 +138,14 @@ public class ZoneFogRenderer
         _worldLayer.Position = cameraOffset;
         _worldLayer.Scale = new Vector2(zoom, zoom);
 
-        // Determine which fog modes are active this frame
-        bool hasPaintedFog = map.PaintedFogTiles.Count > 0 && map.PaintedFogDensity > 0;
+        // Determine which fog modes are active this frame. Density requirement
+        // is dropped — if a zone has Niebla=true we render it even when
+        // NieblaDensity happens to be 0 (falls back to a default visible value).
+        bool hasPaintedFog = map.PaintedFogTiles.Count > 0;
         bool hasZoneFog = false;
         for (int i = 0; i < zones.Count; i++)
         {
-            if (zones[i].Niebla && zones[i].NieblaDensity > 0) { hasZoneFog = true; break; }
+            if (zones[i].Niebla) { hasZoneFog = true; break; }
         }
 
         // Rebuild both masks if dirty
@@ -168,13 +171,17 @@ public class ZoneFogRenderer
             _humoSprite.Visible = hasPaintedFog && _humoMaskTexture != null;
             if (_humoSprite.Visible && _humoSprite.Material is ShaderMaterial sm && _humoMaskTexture != null)
             {
+                int dens = map.PaintedFogDensity > 0 ? map.PaintedFogDensity : 160;
                 sm.SetShaderParameter("humo_mask", _humoMaskTexture);
                 sm.SetShaderParameter("map_tile_size", mapSize);
                 sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
                 sm.SetShaderParameter("rect_world_size", spriteScale);
-                sm.SetShaderParameter("humo_density", map.PaintedFogDensity / 255f);
+                sm.SetShaderParameter("humo_density", dens / 255f);
                 sm.SetShaderParameter("humo_color",
                     new Color(map.PaintedFogR / 255f, map.PaintedFogG / 255f, map.PaintedFogB / 255f, 1f));
+                sm.SetShaderParameter("humo_animated", map.PaintedFogAnimated ? 1.0f : 0.0f);
+                sm.SetShaderParameter("humo_speed",
+                    new Vector2(map.PaintedFogSpeedX / 100f, map.PaintedFogSpeedY / 100f));
             }
         }
 
@@ -186,16 +193,22 @@ public class ZoneFogRenderer
             _zoneSprite.Visible = hasZoneFog && _zoneMaskTexture != null;
             if (_zoneSprite.Visible && _zoneSprite.Material is ShaderMaterial sm && _zoneMaskTexture != null)
             {
-                // Use the first zone with niebla as the style source
+                // Use the first zone with niebla as the style source. Defaults
+                // (density=90, color=128/140/160, speed=5/2) kick in if the
+                // zone has Niebla=true but the fog params are 0 (e.g., older
+                // saved zones from before those fields existed).
                 int dens = 90, r = 128, g = 140, b = 160, sx = 5, sy = 2;
                 for (int i = 0; i < zones.Count; i++)
                 {
                     var z = zones[i];
-                    if (z.Niebla && z.NieblaDensity > 0)
+                    if (z.Niebla)
                     {
-                        dens = z.NieblaDensity;
-                        r = z.NieblaR; g = z.NieblaG; b = z.NieblaB;
-                        sx = z.NieblaSpeedX; sy = z.NieblaSpeedY;
+                        dens = z.NieblaDensity > 0 ? z.NieblaDensity : 90;
+                        r = z.NieblaR > 0 ? z.NieblaR : 128;
+                        g = z.NieblaG > 0 ? z.NieblaG : 140;
+                        b = z.NieblaB > 0 ? z.NieblaB : 160;
+                        sx = z.NieblaSpeedX;
+                        sy = z.NieblaSpeedY;
                         break;
                     }
                 }
@@ -206,9 +219,6 @@ public class ZoneFogRenderer
                 sm.SetShaderParameter("density", dens / 255f);
                 sm.SetShaderParameter("fog_color", new Color(r / 255f, g / 255f, b / 255f, 1f));
                 sm.SetShaderParameter("speed", new Vector2(sx / 100f, sy / 100f));
-                sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
-                sm.SetShaderParameter("player_world_pos", playerWorldPx);
-                sm.SetShaderParameter("player_break_radius", 144f);
             }
         }
     }
@@ -261,11 +271,12 @@ public class ZoneFogRenderer
         }
         _zoneMaskImage.Fill(Colors.Black);
 
-        // Zones with niebla → white inside their rect
+        // Zones with niebla → white inside their rect (density check dropped;
+        // any zone with Niebla=true is rendered using default density if needed)
         for (int i = 0; i < zones.Count; i++)
         {
             var z = zones[i];
-            if (!z.Niebla || z.NieblaDensity <= 0) continue;
+            if (!z.Niebla) continue;
             int x1 = Mathf.Max(1, z.X1), x2 = Mathf.Min(W, z.X2);
             int y1 = Mathf.Max(1, z.Y1), y2 = Mathf.Min(H, z.Y2);
             for (int y = y1; y <= y2; y++)

@@ -49,6 +49,7 @@ public partial class EditorMain : Control
     private MapViewport? _viewport;
     private Window? _propsWindow;
     private TilePropertiesPanel? _propsPanel;
+    private HumoConfigPanel? _humoPanel;
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
@@ -632,6 +633,11 @@ public partial class EditorMain : Control
         _rightTileSection.AddChild(_rightTileInfoLabel);
 
         rightVBox.AddChild(_rightTileSection);
+
+        // Humo (paint smoke) config panel — only visible when Humo tool is active
+        _humoPanel = new HumoConfigPanel { Map = _map, Visible = false };
+        _humoPanel.OnChanged += () => _viewport?.MarkFogMaskDirty();
+        rightVBox.AddChild(_humoPanel);
 
         _rightSidebar.AddChild(rightVBox);
         AddChild(_rightSidebar);
@@ -2834,6 +2840,13 @@ public partial class EditorMain : Control
         UpdateTriggerPanel();
         if (_sidebarTabs != null && tool == EditorTool.Particle)
             _sidebarTabs.CurrentTab = 3;
+        // Show the Humo config panel only while the Humo tool is active
+        if (_humoPanel != null)
+        {
+            _humoPanel.Map = _map;
+            _humoPanel.Visible = tool == EditorTool.Fog;
+            if (_humoPanel.Visible) _humoPanel.RefreshFromMap();
+        }
     }
 
     private void SyncLayerTabs()

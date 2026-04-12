@@ -66,12 +66,15 @@ public class MapData
     // Rendered as a soft world-space blob centered on that tile.
     public HashSet<Vector2I> PaintedFogTiles = new();
     // Shared style for painted fog (one set per map — users can tune once).
-    public int PaintedFogDensity = 90;
+    public int PaintedFogDensity = 160;
     public int PaintedFogR = 128;
     public int PaintedFogG = 140;
     public int PaintedFogB = 160;
     public int PaintedFogSpeedX = 5;
     public int PaintedFogSpeedY = 2;
+    // When true the humo shader runs its noise animation; when false the
+    // paint is the clean solid fill the user loved in step 1.
+    public bool PaintedFogAnimated = false;
     // Global map-level toggle: when true, fog uses domain-warped multi-directional
     // swirl ("humo libre" / free smoke) instead of the straight-line wind drift.
     public bool FogFreeSmoke = false;
@@ -121,6 +124,7 @@ public class MapData
         sb.AppendLine($"B={PaintedFogB}");
         sb.AppendLine($"SpeedX={PaintedFogSpeedX}");
         sb.AppendLine($"SpeedY={PaintedFogSpeedY}");
+        sb.AppendLine($"Animated={(PaintedFogAnimated ? 1 : 0)}");
         sb.AppendLine($"FreeSmoke={(FogFreeSmoke ? 1 : 0)}");
         foreach (var t in PaintedFogTiles)
             sb.AppendLine($"T={t.X},{t.Y}");
@@ -150,6 +154,7 @@ public class MapData
                 case "B": if (int.TryParse(val, out var b)) PaintedFogB = b; break;
                 case "SPEEDX": if (int.TryParse(val, out var sx)) PaintedFogSpeedX = sx; break;
                 case "SPEEDY": if (int.TryParse(val, out var sy)) PaintedFogSpeedY = sy; break;
+                case "ANIMATED": PaintedFogAnimated = val == "1" || val.ToLowerInvariant() == "true"; break;
                 case "FREESMOKE": FogFreeSmoke = val == "1" || val.ToLowerInvariant() == "true"; break;
                 case "T":
                     var parts = val.Split(',');
