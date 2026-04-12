@@ -106,8 +106,10 @@ bool is_occluded(vec2 from_px, vec2 light_px) {
     // entire sprite surface stays black even on the light-facing side.
     // 40px covers a typical 1-tile sprite; 2-tile sprites (64px) may
     // still self-shadow slightly at their center, which looks natural.
-    float skip_px = 40.0;
-    float start_t = clamp(skip_px / len, 0.0, 0.45);
+    // Skip just enough to avoid self-shadow (half a tile = 16 px).
+    // Larger values prevent nearby walls from being illuminated.
+    float skip_px = 16.0;
+    float start_t = clamp(skip_px / len, 0.0, 0.3);
     float end_t   = clamp(1.0 - 8.0 / len, 0.55, 1.0);
 
     for (int i = 0; i < RAY_STEPS; i++) {
