@@ -105,8 +105,16 @@ public class LightRenderer
             },
         };
 
-        _ambientNode = new CanvasModulate { Color = _ambientColor };
-        parent.AddChild(_ambientNode);
+        // NOTE: we deliberately do NOT add a CanvasModulate to the parent.
+        // CanvasModulate affects every CanvasItem on its CanvasLayer — in
+        // the editor the MapViewport shares the default canvas layer with
+        // the toolbar, sidebars, tabs, and status bar, so a CanvasModulate
+        // here would darken the ENTIRE editor UI, not just the map. Proper
+        // day/night would require either (a) wrapping the UI in a separate
+        // CanvasLayer, or (b) rendering the map inside a SubViewport.
+        // Until then the editor shows a bright map with additive light
+        // glows on top; shadow areas appear via the lights' ShadowColor.
+        _ambientNode = null;
 
         _occluderRoot = new Node2D { Name = "LightOccluders" };
         parent.AddChild(_occluderRoot);
@@ -115,17 +123,19 @@ public class LightRenderer
         parent.AddChild(_lightsRoot);
     }
 
-    /// <summary>Explicit show/hide hook for the caller. When hidden, the
-    /// CanvasModulate ambient is disabled so it can't darken sibling panels
-    /// on the same canvas layer, and the light/occluder roots are hidden.
-    /// Used by MapViewport when `State.ShowLights` is off.</summary>
+    /// <summary>Explicit show/hide hook for the caller. Hides both the
+    /// light and occluder roots. Used by MapViewport when
+    /// <c>State.ShowLights</c> is off.</summary>
     public void SetVisible(bool visible)
     {
-        if (_ambientNode != null) _ambientNode.Visible = visible;
         if (_lightsRoot != null) _lightsRoot.Visible = visible;
         if (_occluderRoot != null) _occluderRoot.Visible = visible;
     }
 
+    /// <summary>Placeholder for a future global ambient-darkness feature.
+    /// Currently a no-op because we don't use CanvasModulate in the editor
+    /// (it would darken the whole UI, not just the map). Kept on the API
+    /// so zone/map ambient wiring can be added without churn later.</summary>
     public void SetAmbient(Color ambient)
     {
         _ambientColor = ambient;
@@ -155,10 +165,11 @@ public class LightRenderer
 
         // Visibility gate: when the parent panel is hidden (e.g. walk mode
         // toggled off and its LightRenderer still alive), skip the whole
-        // update AND hide the CanvasModulate so it doesn't darken the
-        // sibling editor viewport on the same canvas layer.
+        // update so we don't waste work rebuilding occluders or stepping
+        // animations on unseen nodes.
         bool parentVisible = _parent is not CanvasItem ci || ci.Visible;
-        if (_ambientNode != null) _ambientNode.Visible = parentVisible;
+        _lightsRoot.Visible = parentVisible;
+        _occluderRoot.Visible = parentVisible;
         if (!parentVisible) return;
 
         if (map == null)
@@ -257,6 +268,10 @@ public class LightRenderer
                         Visible = false,
                         BlendMode = Light2D.BlendModeEnum.Add,
                         ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
+                        // Opaque shadow color — without a CanvasModulate we
+                        // can't rely on global darkness to show shadows,
+                        // so the shadow pass itself must be visible.
+                        ShadowColor = new Color(0f, 0f, 0f, 0.85f),
                     };
                     _lightsRoot.AddChild(newDir);
                     _dirPool.Add(newDir);
@@ -279,6 +294,7 @@ public class LightRenderer
                         Visible = false,
                         BlendMode = Light2D.BlendModeEnum.Add,
                         ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
+                        ShadowColor = new Color(0f, 0f, 0f, 0.85f),
                         Texture = _lightGradient,
                     };
                     _lightsRoot.AddChild(newOmni);
@@ -347,13 +363,20 @@ public class LightRenderer
 
     /// <summary>
     /// Generate one 32x32 axis-aligned square LightOccluder2D per tile that
-    /// has Layer2 or Layer3 content. Reuses pooled occluders and resizes the
-    /// pool to match. Polygon geometry is the shared 32x32 square — only
-    /// Position differs between occluders.
+    /// casts a shadow: tiles with Layer3 content (trees, walls, furniture,
+    /// buildings) OR the <c>Blocked</c> movement flag (invisible walls,
+    /// water, cliffs). Layer2 is decoration (tile transitions, overlays)
+    /// and must NOT cast shadows — it would darken every grass seam on the
+    /// map. Layer4 (roofs) also never casts shadows because indoor lights
+    /// would be completely blocked from their own building.
+    ///
+    /// Reuses pooled occluders and resizes the pool to match. Polygon
+    /// geometry is the shared 32x32 square — only Position differs between
+    /// occluders.
     ///
     /// V1 deliberately does not merge adjacent occluder islands or run
     /// marching squares. Per-tile occluders are correct, simple, and scale
-    /// fine for typical map sizes (~1000-5000 blocked tiles).
+    /// fine for typical map sizes (~1000-5000 shadow-casting tiles).
     /// </summary>
     private void RebuildOccluders(MapData map)
     {
@@ -368,7 +391,9 @@ public class LightRenderer
             for (int x = 1; x <= W; x++)
             {
                 ref var tile = ref map.Tiles[x, y];
-                if (tile.Layer2 == 0 && tile.Layer3 == 0) continue;
+                // Only Layer3 (objects) and Blocked flag cast shadows.
+                // Layer2 is decorative overlays, Layer4 is roofs.
+                if (tile.Layer3 == 0 && !tile.Blocked) continue;
 
                 // World-pixel top-left of this tile.
                 var pos = new Vector2((x - 1) * TileSize, (y - 1) * TileSize);
