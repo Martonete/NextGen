@@ -96,8 +96,15 @@ bool is_occluded(vec2 from_px, vec2 light_px) {
     float len = length(dir);
     if (len < 1.0) return false;
 
-    float start_t = clamp(8.0 / len, 0.0, 0.4);
-    float end_t   = clamp(1.0 - 8.0 / len, 0.6, 1.0);
+    // Skip the first ~40 world-px of the ray to prevent self-occlusion.
+    // A pixel sitting ON a 32-64px wide sprite needs to ignore its own
+    // sprite's mask when raycasting toward the light — otherwise the
+    // entire sprite surface stays black even on the light-facing side.
+    // 40px covers a typical 1-tile sprite; 2-tile sprites (64px) may
+    // still self-shadow slightly at their center, which looks natural.
+    float skip_px = 40.0;
+    float start_t = clamp(skip_px / len, 0.0, 0.45);
+    float end_t   = clamp(1.0 - 8.0 / len, 0.55, 1.0);
 
     for (int i = 0; i < RAY_STEPS; i++) {
         float t = start_t + (end_t - start_t) * (float(i) / float(RAY_STEPS - 1));
@@ -110,9 +117,13 @@ bool is_occluded(vec2 from_px, vec2 light_px) {
 void fragment() {
     vec2 world_px = rect_world_origin + UV * rect_world_size;
 
-    float self_occ = sample_occlusion(world_px);
+    // NOTE: no self-occlusion check here. Pixels ON a sprite's surface
+    // (rock, tree, etc.) CAN receive light — the light-facing side of
+    // the sprite should be illuminated. The raycast's start_t skip
+    // (40px) handles self-shadowing by ignoring the sprite's own mask
+    // near the start of the ray. Only DISTANT occluders between the
+    // pixel and the light actually block illumination.
 
-    // Start with ambient — this is the base darkness for unlit areas.
     vec3 light_accum = vec3(0.0);
 
     for (int i = 0; i < 32; i++) {
@@ -124,34 +135,23 @@ void fragment() {
         float r    = L.z;
         if (dist > r) continue;
 
-        // Smooth falloff: linear fade with soft edge via smoothstep.
-        // NOT squared — squaring made the light too dim and concentrated.
-        // smoothstep alone gives a natural cubic S-curve:
-        //   center (t=0) → 1.0, edge (t=1) → 0.0, with gentle transitions.
+        // Smooth Hermite falloff: bright center, gradual soft edge.
         float t = dist / r;
         float falloff = smoothstep(1.0, 0.0, t);
 
-        // Energy directly scales the light contribution. With multiply
-        // blending, the output is clamped to [0,1] so high energy just
-        // pushes the lit area closer to fully preserving the scene color.
-        // Typical values: 0.5=subtle candle, 1.0=torch, 2.0=campfire,
-        // 5.0=bright beacon.
         float energy = L.w * light_energy_mults[i];
 
-        // Self-occluded pixels (inside an L3 sprite) don't receive light
-        if (self_occ > 0.4) continue;
-
-        // Shadow raycast
+        // Shadow raycast — checks for occluders BETWEEN this pixel
+        // and the light (skipping the first 40px to avoid self-shadow).
         if (is_occluded(world_px, L.xy)) continue;
 
-        // Normal-based shading: dot(normal, lightDir) gives directional
-        // lighting so sprites show relief. Light coming from the left
-        // brightens the left side and darkens the right, for example.
-        // For pixels NOT on an occluder surface, the normal is (0,0,1)
-        // = flat = no directional bias (dot = lightDir.z ≈ 1.0).
+        // Normal-based shading for 2.5D relief. Edges of sprites get
+        // angled normals from the Sobel filter, creating directional
+        // lighting (bright on light-facing side, dim on the back).
+        // Flat ground pixels have normal ≈ (0,0,1) → ndotl ≈ 1.0.
         vec3 normal = estimate_normal(world_px);
-        vec3 light_dir = normalize(vec3(L.xy - world_px, 100.0));
-        float ndotl = max(dot(normal, light_dir), 0.2); // 0.2 min so even back-facing areas get some light
+        vec3 light_dir = normalize(vec3(L.xy - world_px, 80.0));
+        float ndotl = max(dot(normal, light_dir), 0.25);
 
         light_accum += col * falloff * energy * ndotl;
     }
