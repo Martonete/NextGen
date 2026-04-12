@@ -83,6 +83,9 @@ public partial class WalkModePanel : Control
         // shadows don't know what the sprites look like and the mask is empty.
         _lightRenderer.SetGraphicsResources(Grhs, Textures);
         _lightRenderer.MarkDirty();
+        // Also force the fog renderer to rebuild its masks so painted
+        // humo layers show up correctly on first frame of walk mode.
+        _zoneFog.MarkDirty();
     }
 
     // Movement

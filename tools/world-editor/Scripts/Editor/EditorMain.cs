@@ -2230,9 +2230,13 @@ public partial class EditorMain : Control
         if (_walkPanel.HeadIndex <= 0) _walkPanel.HeadIndex = 1;
 
         _walkWindow.Visible = true;
+        // Position walk mode to the LEFT so the right sidebar (light panel,
+        // tile palette, etc.) stays accessible while playing.
+        int vpW = (int)GetViewportRect().Size.X;
+        int vpH = (int)GetViewportRect().Size.Y;
         _walkWindow.Position = new Vector2I(
-            (int)(GetViewportRect().Size.X / 2 - _walkWindow.Size.X / 2),
-            (int)(GetViewportRect().Size.Y / 2 - _walkWindow.Size.Y / 2));
+            Math.Max(80, vpW / 2 - _walkWindow.Size.X / 2 - 150),
+            Math.Max(40, vpH / 2 - _walkWindow.Size.Y / 2));
 
         // Give focus to walk panel
         _walkPanel.GrabFocus();
