@@ -7,26 +7,37 @@ using Godot;
 namespace AOWorldEditor.Editor;
 
 /// <summary>
-/// Sidebar panel shown when the Humo tool is active. Lets users pick a
-/// named smoke prefab, tweak density/color manually, or save the current
-/// style as a new custom prefab. Built-in prefabs are always available;
-/// user-defined prefabs are stored per-map in MapData.UserFogPrefabs.
+/// Humo tool sidebar panel.
+///
+/// The dropdown at the top has three sections:
+///  - Current layers (★) — one entry per painted layer that already
+///    exists on the map. Selecting one makes it the active layer; edits
+///    to the sliders modify ONLY that layer's style.
+///  - Built-in prefabs (◆) — templates. Selecting one creates a NEW
+///    empty layer seeded from the template.
+///  - User prefabs (✦) — same as built-ins but user-saved.
+///
+/// This way the user can paint red smoke, then create a new layer from
+/// "Niebla azul" and paint blue smoke — both colors coexist independently.
+/// Editing one doesn't affect the other.
 /// </summary>
 public partial class HumoConfigPanel : PanelContainer
 {
     public MapData? Map;
     public Action? OnChanged;
 
-    private OptionButton? _prefabOption;
+    private OptionButton? _layerOption;
     private LineEdit? _newPrefabNameEdit;
     private Button? _savePrefabBtn;
+    private Button? _deleteLayerBtn;
     private SpinBox? _densitySpin;
     private SpinBox? _rSpin, _gSpin, _bSpin;
     private ColorRect? _colorPreview;
     private CheckBox? _freeSmokeCheck;
 
-    // Snapshots of the current dropdown contents: built-ins first, then user prefabs.
-    private readonly List<SmokePrefab> _currentPrefabs = new();
+    // Entry types in the dropdown
+    private enum EntryType { CurrentLayer, BuiltInPrefab, UserPrefab }
+    private readonly List<(EntryType type, int index)> _dropdownEntries = new();
     private bool _suppressChangeEvents;
 
     public override void _Ready()
@@ -39,60 +50,63 @@ public partial class HumoConfigPanel : PanelContainer
         AddChild(vbox);
 
         vbox.AddChild(EditorTheme.Heading("Humo (pintar)"));
-        var help = EditorTheme.MakeLabel("Click izq: pintar.  Click der: borrar.", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        var help = EditorTheme.MakeLabel("Click izq: pintar.  Click der: borrar.  Cada capa es independiente.", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
         help.AutowrapMode = TextServer.AutowrapMode.Word;
         vbox.AddChild(help);
 
-        // --- Prefab dropdown ---
-        vbox.AddChild(EditorTheme.MakeLabel("Prefabricado:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        _prefabOption = new OptionButton();
-        _prefabOption.CustomMinimumSize = new Vector2(0, 24);
-        vbox.AddChild(_prefabOption);
-        _prefabOption.ItemSelected += OnPrefabSelected;
+        vbox.AddChild(EditorTheme.MakeLabel("Capa / prefab:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _layerOption = new OptionButton();
+        _layerOption.CustomMinimumSize = new Vector2(0, 24);
+        vbox.AddChild(_layerOption);
+        _layerOption.ItemSelected += OnDropdownSelected;
 
-        // --- Save-as-prefab row ---
+        // Delete current layer button
+        _deleteLayerBtn = new Button { Text = "🗑 Eliminar capa actual" };
+        _deleteLayerBtn.Pressed += OnDeleteCurrentLayer;
+        vbox.AddChild(_deleteLayerBtn);
+
+        // Save-as-prefab row
         var saveRow = new HBoxContainer();
         saveRow.AddThemeConstantOverride("separation", 4);
         _newPrefabNameEdit = new LineEdit
         {
-            PlaceholderText = "Nombre del prefab...",
+            PlaceholderText = "Guardar estilo como prefab...",
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
         };
         saveRow.AddChild(_newPrefabNameEdit);
-        _savePrefabBtn = new Button { Text = "+ Guardar" };
+        _savePrefabBtn = new Button { Text = "+" };
         _savePrefabBtn.Pressed += OnSavePrefab;
         saveRow.AddChild(_savePrefabBtn);
         vbox.AddChild(saveRow);
 
         vbox.AddChild(new HSeparator());
 
-        // --- Density ---
+        // Density
         var densRow = new HBoxContainer();
         densRow.AddThemeConstantOverride("separation", 6);
-        AddSpin(densRow, "Densidad:", 0, 255, Map?.PaintedFogDensity ?? 160, out _densitySpin);
+        AddSpin(densRow, "Densidad:", 0, 255, 160, out _densitySpin);
         vbox.AddChild(densRow);
 
         vbox.AddChild(EditorTheme.MakeLabel("Color del humo:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         var colRow = new HBoxContainer();
         colRow.AddThemeConstantOverride("separation", 4);
-        AddSpin(colRow, "R:", 0, 255, Map?.PaintedFogR ?? 128, out _rSpin);
-        AddSpin(colRow, "G:", 0, 255, Map?.PaintedFogG ?? 140, out _gSpin);
-        AddSpin(colRow, "B:", 0, 255, Map?.PaintedFogB ?? 160, out _bSpin);
+        AddSpin(colRow, "R:", 0, 255, 128, out _rSpin);
+        AddSpin(colRow, "G:", 0, 255, 140, out _gSpin);
+        AddSpin(colRow, "B:", 0, 255, 160, out _bSpin);
         vbox.AddChild(colRow);
 
         _colorPreview = new ColorRect
         {
             CustomMinimumSize = new Vector2(0, 28),
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-            Color = new Color((Map?.PaintedFogR ?? 128) / 255f, (Map?.PaintedFogG ?? 140) / 255f, (Map?.PaintedFogB ?? 160) / 255f),
+            Color = new Color(128 / 255f, 140 / 255f, 160 / 255f),
         };
         vbox.AddChild(_colorPreview);
 
-        // Humo libre — pattern floats in place instead of drifting in one direction
         _freeSmokeCheck = new CheckBox
         {
-            Text = "Humo libre (flota en su lugar, sin viento)",
-            ButtonPressed = Map?.FogFreeSmoke ?? false,
+            Text = "Humo libre (flota en su lugar)",
+            ButtonPressed = false,
         };
         _freeSmokeCheck.Toggled += (_) => ApplyFromUi();
         vbox.AddChild(_freeSmokeCheck);
@@ -101,117 +115,176 @@ public partial class HumoConfigPanel : PanelContainer
         _rSpin!.ValueChanged += (_) => ApplyFromUi();
         _gSpin!.ValueChanged += (_) => ApplyFromUi();
         _bSpin!.ValueChanged += (_) => ApplyFromUi();
-
-        RebuildPrefabDropdown();
     }
 
-    /// <summary>Rebuild the dropdown after a new prefab is added or a map is loaded.</summary>
-    public void RebuildPrefabDropdown()
-    {
-        if (_prefabOption == null) return;
-        _suppressChangeEvents = true;
-        _prefabOption.Clear();
-        _currentPrefabs.Clear();
-
-        // (custom placeholder so users know they can just tweak sliders)
-        _prefabOption.AddItem("-- personalizado --");
-        _currentPrefabs.Add(null!); // sentinel — index 0 is "no prefab selected"
-
-        foreach (var p in SmokePrefab.BuiltIn)
-        {
-            _prefabOption.AddItem("◆ " + p.Name);
-            _currentPrefabs.Add(p);
-        }
-        if (Map != null)
-        {
-            foreach (var p in Map.UserFogPrefabs)
-            {
-                _prefabOption.AddItem("★ " + p.Name);
-                _currentPrefabs.Add(p);
-            }
-        }
-        _prefabOption.Select(0);
-        _suppressChangeEvents = false;
-    }
-
-    /// <summary>Push current Map state into the UI (called on map load or tool activation).</summary>
     public void RefreshFromMap()
     {
         if (Map == null) return;
         _suppressChangeEvents = true;
-        if (_densitySpin != null) _densitySpin.Value = Map.PaintedFogDensity;
-        if (_rSpin != null) _rSpin.Value = Map.PaintedFogR;
-        if (_gSpin != null) _gSpin.Value = Map.PaintedFogG;
-        if (_bSpin != null) _bSpin.Value = Map.PaintedFogB;
         if (_freeSmokeCheck != null) _freeSmokeCheck.ButtonPressed = Map.FogFreeSmoke;
-        UpdateColorPreview();
         _suppressChangeEvents = false;
-        RebuildPrefabDropdown();
+        RebuildDropdown();
+        LoadActiveLayerIntoUi();
     }
 
-    private void OnPrefabSelected(long index)
+    /// <summary>Rebuild the dropdown — current layers first, then prefabs as templates.</summary>
+    public void RebuildDropdown()
     {
-        if (_suppressChangeEvents) return;
-        if (index < 0 || index >= _currentPrefabs.Count) return;
-        var p = _currentPrefabs[(int)index];
-        if (p == null) return; // "-- personalizado --" — no change
-        if (Map == null) return;
-
+        if (_layerOption == null || Map == null) return;
         _suppressChangeEvents = true;
-        if (_densitySpin != null) _densitySpin.Value = p.Density;
-        if (_rSpin != null) _rSpin.Value = p.R;
-        if (_gSpin != null) _gSpin.Value = p.G;
-        if (_bSpin != null) _bSpin.Value = p.B;
+        _layerOption.Clear();
+        _dropdownEntries.Clear();
+
+        // Current layers
+        for (int i = 0; i < Map.PaintedFogLayers.Count; i++)
+        {
+            var l = Map.PaintedFogLayers[i];
+            _layerOption.AddItem($"★ {l.Name}  ({l.Tiles.Count} tiles)");
+            _dropdownEntries.Add((EntryType.CurrentLayer, i));
+        }
+        if (Map.PaintedFogLayers.Count > 0)
+            _layerOption.AddSeparator("— Nuevo desde prefab —");
+
+        // Built-in prefabs
+        for (int i = 0; i < SmokePrefab.BuiltIn.Count; i++)
+        {
+            _layerOption.AddItem($"◆ {SmokePrefab.BuiltIn[i].Name}");
+            _dropdownEntries.Add((EntryType.BuiltInPrefab, i));
+        }
+
+        // User prefabs
+        for (int i = 0; i < Map.UserFogPrefabs.Count; i++)
+        {
+            _layerOption.AddItem($"✦ {Map.UserFogPrefabs[i].Name}");
+            _dropdownEntries.Add((EntryType.UserPrefab, i));
+        }
+
+        // Select the active layer (if any)
+        int selIdx = 0;
+        if (Map.ActiveFogLayerIndex >= 0 && Map.ActiveFogLayerIndex < Map.PaintedFogLayers.Count)
+            selIdx = Map.ActiveFogLayerIndex;
+        if (_layerOption.ItemCount > 0) _layerOption.Select(selIdx);
         _suppressChangeEvents = false;
-        ApplyFromUi();
+    }
+
+    private void OnDropdownSelected(long index)
+    {
+        if (_suppressChangeEvents || Map == null) return;
+        // Separators don't have valid indices into _dropdownEntries — they're
+        // skipped in the mapping. But OptionButton fires ItemSelected for them
+        // sometimes. Guard with the UI index carefully by iterating entries.
+        if (index < 0) return;
+
+        // Map OptionButton index to our entry index (skipping separators).
+        // The dropdown visual order:
+        //   [current layers 0..N-1] [separator?] [builtins] [user prefabs]
+        // Our _dropdownEntries matches the list WITHOUT separators.
+        int entryIdx = (int)index;
+        if (Map.PaintedFogLayers.Count > 0 && entryIdx > Map.PaintedFogLayers.Count)
+            entryIdx -= 1; // account for the separator
+        if (entryIdx < 0 || entryIdx >= _dropdownEntries.Count) return;
+
+        var (type, dataIdx) = _dropdownEntries[entryIdx];
+        switch (type)
+        {
+            case EntryType.CurrentLayer:
+                Map.ActiveFogLayerIndex = dataIdx;
+                LoadActiveLayerIntoUi();
+                break;
+            case EntryType.BuiltInPrefab:
+                CreateLayerFromPrefab(SmokePrefab.BuiltIn[dataIdx]);
+                break;
+            case EntryType.UserPrefab:
+                CreateLayerFromPrefab(Map.UserFogPrefabs[dataIdx]);
+                break;
+        }
+    }
+
+    private void CreateLayerFromPrefab(SmokePrefab template)
+    {
+        if (Map == null) return;
+        var layer = PaintedFogLayer.FromPrefab(template);
+        Map.PaintedFogLayers.Add(layer);
+        Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
+        GD.Print($"[HumoConfigPanel] New layer '{layer.Name}' from prefab");
+        RebuildDropdown();
+        LoadActiveLayerIntoUi();
+        OnChanged?.Invoke();
+    }
+
+    private void OnDeleteCurrentLayer()
+    {
+        if (Map == null || Map.ActiveFogLayerIndex < 0 || Map.ActiveFogLayerIndex >= Map.PaintedFogLayers.Count) return;
+        Map.PaintedFogLayers.RemoveAt(Map.ActiveFogLayerIndex);
+        Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count > 0 ? 0 : -1;
+        RebuildDropdown();
+        LoadActiveLayerIntoUi();
+        OnChanged?.Invoke();
     }
 
     private void OnSavePrefab()
     {
         if (Map == null) return;
         string name = _newPrefabNameEdit?.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(name))
-        {
-            GD.Print("[HumoConfigPanel] Save prefab: name is empty");
-            return;
-        }
-        var p = new SmokePrefab
+        if (string.IsNullOrEmpty(name)) return;
+        var prefab = new SmokePrefab
         {
             Name = name,
             Density = (int)(_densitySpin?.Value ?? 160),
             R = (int)(_rSpin?.Value ?? 128),
             G = (int)(_gSpin?.Value ?? 140),
             B = (int)(_bSpin?.Value ?? 160),
-            SpeedX = 5,
-            SpeedY = 2,
+            SpeedX = 5, SpeedY = 2,
         };
-        Map.UserFogPrefabs.Add(p);
+        Map.UserFogPrefabs.Add(prefab);
         if (_newPrefabNameEdit != null) _newPrefabNameEdit.Text = "";
-        RebuildPrefabDropdown();
-        GD.Print($"[HumoConfigPanel] Saved prefab '{name}' ({p.R},{p.G},{p.B}) density={p.Density}");
+        RebuildDropdown();
+        GD.Print($"[HumoConfigPanel] Saved prefab '{name}'");
+    }
+
+    private void LoadActiveLayerIntoUi()
+    {
+        if (Map == null || _densitySpin == null) return;
+        _suppressChangeEvents = true;
+        if (Map.ActiveFogLayerIndex >= 0 && Map.ActiveFogLayerIndex < Map.PaintedFogLayers.Count)
+        {
+            var l = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
+            _densitySpin.Value = l.Density;
+            _rSpin!.Value = l.R;
+            _gSpin!.Value = l.G;
+            _bSpin!.Value = l.B;
+        }
+        UpdateColorPreview();
+        _suppressChangeEvents = false;
     }
 
     private void ApplyFromUi()
     {
-        if (_suppressChangeEvents) return;
-        if (Map == null)
-        {
-            GD.Print("[HumoConfigPanel] ApplyFromUi: Map is NULL — edit lost");
-            return;
-        }
-        Map.PaintedFogDensity = (int)(_densitySpin?.Value ?? 160);
-        Map.PaintedFogR = (int)(_rSpin?.Value ?? 128);
-        Map.PaintedFogG = (int)(_gSpin?.Value ?? 140);
-        Map.PaintedFogB = (int)(_bSpin?.Value ?? 160);
+        if (_suppressChangeEvents || Map == null) return;
+
+        // free_smoke is the only global on humo (affects all layers + zone)
         Map.FogFreeSmoke = _freeSmokeCheck?.ButtonPressed ?? false;
+
+        // Sliders edit the currently active layer's style ONLY.
+        if (Map.ActiveFogLayerIndex >= 0 && Map.ActiveFogLayerIndex < Map.PaintedFogLayers.Count)
+        {
+            var l = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
+            l.Density = (int)(_densitySpin?.Value ?? 160);
+            l.R = (int)(_rSpin?.Value ?? 128);
+            l.G = (int)(_gSpin?.Value ?? 140);
+            l.B = (int)(_bSpin?.Value ?? 160);
+        }
         UpdateColorPreview();
         OnChanged?.Invoke();
     }
 
     private void UpdateColorPreview()
     {
-        if (_colorPreview == null || Map == null) return;
-        _colorPreview.Color = new Color(Map.PaintedFogR / 255f, Map.PaintedFogG / 255f, Map.PaintedFogB / 255f);
+        if (_colorPreview == null || _rSpin == null || _gSpin == null || _bSpin == null) return;
+        _colorPreview.Color = new Color(
+            (float)_rSpin.Value / 255f,
+            (float)_gSpin.Value / 255f,
+            (float)_bSpin.Value / 255f);
     }
 
     private static void AddSpin(HBoxContainer parent, string label, int min, int max, int val, out SpinBox spin)

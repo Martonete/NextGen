@@ -61,26 +61,19 @@ public class MapData
 
     public int MapNumber; // The map file number (e.g. 1 for Mapa1.map)
 
-    // ── Painted fog (per-tile click-to-place blobs) ──
-    // Each entry is a tile coord (x, y) that has been marked by the Fog paint tool.
-    // Rendered as a soft world-space blob centered on that tile.
-    public HashSet<Vector2I> PaintedFogTiles = new();
-    // Shared style for painted fog (one set per map — users can tune once).
-    public int PaintedFogDensity = 160;
-    public int PaintedFogR = 128;
-    public int PaintedFogG = 140;
-    public int PaintedFogB = 160;
-    public int PaintedFogSpeedX = 5;
-    public int PaintedFogSpeedY = 2;
-    // When true the humo shader runs its noise animation; when false the
-    // paint is the clean solid fill the user loved in step 1.
-    public bool PaintedFogAnimated = false;
+    // ── Painted fog ──
+    // Each layer has its own style (color, density, speed) + tiles.
+    // Changing one layer's style doesn't affect the others — users can
+    // have different-colored smokes on the same map.
+    public List<PaintedFogLayer> PaintedFogLayers = new();
+    /// <summary>Index of the currently-active layer. New paints and style
+    /// edits from the panel go into this layer. -1 = no layer selected.</summary>
+    public int ActiveFogLayerIndex = -1;
 
-    // User-defined named smoke presets saved with the map. Combined with
-    // SmokePrefab.BuiltIn in the humo panel dropdown.
+    // User-defined named smoke presets (templates used to seed new layers).
     public List<SmokePrefab> UserFogPrefabs = new();
-    // Global map-level toggle: when true, fog uses domain-warped multi-directional
-    // swirl ("humo libre" / free smoke) instead of the straight-line wind drift.
+    // Global map-level toggle: when true the shader uses a bounded
+    // oscillation offset so the pattern "floats in place" without drift.
     public bool FogFreeSmoke = false;
 
     public MapData(int width = 100, int height = 100)
@@ -110,41 +103,58 @@ public class MapData
 
     public bool InBounds(int x, int y) => x >= 1 && x <= Width && y >= 1 && y <= Height;
 
-    /// <summary>Save painted fog data to `Mapa{N}.aofog` in the given directory.
-    /// If no tiles are painted, any existing file is deleted so the map stays clean.</summary>
+    /// <summary>Save painted fog data to `Mapa{N}.aofog`. Format:
+    ///   FreeSmoke=0/1
+    ///   Prefab=name|density|r|g|b|sx|sy  (user-saved templates, 0..N)
+    ///   Layer=name|density|r|g|b|sx|sy   (starts a new layer)
+    ///   T=x,y                             (tile in current layer)
+    ///   Layer=...
+    ///   T=...
+    /// </summary>
     public void SavePaintedFog(string dir)
     {
         if (string.IsNullOrEmpty(dir) || MapNumber <= 0) return;
         string path = Path.Combine(dir, $"Mapa{MapNumber}.aofog");
-        if (PaintedFogTiles.Count == 0)
+        int totalTiles = 0;
+        foreach (var l in PaintedFogLayers) totalTiles += l.Tiles.Count;
+        if (totalTiles == 0 && UserFogPrefabs.Count == 0 && !FogFreeSmoke)
         {
             if (File.Exists(path)) File.Delete(path);
             return;
         }
         var sb = new StringBuilder();
-        sb.AppendLine($"Density={PaintedFogDensity}");
-        sb.AppendLine($"R={PaintedFogR}");
-        sb.AppendLine($"G={PaintedFogG}");
-        sb.AppendLine($"B={PaintedFogB}");
-        sb.AppendLine($"SpeedX={PaintedFogSpeedX}");
-        sb.AppendLine($"SpeedY={PaintedFogSpeedY}");
-        sb.AppendLine($"Animated={(PaintedFogAnimated ? 1 : 0)}");
         sb.AppendLine($"FreeSmoke={(FogFreeSmoke ? 1 : 0)}");
         foreach (var p in UserFogPrefabs)
             sb.AppendLine($"Prefab={p.Serialize()}");
-        foreach (var t in PaintedFogTiles)
-            sb.AppendLine($"T={t.X},{t.Y}");
+        foreach (var layer in PaintedFogLayers)
+        {
+            if (layer.Tiles.Count == 0) continue;
+            sb.AppendLine($"Layer={layer.SerializeStyle()}");
+            foreach (var t in layer.Tiles)
+                sb.AppendLine($"T={t.X},{t.Y}");
+        }
         File.WriteAllText(path, sb.ToString());
     }
 
-    /// <summary>Load painted fog data from `Mapa{N}.aofog` if it exists. No-op if missing.</summary>
+    /// <summary>Load painted fog data from `Mapa{N}.aofog` if it exists.
+    /// Supports BOTH the new layered format and the old flat format
+    /// (one global style + one big PaintedFogTiles set) for backward compat.</summary>
     public void LoadPaintedFog(string dir)
     {
         if (string.IsNullOrEmpty(dir) || MapNumber <= 0) return;
         string path = Path.Combine(dir, $"Mapa{MapNumber}.aofog");
-        PaintedFogTiles.Clear();
+        PaintedFogLayers.Clear();
         UserFogPrefabs.Clear();
+        ActiveFogLayerIndex = -1;
+        FogFreeSmoke = false;
         if (!File.Exists(path)) return;
+
+        // Track old-format state and convert to a single layer at the end
+        int legacyDensity = 160, legacyR = 128, legacyG = 140, legacyB = 160, legacySX = 5, legacySY = 2;
+        var legacyTiles = new HashSet<Vector2I>();
+        bool sawLayer = false;
+        PaintedFogLayer? currentLayer = null;
+
         foreach (var rawLine in File.ReadAllLines(path))
         {
             var line = rawLine.Trim();
@@ -155,17 +165,19 @@ public class MapData
             string val = line.Substring(eq + 1).Trim();
             switch (key.ToUpperInvariant())
             {
-                case "DENSITY": if (int.TryParse(val, out var d)) PaintedFogDensity = d; break;
-                case "R": if (int.TryParse(val, out var r)) PaintedFogR = r; break;
-                case "G": if (int.TryParse(val, out var g)) PaintedFogG = g; break;
-                case "B": if (int.TryParse(val, out var b)) PaintedFogB = b; break;
-                case "SPEEDX": if (int.TryParse(val, out var sx)) PaintedFogSpeedX = sx; break;
-                case "SPEEDY": if (int.TryParse(val, out var sy)) PaintedFogSpeedY = sy; break;
-                case "ANIMATED": PaintedFogAnimated = val == "1" || val.ToLowerInvariant() == "true"; break;
                 case "FREESMOKE": FogFreeSmoke = val == "1" || val.ToLowerInvariant() == "true"; break;
                 case "PREFAB":
                     var pf = SmokePrefab.TryParse(val);
                     if (pf != null) UserFogPrefabs.Add(pf);
+                    break;
+                case "LAYER":
+                    var nl = PaintedFogLayer.TryParseStyle(val);
+                    if (nl != null)
+                    {
+                        sawLayer = true;
+                        PaintedFogLayers.Add(nl);
+                        currentLayer = nl;
+                    }
                     break;
                 case "T":
                     var parts = val.Split(',');
@@ -173,10 +185,36 @@ public class MapData
                         && int.TryParse(parts[0], out var tx)
                         && int.TryParse(parts[1], out var ty))
                     {
-                        PaintedFogTiles.Add(new Vector2I(tx, ty));
+                        var tile = new Vector2I(tx, ty);
+                        if (currentLayer != null) currentLayer.Tiles.Add(tile);
+                        else legacyTiles.Add(tile);
                     }
                     break;
+                // Old-format style header — only used if no Layer= lines appear
+                case "DENSITY": if (int.TryParse(val, out var d)) legacyDensity = d; break;
+                case "R": if (int.TryParse(val, out var r)) legacyR = r; break;
+                case "G": if (int.TryParse(val, out var g)) legacyG = g; break;
+                case "B": if (int.TryParse(val, out var b)) legacyB = b; break;
+                case "SPEEDX": if (int.TryParse(val, out var sx)) legacySX = sx; break;
+                case "SPEEDY": if (int.TryParse(val, out var sy)) legacySY = sy; break;
             }
         }
+
+        // If there were no Layer= lines, migrate the old-format flat style
+        // + tile list into a single layer called "Humo".
+        if (!sawLayer && legacyTiles.Count > 0)
+        {
+            var legacy = new PaintedFogLayer
+            {
+                Name = "Humo",
+                Density = legacyDensity, R = legacyR, G = legacyG, B = legacyB,
+                SpeedX = legacySX, SpeedY = legacySY,
+                Tiles = legacyTiles,
+            };
+            PaintedFogLayers.Add(legacy);
+        }
+
+        if (PaintedFogLayers.Count > 0)
+            ActiveFogLayerIndex = 0;
     }
 }

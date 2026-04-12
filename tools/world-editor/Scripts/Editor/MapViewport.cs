@@ -2320,25 +2320,42 @@ public partial class MapViewport : Control
         QueueRedraw();
     }
 
-    /// <summary>Paint a fog tile — marks it in the per-map fog set. The
-    /// ZoneFogRenderer will dissolve it into a soft blob via the mask.</summary>
+    /// <summary>Paint a fog tile — adds it to the currently active layer
+    /// (auto-creating one from the default style if none exists).</summary>
     private void PaintFogAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y) || State == null) return;
         int key = y * 10000 + x;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
-        if (Map.PaintedFogTiles.Add(new Godot.Vector2I(x, y)))
+
+        // Auto-create a default layer if none exists yet
+        if (Map.PaintedFogLayers.Count == 0)
+        {
+            Map.PaintedFogLayers.Add(new PaintedFogLayer { Name = "Humo" });
+            Map.ActiveFogLayerIndex = 0;
+        }
+        if (Map.ActiveFogLayerIndex < 0 || Map.ActiveFogLayerIndex >= Map.PaintedFogLayers.Count)
+            Map.ActiveFogLayerIndex = 0;
+
+        var layer = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
+        if (layer.Tiles.Add(new Godot.Vector2I(x, y)))
             _zoneFog.MarkDirty();
         QueueRedraw();
     }
 
-    /// <summary>Erase fog from a tile (right-click or drag).</summary>
+    /// <summary>Erase fog from a tile — removes it from whichever layer(s)
+    /// contain it. Multiple layers can touch the same tile; we clean all.</summary>
     private void EraseFogAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y)) return;
-        if (Map.PaintedFogTiles.Remove(new Godot.Vector2I(x, y)))
-            _zoneFog.MarkDirty();
+        var tile = new Godot.Vector2I(x, y);
+        bool removed = false;
+        foreach (var layer in Map.PaintedFogLayers)
+        {
+            if (layer.Tiles.Remove(tile)) removed = true;
+        }
+        if (removed) _zoneFog.MarkDirty();
         QueueRedraw();
     }
 

@@ -1880,12 +1880,14 @@ public partial class EditorMain : Control
             GD.Print($"[Editor] Saved {_mapZones.Zones.Count} zones for map {_map.MapNumber}");
         }
 
-        // Save .aofog (painted fog tiles) alongside the map
+        // Save .aofog (painted fog layers) alongside the map
         if (_map.MapNumber > 0 && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
         {
             _map.SavePaintedFog(_serverMapDir);
-            if (_map.PaintedFogTiles.Count > 0)
-                GD.Print($"[Editor] Saved {_map.PaintedFogTiles.Count} painted fog tiles");
+            int total = 0;
+            foreach (var l in _map.PaintedFogLayers) total += l.Tiles.Count;
+            if (total > 0)
+                GD.Print($"[Editor] Saved {_map.PaintedFogLayers.Count} humo layers ({total} tiles)");
         }
 
         _state.ResetDirty();
