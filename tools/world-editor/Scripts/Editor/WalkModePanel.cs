@@ -242,23 +242,20 @@ public partial class WalkModePanel : Control
         _weather.Nieve  = currentZone?.Nieve  ?? false;
         _weather.Update((float)delta, Size);
 
-        // World-space fog: render every zone with niebla at its own world rect.
-        // Camera transform matches the tile-rendering formula:
-        //   tile (tx, ty) → panel x = (tx + _halfTilesX - CharX) * 32 + _moveOffsetX
-        // so world pixel (0,0) maps to panel ((_halfTilesX - CharX + 1) * 32 + _moveOffsetX, ...)
+        // World-space fog: the walk panel's (0,0) shows the world pixel at
+        // ((CharX - _halfTilesX - 1) * 32 - _moveOffsetX, same for Y) —
+        // this is the formula invariant with the tile draw loop. Zoom is 1.
         {
-            var camOffset = new Vector2(
-                (_halfTilesX - CharX + 1) * 32f + _moveOffsetX,
-                (_halfTilesY - CharY + 1) * 32f + _moveOffsetY);
             var zoneList = Zones != null
                 ? (System.Collections.Generic.IReadOnlyList<ZoneInfo>)Zones.Zones
                 : System.Array.Empty<ZoneInfo>();
-            // Character world position = tile center in world pixels
-            // (plus current smooth-move offset which is pixel-wise).
             var playerWorldPx = new Vector2(
                 (CharX - 0.5f) * 32f - _moveOffsetX,
                 (CharY - 0.5f) * 32f - _moveOffsetY);
-            _zoneFog.Update(camOffset, 1f, zoneList, Map, playerWorldPx);
+            var worldOrigin = new Vector2(
+                (CharX - _halfTilesX - 1) * 32f - _moveOffsetX,
+                (CharY - _halfTilesY - 1) * 32f - _moveOffsetY);
+            _zoneFog.Update(Size, worldOrigin, Size, zoneList, Map, playerWorldPx);
         }
 
         if (_isMoving)

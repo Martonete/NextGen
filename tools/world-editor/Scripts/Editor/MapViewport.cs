@@ -199,8 +199,6 @@ public partial class MapViewport : Control
             var zones = ZoneData != null
                 ? (System.Collections.Generic.IReadOnlyList<ZoneInfo>)ZoneData.Zones
                 : System.Array.Empty<ZoneInfo>();
-            // In the editor there is no "character"; use the hovered tile as
-            // the player position so hovering dissolves fog like a cursor probe.
             Vector2 playerWorldPx = new Vector2(-1e6f, -1e6f);
             if (State.HoverValid && Map != null && Map.InBounds(State.HoverX, State.HoverY))
             {
@@ -208,7 +206,13 @@ public partial class MapViewport : Control
                     (State.HoverX - 0.5f) * 32f,
                     (State.HoverY - 0.5f) * 32f);
             }
-            _zoneFog.Update(State.CameraOffset, State.Zoom, zones, Map, playerWorldPx);
+            // Camera transform: tile (1,1) at world (0,0) is drawn at screen
+            // position State.CameraOffset when zoom=1, scaled by zoom otherwise.
+            // So panel pixel (0,0) corresponds to world pixel (-CameraOffset/zoom).
+            float z = Mathf.Max(0.01f, State.Zoom);
+            var worldOrigin = -State.CameraOffset / z;
+            var worldSize = Size / z;
+            _zoneFog.Update(Size, worldOrigin, worldSize, zones, Map, playerWorldPx);
         }
 
         // Keyboard panning (WASD / Arrow keys)

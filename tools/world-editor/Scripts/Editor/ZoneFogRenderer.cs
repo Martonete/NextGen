@@ -8,30 +8,25 @@ namespace AOWorldEditor.Editor;
 /// <summary>
 /// Fog renderer with independent painted-smoke layers + one zone niebla layer.
 ///
-/// Architecture:
-/// - ONE shared Shader (fog_overlay.gdshader)
-/// - ONE shared NoiseTexture2D
-/// - ONE shared 1x1 transparent canvas texture (fallback invisible if
-///   shader compile fails — unlike ColorRect's opaque-white fallback)
+/// Sprites are PANEL-SIZED (not map-sized) and use shader uniforms to
+/// describe which world region to sample. This avoids precision / culling
+/// issues that came from stretching a 1x1 canvas to e.g. 32000×32000 px
+/// for a 1000x1000 map, especially in the embedded walk-mode Window.
 ///
-/// For painted smoke:
-/// - A POOL of Sprite2Ds. Each pool entry corresponds to a PaintedFogLayer
-///   and has its own ShaderMaterial + per-layer mask texture.
-/// - Changing one layer's style (color/density) only affects tiles in that
-///   layer — each sprite reads uniforms from its owning layer independently.
+/// Each painted layer gets its own Sprite2D + ShaderMaterial + mask texture.
+/// Zone niebla uses a single combined sprite. All sprites are children of
+/// the owning Control (MapViewport or WalkModePanel) and are positioned at
+/// (0, 0) with Scale = panel size.
 ///
-/// For zone niebla:
-/// - ONE Sprite2D with a shared mask (all zones with Niebla=true go into
-///   the same mask). Changing a zone's fog fields affects all zone fog.
-///
-/// All sprites live under a shared Node2D (_worldLayer) transformed each
-/// frame by camera offset + zoom.
+/// The caller computes `worldOrigin` and `worldSize` based on its own view
+/// setup — MapViewport uses camera offset + zoom; WalkModePanel uses the
+/// character position and smooth-move offset.
 /// </summary>
 public class ZoneFogRenderer
 {
     private const int TileSize = 32;
 
-    private Node2D? _worldLayer;
+    private Node? _parent;
     private Shader? _shader;
     private NoiseTexture2D? _noiseTexture;
     private ImageTexture? _canvasTexture;
@@ -41,7 +36,7 @@ public class ZoneFogRenderer
     private readonly List<Image> _humoMaskImages = new();
     private readonly List<ImageTexture?> _humoMaskTextures = new();
 
-    // --- Niebla de zona (single combined sprite for all zones with Niebla) ---
+    // --- Niebla de zona ---
     private Sprite2D? _zoneSprite;
     private Image? _zoneMaskImage;
     private ImageTexture? _zoneMaskTexture;
@@ -51,6 +46,7 @@ public class ZoneFogRenderer
 
     public void AttachTo(Node parent)
     {
+        _parent = parent;
         _shader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
         GD.Print($"[ZoneFogRenderer] AttachTo: shader={(_shader != null ? "OK" : "NULL")}");
         if (_shader == null)
@@ -73,10 +69,6 @@ public class ZoneFogRenderer
         canvasImg.SetPixel(0, 0, new Color(0, 0, 0, 0));
         _canvasTexture = ImageTexture.CreateFromImage(canvasImg);
 
-        _worldLayer = new Node2D { Name = "ZoneFogWorldLayer" };
-        parent.AddChild(_worldLayer);
-
-        // Zone sprite (always one, even if empty)
         var zoneMat = new ShaderMaterial { Shader = _shader };
         zoneMat.SetShaderParameter("noise_texture", _noiseTexture);
         _zoneSprite = new Sprite2D
@@ -88,29 +80,33 @@ public class ZoneFogRenderer
             TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             ZIndex = 1,
         };
-        _worldLayer.AddChild(_zoneSprite);
+        parent.AddChild(_zoneSprite);
 
         GD.Print("[ZoneFogRenderer] AttachTo complete");
     }
 
     public void MarkDirty() => _maskDirty = true;
 
+    /// <summary>
+    /// Call each frame. `panelSize` is the Control's local size in pixels.
+    /// `worldOrigin` is the world pixel coordinate at panel (0, 0).
+    /// `worldSize` is how much world area is visible across the panel.
+    /// The shader samples world via UV mapped to world via these.
+    /// </summary>
     public void Update(
-        Vector2 cameraOffset,
-        float zoom,
+        Vector2 panelSize,
+        Vector2 worldOrigin,
+        Vector2 worldSize,
         IReadOnlyList<ZoneInfo> zones,
         MapData? map,
         Vector2 playerWorldPx)
     {
-        if (_worldLayer == null || _shader == null) return;
+        if (_shader == null || _parent == null) return;
         if (map == null)
         {
             HideAllSprites();
             return;
         }
-
-        _worldLayer.Position = cameraOffset;
-        _worldLayer.Scale = new Vector2(zoom, zoom);
 
         int neededHumoSprites = map.PaintedFogLayers.Count;
         bool hasZoneFog = false;
@@ -119,7 +115,6 @@ public class ZoneFogRenderer
             if (zones[i].Niebla) { hasZoneFog = true; break; }
         }
 
-        // Rebuild masks if dirty or map size changed
         if (_maskDirty || _maskW != map.Width || _maskH != map.Height)
         {
             RebuildHumoLayerMasks(map);
@@ -127,12 +122,8 @@ public class ZoneFogRenderer
             _maskW = map.Width;
             _maskH = map.Height;
             _maskDirty = false;
-            GD.Print($"[ZoneFogRenderer] Rebuilt — layers={map.PaintedFogLayers.Count} zones_niebla={hasZoneFog}");
         }
 
-        float worldW = map.Width * TileSize;
-        float worldH = map.Height * TileSize;
-        var spriteScale = new Vector2(worldW, worldH);
         var mapSize = new Vector2(map.Width, map.Height);
 
         // --- Humo sprites (pool, one per layer) ---
@@ -150,14 +141,14 @@ public class ZoneFogRenderer
             bool show = layer.Tiles.Count > 0 && tex != null;
 
             sprite.Position = Vector2.Zero;
-            sprite.Scale = spriteScale;
+            sprite.Scale = panelSize;
             sprite.Visible = show;
             if (!show || sprite.Material is not ShaderMaterial sm) continue;
 
             sm.SetShaderParameter("fog_mask", tex!);
             sm.SetShaderParameter("map_tile_size", mapSize);
-            sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
-            sm.SetShaderParameter("rect_world_size", spriteScale);
+            sm.SetShaderParameter("rect_world_origin", worldOrigin);
+            sm.SetShaderParameter("rect_world_size", worldSize);
             sm.SetShaderParameter("density", layer.Density / 255f);
             sm.SetShaderParameter("fog_color",
                 new Color(layer.R / 255f, layer.G / 255f, layer.B / 255f, 1f));
@@ -170,7 +161,7 @@ public class ZoneFogRenderer
         if (_zoneSprite != null)
         {
             _zoneSprite.Position = Vector2.Zero;
-            _zoneSprite.Scale = spriteScale;
+            _zoneSprite.Scale = panelSize;
             _zoneSprite.Visible = hasZoneFog && _zoneMaskTexture != null;
             if (_zoneSprite.Visible && _zoneSprite.Material is ShaderMaterial sm && _zoneMaskTexture != null)
             {
@@ -191,8 +182,8 @@ public class ZoneFogRenderer
                 }
                 sm.SetShaderParameter("fog_mask", _zoneMaskTexture);
                 sm.SetShaderParameter("map_tile_size", mapSize);
-                sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
-                sm.SetShaderParameter("rect_world_size", spriteScale);
+                sm.SetShaderParameter("rect_world_origin", worldOrigin);
+                sm.SetShaderParameter("rect_world_size", worldSize);
                 sm.SetShaderParameter("density", dens / 255f);
                 sm.SetShaderParameter("fog_color", new Color(r / 255f, g / 255f, b / 255f, 1f));
                 sm.SetShaderParameter("speed", new Vector2(sx / 100f, sy / 100f));
@@ -215,15 +206,13 @@ public class ZoneFogRenderer
                 Visible = false,
                 TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             };
-            _worldLayer?.AddChild(sprite);
+            _parent?.AddChild(sprite);
             _humoSprites.Add(sprite);
             _humoMaskImages.Add(null!);
             _humoMaskTextures.Add(null);
         }
     }
 
-    /// <summary>Rebuild one R8 mask per painted layer. Cost is O(sum of
-    /// painted tiles) — no full-map iteration.</summary>
     private void RebuildHumoLayerMasks(MapData map)
     {
         int W = map.Width, H = map.Height;
@@ -305,8 +294,7 @@ public class ZoneFogRenderer
         _humoMaskTextures.Clear();
         if (_zoneSprite != null && GodotObject.IsInstanceValid(_zoneSprite)) _zoneSprite.QueueFree();
         _zoneSprite = null;
-        if (_worldLayer != null && GodotObject.IsInstanceValid(_worldLayer)) _worldLayer.QueueFree();
-        _worldLayer = null;
+        _parent = null;
         _zoneMaskImage = null;
         _zoneMaskTexture = null;
         _canvasTexture = null;

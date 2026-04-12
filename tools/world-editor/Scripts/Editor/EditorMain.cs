@@ -50,6 +50,7 @@ public partial class EditorMain : Control
     private Window? _propsWindow;
     private TilePropertiesPanel? _propsPanel;
     private HumoConfigPanel? _humoPanel;
+    private HumoLayersPanel? _humoLayersPanel;
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
@@ -411,6 +412,16 @@ public partial class EditorMain : Control
         _zonePanel.OnZoneSelected += (zone) => { _viewport?.CenterOnTile((zone.X1 + zone.X2) / 2, (zone.Y1 + zone.Y2) / 2); };
         _zonePanel.OnEditZone += (zone) => ShowZoneEditPopup(zone);
         _sidebarTabs.AddChild(_zonePanel);
+
+        _humoLayersPanel = new HumoLayersPanel { Map = _map };
+        _humoLayersPanel.OnLayersChanged += () =>
+        {
+            _viewport?.MarkFogMaskDirty();
+            _viewport?.QueueRedraw();
+            if (_humoPanel != null) _humoPanel.RefreshFromMap();
+            _state.MarkDirty();
+        };
+        _sidebarTabs.AddChild(_humoLayersPanel);
 
         // --- Trigger tool panel (overlay on left sidebar, shown when Trigger tool is active) ---
         BuildTriggerPanel();
@@ -2842,12 +2853,19 @@ public partial class EditorMain : Control
         UpdateTriggerPanel();
         if (_sidebarTabs != null && tool == EditorTool.Particle)
             _sidebarTabs.CurrentTab = 3;
-        // Show the Humo config panel only while the Humo tool is active
+        if (_sidebarTabs != null && tool == EditorTool.Fog && _humoLayersPanel != null)
+            _sidebarTabs.CurrentTab = _humoLayersPanel.GetIndex();
+        // Show the Humo config panel on the right only while Humo tool is active
         if (_humoPanel != null)
         {
             _humoPanel.Map = _map;
             _humoPanel.Visible = tool == EditorTool.Fog;
             if (_humoPanel.Visible) _humoPanel.RefreshFromMap();
+        }
+        if (_humoLayersPanel != null)
+        {
+            _humoLayersPanel.Map = _map;
+            if (tool == EditorTool.Fog) _humoLayersPanel.Rebuild();
         }
     }
 
@@ -2983,6 +3001,11 @@ public partial class EditorMain : Control
         {
             _humoPanel.Map = _map;
             _humoPanel.RefreshFromMap();
+        }
+        if (_humoLayersPanel != null)
+        {
+            _humoLayersPanel.Map = _map;
+            _humoLayersPanel.Rebuild();
         }
         if (_particles != null && _map != null)
         {
