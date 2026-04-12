@@ -95,27 +95,31 @@ float sample_occlusion(vec2 world_px) {
     return mask;
 }
 
+// Per-pixel hash for ray jitter — breaks up banding artifacts.
+float pixel_hash(vec2 co) {
+    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
 bool is_occluded(vec2 from_px, vec2 light_px) {
     vec2 dir = light_px - from_px;
     float len = length(dir);
     if (len < 1.0) return false;
 
-    // Skip the first ~40 world-px of the ray to prevent self-occlusion.
-    // A pixel sitting ON a 32-64px wide sprite needs to ignore its own
-    // sprite's mask when raycasting toward the light — otherwise the
-    // entire sprite surface stays black even on the light-facing side.
-    // 40px covers a typical 1-tile sprite; 2-tile sprites (64px) may
-    // still self-shadow slightly at their center, which looks natural.
-    // Skip just enough to avoid self-shadow (half a tile = 16 px).
-    // Larger values prevent nearby walls from being illuminated.
     float skip_px = 16.0;
     float start_t = clamp(skip_px / len, 0.0, 0.3);
     float end_t   = clamp(1.0 - 8.0 / len, 0.55, 1.0);
 
+    // Jitter the ray start by up to half a step to break the regular
+    // stepping pattern that creates visible banding/stripes in shadows.
+    float jitter = pixel_hash(from_px * 0.1) * 0.5;
+    float step_size = (end_t - start_t) / float(RAY_STEPS);
+
     for (int i = 0; i < RAY_STEPS; i++) {
-        float t = start_t + (end_t - start_t) * (float(i) / float(RAY_STEPS - 1));
+        float t = start_t + (float(i) + jitter) * step_size;
         vec2 p = from_px + dir * t;
-        if (sample_occlusion(p) > 0.4) return true;
+        // Threshold 0.5 (was 0.4) to only occlude on solidly-opaque pixels,
+        // reducing shadow noise from semi-transparent mask edges.
+        if (sample_occlusion(p) > 0.5) return true;
     }
     return false;
 }
@@ -143,17 +147,13 @@ void fragment() {
 
         float energy = L.w;
 
-        // Shadow logic depends on whether this pixel is on an occluder:
-        //
-        // OCCLUDER PIXEL (wall/tree/rock — mask > 0.4):
-        //   Always receive light. A wall facing a light IS illuminated.
-        //   No raycast needed — the shadow falls on the GROUND behind
-        //   the wall, not on the wall itself.
-        //
-        // GROUND PIXEL (mask < 0.4):
-        //   Raycast toward the light. If an occluder is in the way,
-        //   this pixel is in shadow (the wall blocks the light).
-        if (self_mask < 0.4) {
+        // Occluder surfaces (walls/trees) always receive light — shadow
+        // only falls on ground behind them. Use a smooth blend at the
+        // mask edge so the transition isn't a hard visible line.
+        float ground_factor = 1.0 - smoothstep(0.3, 0.6, self_mask);
+        // ground_factor = 1.0 on pure ground, 0.0 on solid occluder.
+        // For ground pixels, check shadow. For occluder pixels, skip.
+        if (ground_factor > 0.5) {
             if (is_occluded(world_px, L.xy)) continue;
         }
 
