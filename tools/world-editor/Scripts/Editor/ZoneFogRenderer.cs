@@ -173,6 +173,7 @@ public class ZoneFogRenderer
                     new Color(map.PaintedFogR / 255f, map.PaintedFogG / 255f, map.PaintedFogB / 255f, 1f));
                 sm.SetShaderParameter("speed",
                     new Vector2(map.PaintedFogSpeedX / 100f, map.PaintedFogSpeedY / 100f));
+                sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
             }
         }
 
@@ -208,14 +209,15 @@ public class ZoneFogRenderer
                 sm.SetShaderParameter("density", dens / 255f);
                 sm.SetShaderParameter("fog_color", new Color(r / 255f, g / 255f, b / 255f, 1f));
                 sm.SetShaderParameter("speed", new Vector2(sx / 100f, sy / 100f));
+                sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
             }
         }
     }
 
-    /// <summary>Build R8 mask for painted humo tiles. Subtracts Layer 3
-    /// (objects) and Layer 4 (roofs) so they poke through cleanly. L2
-    /// (terrain transitions) is NOT subtracted — too many tiles have
-    /// decorative L2 content on detailed maps.</summary>
+    /// <summary>Build R8 mask for painted humo tiles. Only iterates the
+    /// painted tile set (not the whole map) — Layer 3/4 occlusion is
+    /// checked per-tile inline, so the cost is O(paint count) instead of
+    /// O(map size). Critical for performance on large maps (1000×1000).</summary>
     private void RebuildHumoMask(MapData map)
     {
         int W = map.Width, H = map.Height;
@@ -228,18 +230,11 @@ public class ZoneFogRenderer
 
         foreach (var t in map.PaintedFogTiles)
         {
-            if (t.X >= 1 && t.X <= W && t.Y >= 1 && t.Y <= H)
-                _humoMaskImage.SetPixel(t.X - 1, t.Y - 1, Colors.White);
-        }
-
-        for (int y = 1; y <= H; y++)
-        {
-            for (int x = 1; x <= W; x++)
-            {
-                ref var tile = ref map.Tiles[x, y];
-                if (tile.Layer3 != 0 || tile.Layer4 != 0)
-                    _humoMaskImage.SetPixel(x - 1, y - 1, Colors.Black);
-            }
+            if (t.X < 1 || t.X > W || t.Y < 1 || t.Y > H) continue;
+            ref var tile = ref map.Tiles[t.X, t.Y];
+            // Skip tiles occluded by L3 (objects) or L4 (roofs)
+            if (tile.Layer3 != 0 || tile.Layer4 != 0) continue;
+            _humoMaskImage.SetPixel(t.X - 1, t.Y - 1, Colors.White);
         }
 
         if (_humoMaskTexture == null)
@@ -248,7 +243,9 @@ public class ZoneFogRenderer
             _humoMaskTexture.Update(_humoMaskImage);
     }
 
-    /// <summary>Build R8 mask for zone niebla tiles. Same L3/L4 subtraction rules.</summary>
+    /// <summary>Build R8 mask for zone niebla tiles. L3/L4 occlusion checked
+    /// inline while iterating each zone's rect — cost is O(sum of zone areas)
+    /// instead of O(whole map). Much faster on large maps.</summary>
     private void RebuildZoneMask(MapData map, IReadOnlyList<ZoneInfo> zones)
     {
         int W = map.Width, H = map.Height;
@@ -266,17 +263,13 @@ public class ZoneFogRenderer
             int x1 = Mathf.Max(1, z.X1), x2 = Mathf.Min(W, z.X2);
             int y1 = Mathf.Max(1, z.Y1), y2 = Mathf.Min(H, z.Y2);
             for (int y = y1; y <= y2; y++)
-                for (int x = x1; x <= x2; x++)
-                    _zoneMaskImage.SetPixel(x - 1, y - 1, Colors.White);
-        }
-
-        for (int y = 1; y <= H; y++)
-        {
-            for (int x = 1; x <= W; x++)
             {
-                ref var tile = ref map.Tiles[x, y];
-                if (tile.Layer3 != 0 || tile.Layer4 != 0)
-                    _zoneMaskImage.SetPixel(x - 1, y - 1, Colors.Black);
+                for (int x = x1; x <= x2; x++)
+                {
+                    ref var tile = ref map.Tiles[x, y];
+                    if (tile.Layer3 != 0 || tile.Layer4 != 0) continue;
+                    _zoneMaskImage.SetPixel(x - 1, y - 1, Colors.White);
+                }
             }
         }
 

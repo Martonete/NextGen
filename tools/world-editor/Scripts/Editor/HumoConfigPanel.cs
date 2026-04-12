@@ -23,6 +23,7 @@ public partial class HumoConfigPanel : PanelContainer
     private SpinBox? _densitySpin;
     private SpinBox? _rSpin, _gSpin, _bSpin;
     private ColorRect? _colorPreview;
+    private CheckBox? _freeSmokeCheck;
 
     // Snapshots of the current dropdown contents: built-ins first, then user prefabs.
     private readonly List<SmokePrefab> _currentPrefabs = new();
@@ -87,6 +88,15 @@ public partial class HumoConfigPanel : PanelContainer
         };
         vbox.AddChild(_colorPreview);
 
+        // Humo libre — pattern floats in place instead of drifting in one direction
+        _freeSmokeCheck = new CheckBox
+        {
+            Text = "Humo libre (flota en su lugar, sin viento)",
+            ButtonPressed = Map?.FogFreeSmoke ?? false,
+        };
+        _freeSmokeCheck.Toggled += (_) => ApplyFromUi();
+        vbox.AddChild(_freeSmokeCheck);
+
         _densitySpin!.ValueChanged += (_) => ApplyFromUi();
         _rSpin!.ValueChanged += (_) => ApplyFromUi();
         _gSpin!.ValueChanged += (_) => ApplyFromUi();
@@ -133,6 +143,7 @@ public partial class HumoConfigPanel : PanelContainer
         if (_rSpin != null) _rSpin.Value = Map.PaintedFogR;
         if (_gSpin != null) _gSpin.Value = Map.PaintedFogG;
         if (_bSpin != null) _bSpin.Value = Map.PaintedFogB;
+        if (_freeSmokeCheck != null) _freeSmokeCheck.ButtonPressed = Map.FogFreeSmoke;
         UpdateColorPreview();
         _suppressChangeEvents = false;
         RebuildPrefabDropdown();
@@ -192,6 +203,7 @@ public partial class HumoConfigPanel : PanelContainer
         Map.PaintedFogR = (int)(_rSpin?.Value ?? 128);
         Map.PaintedFogG = (int)(_gSpin?.Value ?? 140);
         Map.PaintedFogB = (int)(_bSpin?.Value ?? 160);
+        Map.FogFreeSmoke = _freeSmokeCheck?.ButtonPressed ?? false;
         UpdateColorPreview();
         OnChanged?.Invoke();
     }
