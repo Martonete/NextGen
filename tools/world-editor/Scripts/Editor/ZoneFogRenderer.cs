@@ -6,45 +6,43 @@ using Godot;
 namespace AOWorldEditor.Editor;
 
 /// <summary>
-/// Two-mode fog renderer:
+/// Unified fog renderer with two sprites sharing a single shader:
 ///
-/// 1. <b>Humo (painted smoke)</b> — solid-fill fog painted per-tile by the
-///    user via the Humo tool. Uses `fog_humo.gdshader`. No noise, no
-///    animation, no player break — just a clean saturated tile fill with
-///    the map's humo color and density.
+/// 1. <b>Humo (painted smoke)</b> — animated world-space fog on tiles
+///    painted by the user via the Humo tool. Uses a dedicated mask
+///    (MapData.PaintedFogTiles) and the map's PaintedFog* color/density
+///    fields.
 ///
-/// 2. <b>Niebla de zona (zone fog)</b> — animated world-anchored noise
-///    fog that covers tiles inside a zone with Niebla=true. Uses
-///    `fog_zone.gdshader`. Supports free_smoke multi-directional swirl
-///    and player break (local dispersion around the character).
+/// 2. <b>Niebla de zona (zone fog)</b> — animated world-space fog on
+///    tiles inside zones with Niebla=true. Uses a dedicated mask
+///    (built from zone bounds) and the first matching zone's color/density.
 ///
-/// Each mode has its own Sprite2D + ShaderMaterial + R8 mask texture.
-/// Both sprites live under a shared Node2D (`_worldLayer`) that's
-/// transformed each frame by the camera offset+zoom. Using Sprite2D
-/// with a 1x1 transparent canvas texture means fallback rendering
-/// (if a shader fails to compile) is INVISIBLE rather than opaque
-/// white like ColorRect would give.
+/// Both sprites use the same `fog_overlay.gdshader` — they're visually
+/// similar (animated noise clouds) but independent because each has its
+/// own ShaderMaterial instance, its own mask texture, and its own uniform
+/// values. Layer 3 (objects) and Layer 4 (roofs) tiles are subtracted
+/// from both masks so trees/buildings/roofs cleanly break the fog.
 ///
-/// The masks are rebuilt only when the map changes (MarkDirty()) so
-/// frame cost is minimal.
+/// Sprite2D with a 1x1 transparent canvas texture gives an invisible
+/// fallback if the shader ever fails to compile (unlike ColorRect whose
+/// fallback is opaque white).
 /// </summary>
 public class ZoneFogRenderer
 {
     private const int TileSize = 32;
 
     private Node2D? _worldLayer;
+    private Shader? _shader;
     private NoiseTexture2D? _noiseTexture;
     private ImageTexture? _canvasTexture; // 1x1 transparent shared between sprites
 
     // --- Humo (painted smoke) ---
     private Sprite2D? _humoSprite;
-    private Shader? _humoShader;
     private Image? _humoMaskImage;
     private ImageTexture? _humoMaskTexture;
 
     // --- Niebla de zona (animated noise fog) ---
     private Sprite2D? _zoneSprite;
-    private Shader? _zoneShader;
     private Image? _zoneMaskImage;
     private ImageTexture? _zoneMaskTexture;
 
@@ -54,13 +52,11 @@ public class ZoneFogRenderer
 
     public void AttachTo(Node parent)
     {
-        _humoShader = GD.Load<Shader>("res://Shaders/fog_humo.gdshader");
-        _zoneShader = GD.Load<Shader>("res://Shaders/fog_zone.gdshader");
-        GD.Print($"[ZoneFogRenderer] AttachTo: humo_shader={(_humoShader != null ? "OK" : "NULL")} zone_shader={(_zoneShader != null ? "OK" : "NULL")}");
-
-        if (_humoShader == null && _zoneShader == null)
+        _shader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
+        GD.Print($"[ZoneFogRenderer] AttachTo: shader={(_shader != null ? "OK" : "NULL")}");
+        if (_shader == null)
         {
-            GD.PushWarning("[ZoneFogRenderer] both fog shaders missing — fog disabled");
+            GD.PushWarning("[ZoneFogRenderer] fog_overlay.gdshader not found — fog disabled");
             return;
         }
 
@@ -74,7 +70,7 @@ public class ZoneFogRenderer
             Seamless = true,
         };
 
-        // Shared 1x1 transparent canvas for both sprites
+        // 1x1 transparent canvas: fallback invisible if shader compile fails
         var canvasImg = Image.CreateEmpty(1, 1, false, Image.Format.Rgba8);
         canvasImg.SetPixel(0, 0, new Color(0, 0, 0, 0));
         _canvasTexture = ImageTexture.CreateFromImage(canvasImg);
@@ -82,43 +78,40 @@ public class ZoneFogRenderer
         _worldLayer = new Node2D { Name = "ZoneFogWorldLayer" };
         parent.AddChild(_worldLayer);
 
-        if (_humoShader != null)
+        // Humo sprite
+        var humoMat = new ShaderMaterial { Shader = _shader };
+        humoMat.SetShaderParameter("noise_texture", _noiseTexture);
+        _humoSprite = new Sprite2D
         {
-            var humoMat = new ShaderMaterial { Shader = _humoShader };
-            _humoSprite = new Sprite2D
-            {
-                Texture = _canvasTexture,
-                Centered = false,
-                Material = humoMat,
-                Visible = false,
-                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
-            };
-            _worldLayer.AddChild(_humoSprite);
-        }
+            Texture = _canvasTexture,
+            Centered = false,
+            Material = humoMat,
+            Visible = false,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+        };
+        _worldLayer.AddChild(_humoSprite);
 
-        if (_zoneShader != null)
+        // Zone sprite (ZIndex +1 so it draws above humo if they overlap)
+        var zoneMat = new ShaderMaterial { Shader = _shader };
+        zoneMat.SetShaderParameter("noise_texture", _noiseTexture);
+        _zoneSprite = new Sprite2D
         {
-            var zoneMat = new ShaderMaterial { Shader = _zoneShader };
-            zoneMat.SetShaderParameter("noise_texture", _noiseTexture);
-            _zoneSprite = new Sprite2D
-            {
-                Texture = _canvasTexture,
-                Centered = false,
-                Material = zoneMat,
-                Visible = false,
-                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
-                ZIndex = 1, // drawn above the humo sprite so layered zones overlap correctly
-            };
-            _worldLayer.AddChild(_zoneSprite);
-        }
+            Texture = _canvasTexture,
+            Centered = false,
+            Material = zoneMat,
+            Visible = false,
+            TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            ZIndex = 1,
+        };
+        _worldLayer.AddChild(_zoneSprite);
+
+        GD.Print($"[ZoneFogRenderer] AttachTo complete: humo + zone sprites created");
     }
 
-    /// <summary>Mark both masks as stale. Call after any map edit that
-    /// could affect fog coverage: PaintFog, EraseFog, zone edit, layer paint.</summary>
+    /// <summary>Mark both masks as stale — call after any edit that could
+    /// affect fog (paint, zone edit, layer paint, map load).</summary>
     public void MarkDirty() => _maskDirty = true;
 
-    /// <summary>Per-frame update — positions the world layer under the camera,
-    /// rebuilds masks if dirty, and pushes shader uniforms for both modes.</summary>
     public void Update(
         Vector2 cameraOffset,
         float zoom,
@@ -126,7 +119,7 @@ public class ZoneFogRenderer
         MapData? map,
         Vector2 playerWorldPx)
     {
-        if (_worldLayer == null) return;
+        if (_worldLayer == null || _shader == null) return;
         if (map == null)
         {
             if (_humoSprite != null) _humoSprite.Visible = false;
@@ -137,9 +130,6 @@ public class ZoneFogRenderer
         _worldLayer.Position = cameraOffset;
         _worldLayer.Scale = new Vector2(zoom, zoom);
 
-        // Determine which fog modes are active this frame. Density requirement
-        // is dropped — if a zone has Niebla=true we render it even when
-        // NieblaDensity happens to be 0 (falls back to a default visible value).
         bool hasPaintedFog = map.PaintedFogTiles.Count > 0;
         bool hasZoneFog = false;
         for (int i = 0; i < zones.Count; i++)
@@ -147,7 +137,7 @@ public class ZoneFogRenderer
             if (zones[i].Niebla) { hasZoneFog = true; break; }
         }
 
-        // Rebuild both masks if dirty
+        // Rebuild masks if dirty or map size changed
         if (_maskDirty || _maskW != map.Width || _maskH != map.Height)
         {
             if (hasPaintedFog) RebuildHumoMask(map);
@@ -155,6 +145,7 @@ public class ZoneFogRenderer
             _maskW = map.Width;
             _maskH = map.Height;
             _maskDirty = false;
+            GD.Print($"[ZoneFogRenderer] Masks rebuilt: humo={_humoMaskTexture != null}({map.PaintedFogTiles.Count} tiles) zone={_zoneMaskTexture != null}({(hasZoneFog ? "yes" : "no")})");
         }
 
         float worldW = map.Width * TileSize;
@@ -171,13 +162,15 @@ public class ZoneFogRenderer
             if (_humoSprite.Visible && _humoSprite.Material is ShaderMaterial sm && _humoMaskTexture != null)
             {
                 int dens = map.PaintedFogDensity > 0 ? map.PaintedFogDensity : 160;
-                sm.SetShaderParameter("humo_mask", _humoMaskTexture);
+                sm.SetShaderParameter("fog_mask", _humoMaskTexture);
                 sm.SetShaderParameter("map_tile_size", mapSize);
                 sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
                 sm.SetShaderParameter("rect_world_size", spriteScale);
-                sm.SetShaderParameter("humo_density", dens / 255f);
-                sm.SetShaderParameter("humo_color",
+                sm.SetShaderParameter("density", dens / 255f);
+                sm.SetShaderParameter("fog_color",
                     new Color(map.PaintedFogR / 255f, map.PaintedFogG / 255f, map.PaintedFogB / 255f, 1f));
+                sm.SetShaderParameter("speed",
+                    new Vector2(map.PaintedFogSpeedX / 100f, map.PaintedFogSpeedY / 100f));
             }
         }
 
@@ -189,10 +182,8 @@ public class ZoneFogRenderer
             _zoneSprite.Visible = hasZoneFog && _zoneMaskTexture != null;
             if (_zoneSprite.Visible && _zoneSprite.Material is ShaderMaterial sm && _zoneMaskTexture != null)
             {
-                // Use the first zone with niebla as the style source. Defaults
-                // (density=90, color=128/140/160, speed=5/2) kick in if the
-                // zone has Niebla=true but the fog params are 0 (e.g., older
-                // saved zones from before those fields existed).
+                // Use the first zone with Niebla as style source. Defaults kick
+                // in if the fog fields happen to be zero (old saves).
                 int dens = 90, r = 128, g = 140, b = 160, sx = 5, sy = 2;
                 for (int i = 0; i < zones.Count; i++)
                 {
@@ -208,7 +199,7 @@ public class ZoneFogRenderer
                         break;
                     }
                 }
-                sm.SetShaderParameter("zone_mask", _zoneMaskTexture);
+                sm.SetShaderParameter("fog_mask", _zoneMaskTexture);
                 sm.SetShaderParameter("map_tile_size", mapSize);
                 sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
                 sm.SetShaderParameter("rect_world_size", spriteScale);
@@ -219,8 +210,10 @@ public class ZoneFogRenderer
         }
     }
 
-    /// <summary>Build the R8 mask for painted humo tiles. Subtracts layer
-    /// 2/3/4-occluded tiles so objects poke through cleanly.</summary>
+    /// <summary>Build R8 mask for painted humo tiles. Subtracts Layer 3
+    /// (objects) and Layer 4 (roofs) so they poke through cleanly. L2
+    /// (terrain transitions) is NOT subtracted — too many tiles have
+    /// decorative L2 content on detailed maps.</summary>
     private void RebuildHumoMask(MapData map)
     {
         int W = map.Width, H = map.Height;
@@ -231,17 +224,12 @@ public class ZoneFogRenderer
         }
         _humoMaskImage.Fill(Colors.Black);
 
-        // Painted tiles → white
         foreach (var t in map.PaintedFogTiles)
         {
             if (t.X >= 1 && t.X <= W && t.Y >= 1 && t.Y <= H)
                 _humoMaskImage.SetPixel(t.X - 1, t.Y - 1, Colors.White);
         }
 
-        // Subtract only Layer 3 (objects/trees/rocks) and Layer 4 (roofs).
-        // Layer 2 is typically terrain transitions / decorative masks that
-        // cover most tiles on detailed maps — subtracting L2 would wipe
-        // out the mask entirely. Only L3 and L4 represent real occluders.
         for (int y = 1; y <= H; y++)
         {
             for (int x = 1; x <= W; x++)
@@ -258,8 +246,7 @@ public class ZoneFogRenderer
             _humoMaskTexture.Update(_humoMaskImage);
     }
 
-    /// <summary>Build the R8 mask for zone niebla tiles. Subtracts layer
-    /// 2/3/4-occluded tiles.</summary>
+    /// <summary>Build R8 mask for zone niebla tiles. Same L3/L4 subtraction rules.</summary>
     private void RebuildZoneMask(MapData map, IReadOnlyList<ZoneInfo> zones)
     {
         int W = map.Width, H = map.Height;
@@ -270,8 +257,6 @@ public class ZoneFogRenderer
         }
         _zoneMaskImage.Fill(Colors.Black);
 
-        // Zones with niebla → white inside their rect (density check dropped;
-        // any zone with Niebla=true is rendered using default density if needed)
         for (int i = 0; i < zones.Count; i++)
         {
             var z = zones[i];
@@ -283,8 +268,6 @@ public class ZoneFogRenderer
                     _zoneMaskImage.SetPixel(x - 1, y - 1, Colors.White);
         }
 
-        // Subtract only Layer 3/4 (objects + roofs) — see RebuildHumoMask
-        // for the rationale. Layer 2 is decorative masking, not occluders.
         for (int y = 1; y <= H; y++)
         {
             for (int x = 1; x <= W; x++)
@@ -314,8 +297,7 @@ public class ZoneFogRenderer
         _zoneMaskImage = null;
         _zoneMaskTexture = null;
         _canvasTexture = null;
-        _humoShader = null;
-        _zoneShader = null;
+        _shader = null;
         _noiseTexture = null;
     }
 }
