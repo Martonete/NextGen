@@ -88,6 +88,13 @@ public class LightRenderer
     private float _elapsedTime = 0f;
     private readonly RandomNumberGenerator _rng = new RandomNumberGenerator();
 
+    // Dynamic character occluder — a single persistent LightOccluder2D that
+    // follows the player/hover position each frame so shadows update in
+    // real time as you walk around. Lives OUTSIDE the tile occluder pool
+    // so RebuildOccluders doesn't free it when L3 tiles change.
+    private LightOccluder2D? _characterOccluder;
+    private OccluderPolygon2D? _characterPolygon;
+
     public void AttachTo(Node parent)
     {
         _parent = parent;
@@ -136,6 +143,28 @@ public class LightRenderer
 
         _lightsRoot = new Node2D { Name = "LightNodes" };
         parent.AddChild(_lightsRoot);
+
+        // Small square polygon (~20 px) for the character. Lives alongside
+        // tile occluders but is never freed during RebuildOccluders — its
+        // Position is updated per-frame from the caller-supplied character
+        // world coordinates.
+        _characterPolygon = new OccluderPolygon2D
+        {
+            CullMode = OccluderPolygon2D.CullModeEnum.Disabled,
+            Polygon = new Vector2[]
+            {
+                new Vector2(-10, -10),
+                new Vector2(10, -10),
+                new Vector2(10, 10),
+                new Vector2(-10, 10),
+            },
+        };
+        _characterOccluder = new LightOccluder2D
+        {
+            Occluder = _characterPolygon,
+            Visible = false,
+        };
+        _occluderRoot.AddChild(_characterOccluder);
     }
 
     /// <summary>Inject the graphics resources needed to compute pixel-
@@ -181,13 +210,18 @@ public class LightRenderer
     /// mapping: <paramref name="worldOrigin"/> is the world-pixel coordinate
     /// at panel (0,0); <paramref name="worldSize"/> is how much world area is
     /// visible across <paramref name="panelSize"/>.
+    /// <paramref name="characterWorldPx"/> is the world-pixel position of
+    /// the player / hover cursor — pass null to disable. The character is
+    /// treated as a small dynamic occluder so lights respond in real time
+    /// as it moves.
     /// </summary>
     public void Update(
         Vector2 panelSize,
         Vector2 worldOrigin,
         Vector2 worldSize,
         MapData? map,
-        float deltaTime)
+        float deltaTime,
+        Vector2? characterWorldPx = null)
     {
         if (_parent == null || _lightsRoot == null || _occluderRoot == null) return;
 
@@ -259,6 +293,22 @@ public class LightRenderer
             _lightsDirty = false;
         }
         AnimateLights(lights);
+
+        // ── Dynamic character occluder ──
+        // Moves every frame to track the player / hover. No MarkDirty
+        // needed — Godot's Light2D picks up Position changes live.
+        if (_characterOccluder != null)
+        {
+            if (characterWorldPx.HasValue)
+            {
+                _characterOccluder.Visible = true;
+                _characterOccluder.Position = characterWorldPx.Value;
+            }
+            else
+            {
+                _characterOccluder.Visible = false;
+            }
+        }
     }
 
     /// <summary>
@@ -299,7 +349,7 @@ public class LightRenderer
                         // Opaque shadow color — without a CanvasModulate we
                         // can't rely on global darkness to show shadows,
                         // so the shadow pass itself must be visible.
-                        ShadowColor = new Color(0f, 0f, 0f, 0.5f),
+                        ShadowColor = new Color(0f, 0f, 0f, 0.25f),
                     };
                     _lightsRoot.AddChild(newDir);
                     _dirPool.Add(newDir);
@@ -322,7 +372,7 @@ public class LightRenderer
                         Visible = false,
                         BlendMode = Light2D.BlendModeEnum.Add,
                         ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
-                        ShadowColor = new Color(0f, 0f, 0f, 0.5f),
+                        ShadowColor = new Color(0f, 0f, 0f, 0.25f),
                         Texture = _lightGradient,
                     };
                     _lightsRoot.AddChild(newOmni);
@@ -414,7 +464,14 @@ public class LightRenderer
     {
         if (_occluderRoot == null || _occluderSquare == null) return;
 
-        int used = 0;
+        // Non-pooling rebuild: QueueFree every existing occluder first, then
+        // add fresh ones. Pooling with setter-based mutation was sometimes
+        // leaving Godot's Light2D shadow atlas with stale geometry when
+        // nearby tiles changed — this is slower but always correct.
+        for (int i = 0; i < _occluderPool.Count; i++)
+            if (GodotObject.IsInstanceValid(_occluderPool[i])) _occluderPool[i].QueueFree();
+        _occluderPool.Clear();
+
         int W = map.Width;
         int H = map.Height;
 
@@ -438,19 +495,12 @@ public class LightRenderer
                     var grh = ResolveGrhFrame(tile.Layer3);
                     if (polys.Length > 0 && grh != null)
                     {
-                        // Same offset formula as MapViewport.DrawTileGrh
-                        // (center:true): horizontally centered on the tile,
-                        // bottom edge aligned with the tile's bottom.
                         float drawX = (x - 1) * TileSize + (TileSize - grh.PixelWidth) / 2f;
                         float drawY = (y - 1) * TileSize + (TileSize - grh.PixelHeight);
                         var drawPos = new Vector2(drawX, drawY);
 
                         for (int p = 0; p < polys.Length; p++)
-                        {
-                            var occ = AcquireOccluder(used++);
-                            occ.Occluder = polys[p];
-                            occ.Position = drawPos;
-                        }
+                            SpawnOccluder(polys[p], drawPos);
                         continue;
                     }
                     // Fall through to the 32x32 square fallback when the
@@ -459,30 +509,24 @@ public class LightRenderer
 
                 // 32x32 square fallback for Blocked-only tiles or GRHs
                 // whose alpha mask couldn't be extracted.
-                var fallbackOcc = AcquireOccluder(used++);
-                fallbackOcc.Occluder = _occluderSquare;
-                fallbackOcc.Position = new Vector2((x - 1) * TileSize, (y - 1) * TileSize);
+                SpawnOccluder(_occluderSquare, new Vector2((x - 1) * TileSize, (y - 1) * TileSize));
             }
         }
-
-        // Hide leftover slots from previous (larger) rebuilds.
-        for (int i = used; i < _occluderPool.Count; i++)
-            _occluderPool[i].Visible = false;
     }
 
-    /// <summary>Get or create the occluder node at <paramref name="index"/>
-    /// in the pool. Visibility is forced on for newly-acquired slots.</summary>
-    private LightOccluder2D AcquireOccluder(int index)
+    /// <summary>Create a fresh LightOccluder2D with the given polygon and
+    /// position, parent it under <see cref="_occluderRoot"/>, and record it
+    /// in <see cref="_occluderPool"/>. Used by <see cref="RebuildOccluders"/>
+    /// — callers must have already cleared the pool.</summary>
+    private void SpawnOccluder(OccluderPolygon2D polygon, Vector2 position)
     {
-        while (_occluderPool.Count <= index)
+        var occ = new LightOccluder2D
         {
-            var occ = new LightOccluder2D();
-            _occluderRoot!.AddChild(occ);
-            _occluderPool.Add(occ);
-        }
-        var node = _occluderPool[index];
-        node.Visible = true;
-        return node;
+            Occluder = polygon,
+            Position = position,
+        };
+        _occluderRoot!.AddChild(occ);
+        _occluderPool.Add(occ);
     }
 
     /// <summary>Resolve an animated GRH down to its first frame so we can
@@ -613,6 +657,11 @@ public class LightRenderer
         if (_ambientNode != null && GodotObject.IsInstanceValid(_ambientNode))
             _ambientNode.QueueFree();
         _ambientNode = null;
+
+        if (_characterOccluder != null && GodotObject.IsInstanceValid(_characterOccluder))
+            _characterOccluder.QueueFree();
+        _characterOccluder = null;
+        _characterPolygon = null;
 
         _lightGradient = null;
         _occluderSquare = null;

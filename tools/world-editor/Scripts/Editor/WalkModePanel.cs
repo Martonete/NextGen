@@ -262,7 +262,9 @@ public partial class WalkModePanel : Control
                 (CharX - _halfTilesX - 1) * 32f - _moveOffsetX,
                 (CharY - _halfTilesY - 1) * 32f - _moveOffsetY);
             _zoneFog.Update(Size, worldOrigin, Size, zoneList, Map, playerWorldPx);
-            _lightRenderer.Update(Size, worldOrigin, Size, Map, (float)delta);
+            // The player character acts as a dynamic light occluder —
+            // shadows respond in real time as the character walks.
+            _lightRenderer.Update(Size, worldOrigin, Size, Map, (float)delta, playerWorldPx);
         }
 
         if (_isMoving)
