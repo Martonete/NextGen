@@ -30,6 +30,8 @@ public partial class HumoConfigPanel : PanelContainer
     private LineEdit? _newPrefabNameEdit;
     private Button? _savePrefabBtn;
     private Button? _deleteLayerBtn;
+    private Button? _newLayerBtn;
+    private LineEdit? _newLayerNameEdit;
     private SpinBox? _densitySpin;
     private SpinBox? _rSpin, _gSpin, _bSpin;
     private ColorRect? _colorPreview;
@@ -50,17 +52,36 @@ public partial class HumoConfigPanel : PanelContainer
         AddChild(vbox);
 
         vbox.AddChild(EditorTheme.Heading("Humo (pintar)"));
-        var help = EditorTheme.MakeLabel("Click izq: pintar.  Click der: borrar.  Cada capa es independiente.", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        var help = EditorTheme.MakeLabel(
+            "Creá varias capas para mezclar colores en el mismo lugar — cada capa es independiente.",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
         help.AutowrapMode = TextServer.AutowrapMode.Word;
         vbox.AddChild(help);
 
-        vbox.AddChild(EditorTheme.MakeLabel("Capa / prefab:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        // --- New layer row ---
+        vbox.AddChild(EditorTheme.MakeLabel("Nueva capa:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        var newLayerRow = new HBoxContainer();
+        newLayerRow.AddThemeConstantOverride("separation", 4);
+        _newLayerNameEdit = new LineEdit
+        {
+            PlaceholderText = "Nombre (ej: Humo rojo)...",
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        newLayerRow.AddChild(_newLayerNameEdit);
+        _newLayerBtn = new Button { Text = "+ Crear" };
+        _newLayerBtn.Pressed += OnCreateNewLayer;
+        newLayerRow.AddChild(_newLayerBtn);
+        vbox.AddChild(newLayerRow);
+
+        vbox.AddChild(new HSeparator());
+
+        // --- Current layer / prefab picker ---
+        vbox.AddChild(EditorTheme.MakeLabel("Capa activa / copiar desde prefab:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         _layerOption = new OptionButton();
         _layerOption.CustomMinimumSize = new Vector2(0, 24);
         vbox.AddChild(_layerOption);
         _layerOption.ItemSelected += OnDropdownSelected;
 
-        // Delete current layer button
         _deleteLayerBtn = new Button { Text = "🗑 Eliminar capa actual" };
         _deleteLayerBtn.Pressed += OnDeleteCurrentLayer;
         vbox.AddChild(_deleteLayerBtn);
@@ -217,6 +238,39 @@ public partial class HumoConfigPanel : PanelContainer
         if (Map == null || Map.ActiveFogLayerIndex < 0 || Map.ActiveFogLayerIndex >= Map.PaintedFogLayers.Count) return;
         Map.PaintedFogLayers.RemoveAt(Map.ActiveFogLayerIndex);
         Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count > 0 ? 0 : -1;
+        RebuildDropdown();
+        LoadActiveLayerIntoUi();
+        OnChanged?.Invoke();
+    }
+
+    /// <summary>Create a brand-new empty layer with the given name and
+    /// default style (grey niebla). Users then paint tiles into it and
+    /// tweak its color/density via the sliders — independently of any
+    /// other existing layer.</summary>
+    private void OnCreateNewLayer()
+    {
+        if (Map == null) return;
+        string name = _newLayerNameEdit?.Text?.Trim() ?? "";
+        if (string.IsNullOrEmpty(name)) name = $"Humo {Map.PaintedFogLayers.Count + 1}";
+
+        // Seed the new layer from the CURRENT UI values so users can
+        // pre-configure a color in the sliders and click Crear to
+        // "stamp" that style as a new independent layer.
+        var layer = new PaintedFogLayer
+        {
+            Name = name,
+            Density = (int)(_densitySpin?.Value ?? 160),
+            R = (int)(_rSpin?.Value ?? 128),
+            G = (int)(_gSpin?.Value ?? 140),
+            B = (int)(_bSpin?.Value ?? 160),
+            SpeedX = 5,
+            SpeedY = 2,
+        };
+        Map.PaintedFogLayers.Add(layer);
+        Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
+
+        if (_newLayerNameEdit != null) _newLayerNameEdit.Text = "";
+        GD.Print($"[HumoConfigPanel] Created new layer '{name}' (total layers: {Map.PaintedFogLayers.Count})");
         RebuildDropdown();
         LoadActiveLayerIntoUi();
         OnChanged?.Invoke();
