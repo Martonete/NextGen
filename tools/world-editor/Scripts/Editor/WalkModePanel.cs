@@ -78,6 +78,10 @@ public partial class WalkModePanel : Control
     public void InvalidateLighting()
     {
         _cpuLightsDirty = true;
+        // Forward the GRH resources to the light renderer so it can build
+        // the occlusion mask from L3 sprite alphas. Without this, walk mode
+        // shadows don't know what the sprites look like and the mask is empty.
+        _lightRenderer.SetGraphicsResources(Grhs, Textures);
         _lightRenderer.MarkDirty();
     }
 

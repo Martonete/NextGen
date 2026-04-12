@@ -37,11 +37,45 @@ uniform vec4 light_colors[32];
 uniform int  num_lights = 0;
 uniform float light_energy_mults[32];
 
+// Normal map derived from the occlusion mask. When enabled, the
+// lighting calculation uses a per-pixel dot(normal, lightDir) factor
+// so sprites show shading based on their "surface direction" — one
+// side brighter, other side darker, giving a 2.5D relief effect.
+// The normal is estimated from the mask's luminance gradient (Sobel).
+uniform float normal_strength = 0.6; // 0 = flat (no normal effect), 1 = full
+
 // Dynamic character occluder.
 uniform vec2  character_pos = vec2(-1.0, -1.0);
 uniform float character_half = 10.0;
 
 const int RAY_STEPS = 16;
+
+// Estimate surface normal from the occlusion mask gradient (Sobel filter).
+// Returns a vec3 normal where (0, 0, 1) = flat facing camera.
+// Edges of sprites get angled normals so light wraps around them.
+vec3 estimate_normal(vec2 world_px) {
+    vec2 texel = 1.0 / map_pixel_size;
+    float px = 2.0; // sample offset in world pixels
+    vec2 off = texel * px;
+
+    // 3x3 Sobel kernel sampling the occlusion mask height.
+    // We treat mask opacity as "height" — opaque = elevated surface.
+    float tl = texture(occlusion_mask, world_px / map_pixel_size + vec2(-off.x, -off.y)).r;
+    float t  = texture(occlusion_mask, world_px / map_pixel_size + vec2(   0.0, -off.y)).r;
+    float tr = texture(occlusion_mask, world_px / map_pixel_size + vec2( off.x, -off.y)).r;
+    float l  = texture(occlusion_mask, world_px / map_pixel_size + vec2(-off.x,    0.0)).r;
+    float r  = texture(occlusion_mask, world_px / map_pixel_size + vec2( off.x,    0.0)).r;
+    float bl = texture(occlusion_mask, world_px / map_pixel_size + vec2(-off.x,  off.y)).r;
+    float b  = texture(occlusion_mask, world_px / map_pixel_size + vec2(   0.0,  off.y)).r;
+    float br = texture(occlusion_mask, world_px / map_pixel_size + vec2( off.x,  off.y)).r;
+
+    // Sobel gradients
+    float dx = (tr + 2.0 * r + br) - (tl + 2.0 * l + bl);
+    float dy = (bl + 2.0 * b + br) - (tl + 2.0 * t + tr);
+
+    // Normal from gradient (z = 1.0 makes the surface mostly face the camera)
+    return normalize(vec3(-dx * normal_strength, -dy * normal_strength, 1.0));
+}
 
 float sample_occlusion(vec2 world_px) {
     vec2 uv = world_px / map_pixel_size;
@@ -110,7 +144,16 @@ void fragment() {
         // Shadow raycast
         if (is_occluded(world_px, L.xy)) continue;
 
-        light_accum += col * falloff * energy;
+        // Normal-based shading: dot(normal, lightDir) gives directional
+        // lighting so sprites show relief. Light coming from the left
+        // brightens the left side and darkens the right, for example.
+        // For pixels NOT on an occluder surface, the normal is (0,0,1)
+        // = flat = no directional bias (dot = lightDir.z ≈ 1.0).
+        vec3 normal = estimate_normal(world_px);
+        vec3 light_dir = normalize(vec3(L.xy - world_px, 100.0));
+        float ndotl = max(dot(normal, light_dir), 0.2); // 0.2 min so even back-facing areas get some light
+
+        light_accum += col * falloff * energy * ndotl;
     }
 
     // Final output: ambient + accumulated light, clamped to [0, 1].
