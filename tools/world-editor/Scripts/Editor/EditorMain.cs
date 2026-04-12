@@ -465,6 +465,7 @@ public partial class EditorMain : Control
             if (_lightPanel == null) return;
             _lightPanel.SelectedLightIndex = idx;
             _lightPanel.RefreshFromMap();
+            _viewport?.SetSelectedAdvancedLight(idx);
         };
         _viewport.OnAdvancedLightsChanged += () =>
         {

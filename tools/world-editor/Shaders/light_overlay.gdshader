@@ -111,28 +111,34 @@ float pixel_hash(vec2 co) {
     return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
-bool is_occluded(vec2 from_px, vec2 light_px) {
+// Returns shadow factor 0..1. 1.0 = fully lit, 0.0 = fully shadowed.
+// Shadows fade with distance from the occluder — nearby occluders cast
+// sharp dark shadows, distant ones cast faint ones (matches atmospheric
+// scatter + ambient fill in real lighting).
+float shadow_factor(vec2 from_px, vec2 light_px) {
     vec2 dir = light_px - from_px;
     float len = length(dir);
-    if (len < 1.0) return false;
+    if (len < 1.0) return 1.0;
 
     float skip_px = 16.0;
     float start_t = clamp(skip_px / len, 0.0, 0.3);
     float end_t   = clamp(1.0 - 8.0 / len, 0.55, 1.0);
 
-    // Jitter the ray start by up to half a step to break the regular
-    // stepping pattern that creates visible banding/stripes in shadows.
     float jitter = pixel_hash(from_px * 0.1) * 0.5;
     float step_size = (end_t - start_t) / float(RAY_STEPS);
 
     for (int i = 0; i < RAY_STEPS; i++) {
         float t = start_t + (float(i) + jitter) * step_size;
         vec2 p = from_px + dir * t;
-        // Threshold 0.5 (was 0.4) to only occlude on solidly-opaque pixels,
-        // reducing shadow noise from semi-transparent mask edges.
-        if (sample_occlusion(p) > 0.5) return true;
+        if (sample_occlusion(p) > 0.5) {
+            // Distance from pixel to occluder in world-px.
+            float occluder_dist = t * len;
+            // Sharp shadow at ≤1 tile, fading to none at 4 tiles.
+            float strength = 1.0 - smoothstep(32.0, 128.0, occluder_dist);
+            return 1.0 - strength;
+        }
     }
-    return false;
+    return 1.0;
 }
 
 void fragment() {
@@ -158,17 +164,16 @@ void fragment() {
 
         float energy = L.w;
 
-        // Occluder surfaces (walls/trees) always receive light — shadow
-        // only falls on ground behind them. Use a smooth blend at the
+        // Occluder surfaces (walls/trees) always receive light.
+        // Shadow only falls on ground behind them. Smooth blend at the
         // mask edge so the transition isn't a hard visible line.
         float ground_factor = 1.0 - smoothstep(0.3, 0.6, self_mask);
-        // ground_factor = 1.0 on pure ground, 0.0 on solid occluder.
-        // For ground pixels, check shadow. For occluder pixels, skip.
+        float shadow = 1.0;
         if (ground_factor > 0.5) {
-            if (is_occluded(world_px, L.xy)) continue;
+            shadow = shadow_factor(world_px, L.xy);
         }
 
-        light_accum += col * falloff * energy;
+        light_accum += col * falloff * energy * shadow;
     }
 
     // Final output: ambient + accumulated light, clamped to [0, 1].

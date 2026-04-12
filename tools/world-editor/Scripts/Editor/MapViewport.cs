@@ -29,6 +29,16 @@ public partial class MapViewport : Control
     /// (place / delete). EditorMain wires this to LightToolPanel.RefreshFromMap
     /// + viewport dirty mark.</summary>
     public Action? OnAdvancedLightsChanged;
+
+    /// <summary>Tracks which advanced light is currently selected (for the
+    /// selection-highlight gizmo in _Draw). Synced from the LightToolPanel
+    /// via SetSelectedAdvancedLight().</summary>
+    private int _selectedAdvancedLightIndex = -1;
+    public void SetSelectedAdvancedLight(int index)
+    {
+        _selectedAdvancedLightIndex = index;
+        QueueRedraw();
+    }
     public int[]? ObjGrhs;
     public int[]? NpcBodies;
     public int[]? NpcHeads;
@@ -1070,6 +1080,98 @@ public partial class MapViewport : Control
                         DrawCircle(center, 4f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.9f));
                         DrawCircle(center, 2f, new Color(1f, 1f, 1f, 0.95f));
                     }
+
+        // ── Advanced Light (MapLight) gizmos ──
+        // Drawn when the LightAdvanced tool is active OR when ShowLights is on
+        // while another tool is selected (so you can see where they are).
+        bool showAdvancedLights = State.ActiveTool == EditorTool.LightAdvanced
+                                   || (State.ShowLights && State.ActiveTool != EditorTool.LightAdvanced);
+        if (showAdvancedLights && !skipDetailedOverlays && Map.LightData.Lights.Count > 0)
+        {
+            for (int i = 0; i < Map.LightData.Lights.Count; i++)
+            {
+                var ml = Map.LightData.Lights[i];
+                var center = new Vector2(
+                    (ml.X + 0.5f) * TileSize,
+                    (ml.Y + 0.5f) * TileSize);
+                var col = new Color(ml.R / 255f, ml.G / 255f, ml.B / 255f);
+                bool isSelected = State.ActiveTool == EditorTool.LightAdvanced
+                                  && i == _selectedAdvancedLightIndex;
+
+                // Radius circle outline (shows how far the light reaches)
+                float radiusPx = ml.Radius * TileSize;
+                DrawArc(center, radiusPx, 0f, Mathf.Tau,
+                    32, new Color(col.R, col.G, col.B, isSelected ? 0.7f : 0.3f), 1.5f);
+
+                // Type-specific icon at the light's center
+                switch (ml.Type)
+                {
+                    case LightType.Omni:
+                        // Round dot with glow halo — the simplest "bulb" icon
+                        DrawCircle(center, 8f, new Color(col.R, col.G, col.B, 0.35f));
+                        DrawCircle(center, 5f, new Color(col.R, col.G, col.B, 0.95f));
+                        DrawCircle(center, 2.5f, new Color(1f, 1f, 1f, 0.95f));
+                        break;
+
+                    case LightType.Spot:
+                    {
+                        // Cone / lamp icon: short rectangle at base, triangle
+                        // fanning out in the direction vector.
+                        float dirRad = Mathf.DegToRad(ml.DirectionDeg);
+                        var dir = new Vector2(Mathf.Cos(dirRad), Mathf.Sin(dirRad));
+                        var perp = new Vector2(-dir.Y, dir.X);
+
+                        // Cone triangle showing the light's direction + angle
+                        float coneRad = Mathf.DegToRad(ml.ConeDegrees * 0.5f);
+                        var coneLeft = new Vector2(
+                            Mathf.Cos(dirRad - coneRad), Mathf.Sin(dirRad - coneRad));
+                        var coneRight = new Vector2(
+                            Mathf.Cos(dirRad + coneRad), Mathf.Sin(dirRad + coneRad));
+                        float coneLen = TileSize * 1.4f;
+                        var tipL = center + coneLeft * coneLen;
+                        var tipR = center + coneRight * coneLen;
+                        DrawColoredPolygon(
+                            new[] { center, tipL, tipR },
+                            new Color(col.R, col.G, col.B, 0.35f));
+
+                        // Lamp body at the origin (small rectangle)
+                        var bodyCorners = new[]
+                        {
+                            center + perp * 5f - dir * 3f,
+                            center - perp * 5f - dir * 3f,
+                            center - perp * 5f + dir * 3f,
+                            center + perp * 5f + dir * 3f,
+                        };
+                        DrawColoredPolygon(bodyCorners, new Color(col.R, col.G, col.B, 0.9f));
+                        DrawCircle(center, 2f, new Color(1f, 1f, 1f, 0.95f));
+                        break;
+                    }
+
+                    case LightType.Directional:
+                    {
+                        // Sun/moon icon with rays pointing in the direction
+                        DrawCircle(center, 6f, new Color(col.R, col.G, col.B, 0.9f));
+                        DrawCircle(center, 3f, new Color(1f, 1f, 1f, 0.95f));
+                        float dirRad = Mathf.DegToRad(ml.DirectionDeg);
+                        for (int k = 0; k < 8; k++)
+                        {
+                            float a = dirRad + k * Mathf.Tau / 8f;
+                            var from = center + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 9f;
+                            var to = center + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 14f;
+                            DrawLine(from, to, new Color(col.R, col.G, col.B, 0.8f), 1.5f);
+                        }
+                        break;
+                    }
+                }
+
+                // Selection highlight: bright ring around the selected light.
+                if (isSelected)
+                {
+                    DrawArc(center, 14f, 0f, Mathf.Tau, 24,
+                        new Color(1f, 1f, 0f, 0.9f), 2f);
+                }
+            }
+        }
 
         // ── Particle indicators (diamond + pill) ──
         if (State.ShowParticles && !skipDetailedOverlays)
