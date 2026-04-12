@@ -237,13 +237,10 @@ public partial class MapViewport : Control
             float z = Mathf.Max(0.01f, State.Zoom);
             var worldOrigin = -State.CameraOffset / z;
             var worldSize = Size / z;
-            // The "character" in the editor viewport is the hover cursor —
-            // as you mouse around, the dynamic occluder follows so you can
-            // preview how a player would shadow the scene in real time.
-            // Position = bottom-center of the hover tile (feet anchor),
-            // NOT tile center — matches how character sprites are drawn.
+            // Character occluder at feet in DrawTileGrh coordinates:
+            // center X = (tileX + 0.5) * 32, bottom Y = (tileY + 1) * 32.
             Vector2? charPx = State.HoverValid && Map != null && Map.InBounds(State.HoverX, State.HoverY)
-                ? new Vector2((State.HoverX - 0.5f) * 32f, State.HoverY * 32f)
+                ? new Vector2((State.HoverX + 0.5f) * 32f, (State.HoverY + 1f) * 32f)
                 : (Vector2?)null;
             _lightRenderer.Update(Size, worldOrigin, worldSize, Map, (float)delta, charPx);
         }

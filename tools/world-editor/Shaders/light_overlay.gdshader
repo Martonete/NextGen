@@ -140,10 +140,10 @@ void fragment() {
         float falloff = smoothstep(1.0, 0.0, t);
 
         // With multiply blending, output is clamped to [0,1] naturally —
-        // high energy just pushes the lit area closer to 1.0 (fully
-        // preserving the scene). No pre-scaling needed.
-        // Slider 0-10: 0.5=candle, 1=torch, 2=campfire, 5=beacon.
-        float energy = L.w * light_energy_mults[i] * 0.5;
+        // over-energized lights just push the lit area closer to full
+        // scene preservation, never wash-out. No pre-scaling needed.
+        // Slider: 0.3=candle, 0.8=torch, 1.5=campfire, 3=beacon.
+        float energy = L.w * light_energy_mults[i];
 
         // Shadow raycast — checks for occluders BETWEEN this pixel
         // and the light (skipping the first 40px to avoid self-shadow).

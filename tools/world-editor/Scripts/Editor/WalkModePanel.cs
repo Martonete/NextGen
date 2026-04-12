@@ -266,12 +266,12 @@ public partial class WalkModePanel : Control
                 (CharX - _halfTilesX - 1) * 32f - _moveOffsetX,
                 (CharY - _halfTilesY - 1) * 32f - _moveOffsetY);
             _zoneFog.Update(Size, worldOrigin, Size, zoneList, Map, playerWorldPx);
-            // Character occluder must be at the FEET (bottom-center of the
-            // current tile), not the tile's midpoint — matches the sprite
-            // draw anchor so the shadow lines up with the visible player.
+            // Character occluder at feet (bottom-center of tile) in the
+            // same coordinate system as the light positions (DrawTileGrh
+            // coords: tileX*32+16 = center, tileY*32+32 = bottom).
             var playerFeetPx = new Vector2(
-                (CharX - 0.5f) * 32f - _moveOffsetX,
-                CharY * 32f - _moveOffsetY);
+                (CharX + 0.5f) * 32f - _moveOffsetX,
+                (CharY + 1f) * 32f - _moveOffsetY);
             _lightRenderer.Update(Size, worldOrigin, Size, Map, (float)delta, playerFeetPx);
         }
 
