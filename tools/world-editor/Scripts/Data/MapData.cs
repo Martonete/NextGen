@@ -75,6 +75,10 @@ public class MapData
     // When true the humo shader runs its noise animation; when false the
     // paint is the clean solid fill the user loved in step 1.
     public bool PaintedFogAnimated = false;
+
+    // User-defined named smoke presets saved with the map. Combined with
+    // SmokePrefab.BuiltIn in the humo panel dropdown.
+    public List<SmokePrefab> UserFogPrefabs = new();
     // Global map-level toggle: when true, fog uses domain-warped multi-directional
     // swirl ("humo libre" / free smoke) instead of the straight-line wind drift.
     public bool FogFreeSmoke = false;
@@ -126,6 +130,8 @@ public class MapData
         sb.AppendLine($"SpeedY={PaintedFogSpeedY}");
         sb.AppendLine($"Animated={(PaintedFogAnimated ? 1 : 0)}");
         sb.AppendLine($"FreeSmoke={(FogFreeSmoke ? 1 : 0)}");
+        foreach (var p in UserFogPrefabs)
+            sb.AppendLine($"Prefab={p.Serialize()}");
         foreach (var t in PaintedFogTiles)
             sb.AppendLine($"T={t.X},{t.Y}");
         File.WriteAllText(path, sb.ToString());
@@ -137,6 +143,7 @@ public class MapData
         if (string.IsNullOrEmpty(dir) || MapNumber <= 0) return;
         string path = Path.Combine(dir, $"Mapa{MapNumber}.aofog");
         PaintedFogTiles.Clear();
+        UserFogPrefabs.Clear();
         if (!File.Exists(path)) return;
         foreach (var rawLine in File.ReadAllLines(path))
         {
@@ -156,6 +163,10 @@ public class MapData
                 case "SPEEDY": if (int.TryParse(val, out var sy)) PaintedFogSpeedY = sy; break;
                 case "ANIMATED": PaintedFogAnimated = val == "1" || val.ToLowerInvariant() == "true"; break;
                 case "FREESMOKE": FogFreeSmoke = val == "1" || val.ToLowerInvariant() == "true"; break;
+                case "PREFAB":
+                    var pf = SmokePrefab.TryParse(val);
+                    if (pf != null) UserFogPrefabs.Add(pf);
+                    break;
                 case "T":
                     var parts = val.Split(',');
                     if (parts.Length == 2
