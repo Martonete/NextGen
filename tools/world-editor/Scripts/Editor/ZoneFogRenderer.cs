@@ -115,13 +115,17 @@ public class ZoneFogRenderer
             if (zones[i].Niebla) { hasZoneFog = true; break; }
         }
 
-        if (_maskDirty || _maskW != map.Width || _maskH != map.Height)
+        // Safety: rebuild zone mask if it's missing even though we need it
+        // (e.g., zones were loaded after the initial dirty flag was cleared).
+        bool zoneMaskMissing = hasZoneFog && _zoneMaskTexture == null;
+        if (_maskDirty || _maskW != map.Width || _maskH != map.Height || zoneMaskMissing)
         {
             RebuildHumoLayerMasks(map);
             if (hasZoneFog) RebuildZoneMask(map, zones);
             _maskW = map.Width;
             _maskH = map.Height;
             _maskDirty = false;
+            GD.Print($"[ZoneFogRenderer] Rebuilt — layers={map.PaintedFogLayers.Count} hasZone={hasZoneFog} zoneTex={(_zoneMaskTexture != null ? "OK" : "NULL")}");
         }
 
         var mapSize = new Vector2(map.Width, map.Height);
