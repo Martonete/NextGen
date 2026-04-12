@@ -52,7 +52,9 @@ uniform float character_half = 10.0;
 
 // More steps = smoother shadow edges. 48 is high quality for an editor.
 // Each step samples the occlusion mask along the ray from pixel to light.
-const int RAY_STEPS = 48;
+// Higher = smoother shadow edges. 64 steps with jitter gives clean
+// shadows even for large lights (20+ tile radius).
+const int RAY_STEPS = 64;
 
 // Estimate surface normal from the occlusion mask gradient (Sobel filter).
 // Returns a vec3 normal where (0, 0, 1) = flat facing camera.
@@ -86,10 +88,19 @@ float sample_occlusion(vec2 world_px) {
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
     float mask = texture(occlusion_mask, uv).r;
 
+    // Character occluder as an ellipse (approximates human silhouette
+    // far better than a rectangle). Anchor at the character's torso
+    // center (offset up from the feet position by character_half).
     if (character_pos.x >= 0.0) {
-        vec2 d = abs(world_px - character_pos);
-        if (d.x < character_half && d.y < character_half * 2.0) {
-            mask = max(mask, 1.0);
+        vec2 torso = character_pos - vec2(0.0, character_half);
+        vec2 d = world_px - torso;
+        float a = character_half;           // half-width of ellipse
+        float b = character_half * 1.2;     // half-height, slightly taller
+        float e = (d.x * d.x) / (a * a) + (d.y * d.y) / (b * b);
+        if (e < 1.0) {
+            // Soft edge via smoothstep — fades at the rim instead of a
+            // hard ellipse boundary, matching the soft alpha of a sprite.
+            mask = max(mask, 1.0 - smoothstep(0.7, 1.0, e));
         }
     }
     return mask;

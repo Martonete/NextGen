@@ -230,7 +230,11 @@ public class LightRenderer
         if (characterWorldPx.HasValue)
         {
             _material.SetShaderParameter("character_pos", characterWorldPx.Value);
-            _material.SetShaderParameter("character_half", 10f);
+            // Character ellipse half-width. The shader uses this as the
+            // ellipse's a (width) and 1.2×a as b (height). 9px → ~18px
+            // wide × 22px tall ellipse, close to a typical AO character
+            // sprite silhouette (17×26 body).
+            _material.SetShaderParameter("character_half", 9f);
         }
         else
         {
