@@ -85,7 +85,6 @@ public class ZoneFogRenderer
         if (_humoShader != null)
         {
             var humoMat = new ShaderMaterial { Shader = _humoShader };
-            humoMat.SetShaderParameter("noise_texture", _noiseTexture);
             _humoSprite = new Sprite2D
             {
                 Texture = _canvasTexture,
@@ -179,9 +178,6 @@ public class ZoneFogRenderer
                 sm.SetShaderParameter("humo_density", dens / 255f);
                 sm.SetShaderParameter("humo_color",
                     new Color(map.PaintedFogR / 255f, map.PaintedFogG / 255f, map.PaintedFogB / 255f, 1f));
-                sm.SetShaderParameter("humo_animated", map.PaintedFogAnimated ? 1.0f : 0.0f);
-                sm.SetShaderParameter("humo_speed",
-                    new Vector2(map.PaintedFogSpeedX / 100f, map.PaintedFogSpeedY / 100f));
             }
         }
 
@@ -242,13 +238,16 @@ public class ZoneFogRenderer
                 _humoMaskImage.SetPixel(t.X - 1, t.Y - 1, Colors.White);
         }
 
-        // Subtract layer 2/3/4 content — trees/buildings break the fog
+        // Subtract only Layer 3 (objects/trees/rocks) and Layer 4 (roofs).
+        // Layer 2 is typically terrain transitions / decorative masks that
+        // cover most tiles on detailed maps — subtracting L2 would wipe
+        // out the mask entirely. Only L3 and L4 represent real occluders.
         for (int y = 1; y <= H; y++)
         {
             for (int x = 1; x <= W; x++)
             {
                 ref var tile = ref map.Tiles[x, y];
-                if (tile.Layer2 != 0 || tile.Layer3 != 0 || tile.Layer4 != 0)
+                if (tile.Layer3 != 0 || tile.Layer4 != 0)
                     _humoMaskImage.SetPixel(x - 1, y - 1, Colors.Black);
             }
         }
@@ -284,13 +283,14 @@ public class ZoneFogRenderer
                     _zoneMaskImage.SetPixel(x - 1, y - 1, Colors.White);
         }
 
-        // Subtract layer 2/3/4 content
+        // Subtract only Layer 3/4 (objects + roofs) — see RebuildHumoMask
+        // for the rationale. Layer 2 is decorative masking, not occluders.
         for (int y = 1; y <= H; y++)
         {
             for (int x = 1; x <= W; x++)
             {
                 ref var tile = ref map.Tiles[x, y];
-                if (tile.Layer2 != 0 || tile.Layer3 != 0 || tile.Layer4 != 0)
+                if (tile.Layer3 != 0 || tile.Layer4 != 0)
                     _zoneMaskImage.SetPixel(x - 1, y - 1, Colors.Black);
             }
         }

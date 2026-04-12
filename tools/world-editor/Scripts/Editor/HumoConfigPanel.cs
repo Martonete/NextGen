@@ -61,34 +61,26 @@ public partial class HumoConfigPanel : PanelContainer
         };
         vbox.AddChild(_colorPreview);
 
-        // Animated toggle
-        _animatedCheck = new CheckBox
-        {
-            Text = "Animar humo (nubes en movimiento)",
-            ButtonPressed = Map?.PaintedFogAnimated ?? false,
-        };
+        // Animation controls are staged for a follow-up. Hidden for now so
+        // users don't toggle a dead feature. The shader currently only
+        // renders the solid-fill look the user loved.
+        _animatedCheck = new CheckBox { Text = "Animar humo (próximamente)", Disabled = true };
+        _animatedCheck.Visible = false;
         vbox.AddChild(_animatedCheck);
 
-        // Speed (only relevant when animated)
         _speedBox = new VBoxContainer();
-        _speedBox.AddThemeConstantOverride("separation", 4);
-        _speedBox.AddChild(EditorTheme.MakeLabel("Velocidad:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        var spdRow = new HBoxContainer();
-        spdRow.AddThemeConstantOverride("separation", 6);
-        AddSpin(spdRow, "X:", -100, 100, Map?.PaintedFogSpeedX ?? 5, out _speedXSpin);
-        AddSpin(spdRow, "Y:", -100, 100, Map?.PaintedFogSpeedY ?? 2, out _speedYSpin);
-        _speedBox.AddChild(spdRow);
+        _speedBox.Visible = false;
+        var _spdRow = new HBoxContainer();
+        AddSpin(_spdRow, "X:", -100, 100, Map?.PaintedFogSpeedX ?? 5, out _speedXSpin);
+        AddSpin(_spdRow, "Y:", -100, 100, Map?.PaintedFogSpeedY ?? 2, out _speedYSpin);
+        _speedBox.AddChild(_spdRow);
         vbox.AddChild(_speedBox);
-        _speedBox.Visible = Map?.PaintedFogAnimated ?? false;
 
         // Wire up
         _densitySpin!.ValueChanged += (_) => ApplyFromUi();
         _rSpin!.ValueChanged += (_) => ApplyFromUi();
         _gSpin!.ValueChanged += (_) => ApplyFromUi();
         _bSpin!.ValueChanged += (_) => ApplyFromUi();
-        _animatedCheck.Toggled += (on) => { if (_speedBox != null) _speedBox.Visible = on; ApplyFromUi(); };
-        _speedXSpin!.ValueChanged += (_) => ApplyFromUi();
-        _speedYSpin!.ValueChanged += (_) => ApplyFromUi();
     }
 
     /// <summary>Refresh spin values from Map state (e.g. after loading a new map).</summary>
@@ -113,9 +105,6 @@ public partial class HumoConfigPanel : PanelContainer
         Map.PaintedFogR = (int)(_rSpin?.Value ?? 128);
         Map.PaintedFogG = (int)(_gSpin?.Value ?? 140);
         Map.PaintedFogB = (int)(_bSpin?.Value ?? 160);
-        Map.PaintedFogAnimated = _animatedCheck?.ButtonPressed ?? false;
-        Map.PaintedFogSpeedX = (int)(_speedXSpin?.Value ?? 5);
-        Map.PaintedFogSpeedY = (int)(_speedYSpin?.Value ?? 2);
         UpdateColorPreview();
         OnChanged?.Invoke();
     }
