@@ -18,6 +18,10 @@ namespace AOWorldEditor.Data;
 public class PaintedFogLayer
 {
     public string Name = "Humo";
+    /// <summary>Optional group name (like a Photoshop folder). Empty string = root.
+    /// Layers with the same Group are rendered under a collapsible header in the
+    /// HumoLayersPanel. Example: "Dungeon Veril".</summary>
+    public string Group = "";
     public int Density = 160;
     public int R = 128;
     public int G = 140;
@@ -50,8 +54,9 @@ public class PaintedFogLayer
     }
 
     /// <summary>Serialize style header to a single .aofog line.
-    /// Format: name|density|r|g|b|sx|sy</summary>
-    public string SerializeStyle() => $"{Name.Replace('|', ' ')}|{Density}|{R}|{G}|{B}|{SpeedX}|{SpeedY}";
+    /// Format: name|density|r|g|b|sx|sy|group</summary>
+    public string SerializeStyle() =>
+        $"{Name.Replace('|', ' ')}|{Density}|{R}|{G}|{B}|{SpeedX}|{SpeedY}|{Group.Replace('|', ' ')}";
 
     public static PaintedFogLayer? TryParseStyle(string line)
     {
@@ -63,9 +68,11 @@ public class PaintedFogLayer
         if (!int.TryParse(parts[4], out var b)) return null;
         if (!int.TryParse(parts[5], out var sx)) return null;
         if (!int.TryParse(parts[6], out var sy)) return null;
+        string group = parts.Length >= 8 ? parts[7] : "";
         return new PaintedFogLayer
         {
             Name = parts[0], Density = d, R = r, G = g, B = b, SpeedX = sx, SpeedY = sy,
+            Group = group,
         };
     }
 }
