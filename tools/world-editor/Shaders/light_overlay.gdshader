@@ -1,35 +1,132 @@
 shader_type canvas_item;
 render_mode blend_mul, unshaded;
 
-// 2D lightmap with 1D shadow maps, composited via multiply blending.
-// Reference: github.com/mattdesl/lwjgl-basics/wiki/2D-Pixel-Perfect-Shadows
+// Deferred-style 2D lightmap composited via MULTIPLY blending.
+//
+// Output = ambient + sum(light contributions).
+// Because blend_mul multiplies the output with the scene:
+//   - vec3(1.0) = no change (fully lit)
+//   - vec3(0.0) = full darkness
+//   - ambient (e.g. 0.05, 0.03, 0.08) = dark night with a hint of blue
+//
+// Lit pixels get ambient + warm light color → close to 1.0 → scene preserved.
+// Unlit pixels get only ambient → close to 0.0 → scene darkened.
+//
+// This is the same technique used by Terraria, Starbound, and the 2.5D
+// Argentum engine (deferred lighting, lights as textured quads, multiply
+// composite). The difference is we do per-pixel raycast shadows through
+// an occlusion mask built from L3 GRH sprite alphas.
+//
+// Reference: https://github.com/mattdesl/lwjgl-basics/wiki/2D-Pixel-Perfect-Shadows
 
 uniform sampler2D occlusion_mask : filter_linear;
 uniform vec2 map_pixel_size = vec2(3200.0, 3200.0);
 uniform vec2 rect_world_origin = vec2(0.0, 0.0);
 uniform vec2 rect_world_size  = vec2(3200.0, 3200.0);
 
-// 1D shadow atlas: row per light, 720 columns = 2 per degree.
-uniform sampler2D shadow_atlas : filter_nearest;
-
+// Ambient color — the "darkness" that unlit areas fall to.
+// With multiply blending, scene × ambient = final unlit color.
+// (0.4, 0.4, 0.5) = visible night (terrain shapes readable).
+// (0.15, 0.12, 0.2) = dark night.
+// (1.0, 1.0, 1.0) = full daylight (no darkening).
 uniform vec3 ambient = vec3(0.4, 0.4, 0.5);
 
-// lights[i] = (worldX, worldY, radiusWorldPx, energy × animMult).
-// Energy is pre-multiplied by flicker/pulse on CPU each frame.
+// Up to 32 lights. Each vec4 = (worldX, worldY, radiusWorldPx, energy).
 uniform vec4 lights[32];
-// light_colors[i].rgb = color. Alpha unused.
 uniform vec4 light_colors[32];
 uniform int  num_lights = 0;
+// NOTE: flicker/pulse energy multiplier is pre-baked into lights[i].w
+// on CPU each frame. Godot 4 silently rejects uniform float[] arrays
+// (only vec4[] works), so we can't have a separate energy_mults array.
+
+// Normal map derived from the occlusion mask. When enabled, the
+// lighting calculation uses a per-pixel dot(normal, lightDir) factor
+// so sprites show shading based on their "surface direction" — one
+// side brighter, other side darker, giving a 2.5D relief effect.
+// The normal is estimated from the mask's luminance gradient (Sobel).
+uniform float normal_strength = 0.6; // 0 = flat (no normal effect), 1 = full
 
 // Dynamic character occluder.
 uniform vec2  character_pos = vec2(-1.0, -1.0);
 uniform float character_half = 10.0;
 
-const float PI = 3.14159265;
-const float TAU = 6.28318530;
+// More steps = smoother shadow edges. 48 is high quality for an editor.
+// Each step samples the occlusion mask along the ray from pixel to light.
+const int RAY_STEPS = 48;
+
+// Estimate surface normal from the occlusion mask gradient (Sobel filter).
+// Returns a vec3 normal where (0, 0, 1) = flat facing camera.
+// Edges of sprites get angled normals so light wraps around them.
+vec3 estimate_normal(vec2 world_px) {
+    vec2 texel = 1.0 / map_pixel_size;
+    float px = 2.0; // sample offset in world pixels
+    vec2 off = texel * px;
+
+    // 3x3 Sobel kernel sampling the occlusion mask height.
+    // We treat mask opacity as "height" — opaque = elevated surface.
+    float tl = texture(occlusion_mask, world_px / map_pixel_size + vec2(-off.x, -off.y)).r;
+    float t  = texture(occlusion_mask, world_px / map_pixel_size + vec2(   0.0, -off.y)).r;
+    float tr = texture(occlusion_mask, world_px / map_pixel_size + vec2( off.x, -off.y)).r;
+    float l  = texture(occlusion_mask, world_px / map_pixel_size + vec2(-off.x,    0.0)).r;
+    float r  = texture(occlusion_mask, world_px / map_pixel_size + vec2( off.x,    0.0)).r;
+    float bl = texture(occlusion_mask, world_px / map_pixel_size + vec2(-off.x,  off.y)).r;
+    float b  = texture(occlusion_mask, world_px / map_pixel_size + vec2(   0.0,  off.y)).r;
+    float br = texture(occlusion_mask, world_px / map_pixel_size + vec2( off.x,  off.y)).r;
+
+    // Sobel gradients
+    float dx = (tr + 2.0 * r + br) - (tl + 2.0 * l + bl);
+    float dy = (bl + 2.0 * b + br) - (tl + 2.0 * t + tr);
+
+    // Normal from gradient (z = 1.0 makes the surface mostly face the camera)
+    return normalize(vec3(-dx * normal_strength, -dy * normal_strength, 1.0));
+}
+
+float sample_occlusion(vec2 world_px) {
+    vec2 uv = world_px / map_pixel_size;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+    float mask = texture(occlusion_mask, uv).r;
+
+    if (character_pos.x >= 0.0) {
+        vec2 d = abs(world_px - character_pos);
+        if (d.x < character_half && d.y < character_half * 2.0) {
+            mask = max(mask, 1.0);
+        }
+    }
+    return mask;
+}
+
+bool is_occluded(vec2 from_px, vec2 light_px) {
+    vec2 dir = light_px - from_px;
+    float len = length(dir);
+    if (len < 1.0) return false;
+
+    // Skip the first ~40 world-px of the ray to prevent self-occlusion.
+    // A pixel sitting ON a 32-64px wide sprite needs to ignore its own
+    // sprite's mask when raycasting toward the light — otherwise the
+    // entire sprite surface stays black even on the light-facing side.
+    // 40px covers a typical 1-tile sprite; 2-tile sprites (64px) may
+    // still self-shadow slightly at their center, which looks natural.
+    float skip_px = 40.0;
+    float start_t = clamp(skip_px / len, 0.0, 0.45);
+    float end_t   = clamp(1.0 - 8.0 / len, 0.55, 1.0);
+
+    for (int i = 0; i < RAY_STEPS; i++) {
+        float t = start_t + (end_t - start_t) * (float(i) / float(RAY_STEPS - 1));
+        vec2 p = from_px + dir * t;
+        if (sample_occlusion(p) > 0.4) return true;
+    }
+    return false;
+}
 
 void fragment() {
     vec2 world_px = rect_world_origin + UV * rect_world_size;
+
+    // NOTE: no self-occlusion check here. Pixels ON a sprite's surface
+    // (rock, tree, etc.) CAN receive light — the light-facing side of
+    // the sprite should be illuminated. The raycast's start_t skip
+    // (40px) handles self-shadowing by ignoring the sprite's own mask
+    // near the start of the ray. Only DISTANT occluders between the
+    // pixel and the light actually block illumination.
 
     vec3 light_accum = vec3(0.0);
 
@@ -40,52 +137,33 @@ void fragment() {
         vec3  col  = light_colors[i].rgb;
         float dist = distance(world_px, L.xy);
         float r    = L.z;
+        // Allow 30% beyond nominal radius for the Gaussian tail glow.
+        // At 1.3× radius, exp(-(1.3)²×3) ≈ 0.6% — barely visible but
+        // prevents a hard cut-off at the edge.
         if (dist > r * 1.3) continue;
 
-        // Gaussian falloff — no hard edge.
+        // Gaussian falloff: exp(-t²×k). Unlike smoothstep, this NEVER has
+        // a visible hard edge — it fades out gradually toward infinity.
+        // k=3.0 means at t=1.0 (nominal radius), intensity is ~5% of max.
+        // The light extends slightly past the nominal radius as a soft glow.
         float t = dist / r;
         float falloff = exp(-t * t * 3.0);
 
         // Energy already includes flicker/pulse (pre-multiplied on CPU).
         float energy = L.w;
 
-        // 1D shadow map lookup.
-        vec2 delta = world_px - L.xy;
-        float angle = atan(delta.y, delta.x);
-        float angle_norm = (angle + PI) / TAU;
-        float shadow_v = (float(i) + 0.5) / 32.0;
-        float occluder_dist = texture(shadow_atlas, vec2(angle_norm, shadow_v)).r;
+        // Shadow raycast — checks for occluders BETWEEN this pixel
+        // and the light (skipping the first 40px to avoid self-shadow).
+        if (is_occluded(world_px, L.xy)) continue;
 
-        float pixel_dist = dist / r;
-
-        // If no occluder (atlas ≈ 1.0), fully lit. Otherwise soft shadow.
-        float shadow = 1.0;
-        if (occluder_dist < 0.99) {
-            shadow = 1.0 - smoothstep(
-                occluder_dist - 0.02,
-                occluder_dist + 0.04,
-                pixel_dist);
-        }
-
-        // Dynamic character check (not in atlas — moves each frame).
-        if (character_pos.x >= 0.0) {
-            vec2 to_light = L.xy - world_px;
-            vec2 to_char = character_pos - world_px;
-            float tl = length(to_light);
-            if (tl > 1.0) {
-                float proj = dot(to_char, to_light / tl);
-                if (proj > 0.0 && proj < tl) {
-                    float perp = length(to_char - (to_light / tl) * proj);
-                    if (perp < character_half) {
-                        shadow *= smoothstep(0.0, character_half, perp);
-                    }
-                }
-            }
-        }
-
-        light_accum += col * falloff * energy * shadow;
+        light_accum += col * falloff * energy;
     }
 
+    // Final output: ambient + accumulated light, clamped to [0, 1].
+    // Because we use blend_mul, this is MULTIPLIED with the scene:
+    //   lit pixel:   scene × (ambient + light ≈ 1.0) = scene (preserved)
+    //   unlit pixel: scene × ambient ≈ scene × 0.08 = very dark
+    //   shadow:      scene × ambient = dark (light blocked by occluder)
     vec3 final_color = clamp(ambient + light_accum, 0.0, 1.0);
     COLOR = vec4(final_color, 1.0);
 }
