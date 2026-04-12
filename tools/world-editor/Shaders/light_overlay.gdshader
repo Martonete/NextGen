@@ -26,10 +26,10 @@ uniform vec2 rect_world_size  = vec2(3200.0, 3200.0);
 
 // Ambient color — the "darkness" that unlit areas fall to.
 // With multiply blending, scene × ambient = final unlit color.
-// (0.3, 0.3, 0.4) = visible night (can still see terrain shapes).
-// (0.08, 0.06, 0.12) = near-pitch-black night.
+// (0.4, 0.4, 0.5) = visible night (terrain shapes readable).
+// (0.15, 0.12, 0.2) = dark night.
 // (1.0, 1.0, 1.0) = full daylight (no darkening).
-uniform vec3 ambient = vec3(0.3, 0.3, 0.4);
+uniform vec3 ambient = vec3(0.4, 0.4, 0.5);
 
 // Up to 32 lights. Each vec4 = (worldX, worldY, radiusWorldPx, energy).
 uniform vec4 lights[32];
@@ -139,7 +139,11 @@ void fragment() {
         float t = dist / r;
         float falloff = smoothstep(1.0, 0.0, t);
 
-        float energy = L.w * light_energy_mults[i];
+        // With multiply blending, output is clamped to [0,1] naturally —
+        // high energy just pushes the lit area closer to 1.0 (fully
+        // preserving the scene). No pre-scaling needed.
+        // Slider 0-10: 0.5=candle, 1=torch, 2=campfire, 5=beacon.
+        float energy = L.w * light_energy_mults[i] * 0.5;
 
         // Shadow raycast — checks for occluders BETWEEN this pixel
         // and the light (skipping the first 40px to avoid self-shadow).
