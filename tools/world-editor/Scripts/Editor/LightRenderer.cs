@@ -178,8 +178,9 @@ public class LightRenderer
 
         // ── Upload uniforms ──
         _material.SetShaderParameter("occlusion_mask", _maskTexture!);
+        // Must match the mask dimensions: (Width+1) tiles × 32 px/tile.
         _material.SetShaderParameter("map_pixel_size",
-            new Vector2(map.Width * TileSize, map.Height * TileSize));
+            new Vector2((map.Width + 1) * TileSize, (map.Height + 1) * TileSize));
         _material.SetShaderParameter("rect_world_origin", worldOrigin);
         _material.SetShaderParameter("rect_world_size", worldSize);
         _material.SetShaderParameter("ambient", _ambient);
@@ -191,8 +192,11 @@ public class LightRenderer
         {
             var ml = lights[i];
             int b = i * 4;
-            _lightData[b]     = (ml.X - 0.5f) * TileSize;
-            _lightData[b + 1] = (ml.Y - 0.5f) * TileSize;
+            // Tile center in DrawTileGrh coordinates: tileX*32 + 16.
+            // DrawTileGrh uses tileX * TileSize as the LEFT edge of the tile,
+            // so center = tileX * 32 + 16 = (tileX + 0.5) * 32.
+            _lightData[b]     = (ml.X + 0.5f) * TileSize;
+            _lightData[b + 1] = (ml.Y + 0.5f) * TileSize;
             _lightData[b + 2] = ml.Radius * TileSize;
             _lightData[b + 3] = ml.Energy;
 
@@ -250,8 +254,12 @@ public class LightRenderer
     /// </summary>
     private void RebuildOcclusionMask(MapData map)
     {
-        int maskW = map.Width * MaskPixelsPerTile;
-        int maskH = map.Height * MaskPixelsPerTile;
+        // +1 tile padding: tiles are 1-indexed and DrawTileGrh uses
+        // tileX * 32 (not (tileX-1)*32), so the last tile starts at
+        // pixel Width*32 and can extend further. Extra tile prevents
+        // boundary sprites from clipping at the mask edge.
+        int maskW = (map.Width + 1) * MaskPixelsPerTile;
+        int maskH = (map.Height + 1) * MaskPixelsPerTile;
 
         if (_maskImage == null || _maskImage.GetWidth() != maskW || _maskImage.GetHeight() != maskH)
         {
@@ -273,8 +281,10 @@ public class LightRenderer
                 else if (tile.Blocked)
                 {
                     // Blocked-only tile: fill the full tile area in the mask.
-                    int baseX = (tx - 1) * MaskPixelsPerTile;
-                    int baseY = (ty - 1) * MaskPixelsPerTile;
+                    // Uses tx * MaskPixelsPerTile to match DrawTileGrh's
+                    // coordinate system where tile (1,1) draws at world (32, 32).
+                    int baseX = tx * MaskPixelsPerTile;
+                    int baseY = ty * MaskPixelsPerTile;
                     for (int dy = 0; dy < MaskPixelsPerTile; dy++)
                         for (int dx = 0; dx < MaskPixelsPerTile; dx++)
                         {
@@ -315,13 +325,16 @@ public class LightRenderer
         int imgW = srcImg.GetWidth();
         int imgH = srcImg.GetHeight();
 
-        // Draw position (matching DrawTileGrh center:true):
-        // Horizontally centered on the tile, bottom edge at tile bottom.
-        float worldDrawX = (tileX - 1) * TileSize + (TileSize - grh.PixelWidth) / 2f;
-        float worldDrawY = (tileY - 1) * TileSize + (TileSize - grh.PixelHeight);
+        // Draw position — must match DrawTileGrh(grhIdx, tileX, tileY, center:true):
+        //   drawX = tileX * TileSize + (TileSize - PixelWidth) / 2f
+        //   drawY = tileY * TileSize + (TileSize - PixelHeight)
+        // Note: tileX is 1-indexed, and DrawTileGrh uses tileX * 32 (NOT (tileX-1)*32).
+        // Tile (1,1) draws at world pixel (32, 32), not (0, 0).
+        float worldDrawX = tileX * TileSize + (TileSize - grh.PixelWidth) / 2f;
+        float worldDrawY = tileY * TileSize + (TileSize - grh.PixelHeight);
 
-        int maskW = map.Width * MaskPixelsPerTile;
-        int maskH = map.Height * MaskPixelsPerTile;
+        int maskW = (map.Width + 1) * MaskPixelsPerTile;
+        int maskH = (map.Height + 1) * MaskPixelsPerTile;
 
         // Iterate over each mask pixel that the sprite covers.
         int maskStartX = (int)(worldDrawX / MaskDownsample);
