@@ -65,40 +65,36 @@ void fragment() {
         float energy = L.w * light_energy_mults[i];
 
         // ── 1D Shadow map lookup ──
-        // Compute the angle from the light to this pixel.
         vec2 delta = world_px - L.xy;
-        float angle = atan(delta.y, delta.x); // -PI..PI
-        float angle_norm = (angle + PI) / TAU; // 0..1
+        float angle = atan(delta.y, delta.x);
+        float angle_norm = (angle + PI) / TAU;
 
-        // Sample the shadow atlas: row i, column = angle.
-        // Y coordinate: (i + 0.5) / 32.0 to hit the center of the row.
         float shadow_u = angle_norm;
         float shadow_v = (float(i) + 0.5) / 32.0;
         float occluder_dist_norm = texture(shadow_atlas, vec2(shadow_u, shadow_v)).r;
 
-        // The shadow map stores normalized distance (0 = at light, 1 = at max radius).
-        // If this pixel is farther than the occluder, it's in shadow.
         float pixel_dist_norm = dist / r;
 
-        // Small bias to prevent shadow acne at occluder edges.
-        float shadow = pixel_dist_norm < (occluder_dist_norm + 0.02) ? 1.0 : 0.0;
+        // Soft shadow: lit if pixel is closer than occluder, shadow if farther.
+        // occluder_dist_norm = 1.0 means no occluder → fully lit.
+        // If atlas isn't loaded yet, default is 1.0 → fully lit (no shadow).
+        float shadow_soft = 1.0;
+        if (occluder_dist_norm < 0.99) {
+            shadow_soft = 1.0 - smoothstep(
+                occluder_dist_norm - 0.02,
+                occluder_dist_norm + 0.04,
+                pixel_dist_norm);
+        }
 
-        // Soft shadow edge: blend over a small distance range.
-        // This creates a penumbra-like effect at shadow boundaries.
-        float shadow_soft = 1.0 - smoothstep(occluder_dist_norm - 0.01, occluder_dist_norm + 0.03, pixel_dist_norm);
-
-        // Also check dynamic character occluder (not in shadow map).
+        // Dynamic character occluder (not in shadow map — moves each frame).
         if (character_pos.x >= 0.0) {
-            vec2 char_delta = world_px - character_pos;
-            float char_dist = length(char_delta);
-            if (char_dist < character_half * 2.0) {
-                // Check if the character is between this pixel and the light.
-                vec2 to_light = L.xy - world_px;
-                vec2 to_char = character_pos - world_px;
-                float proj = dot(to_char, normalize(to_light));
-                if (proj > 0.0 && proj < length(to_light)) {
-                    // Perpendicular distance from the character center to the ray
-                    float perp = length(to_char - normalize(to_light) * proj);
+            vec2 to_light = L.xy - world_px;
+            vec2 to_char = character_pos - world_px;
+            float tl = length(to_light);
+            if (tl > 1.0) {
+                float proj = dot(to_char, to_light / tl);
+                if (proj > 0.0 && proj < tl) {
+                    float perp = length(to_char - (to_light / tl) * proj);
                     if (perp < character_half) {
                         shadow_soft *= smoothstep(0.0, character_half, perp);
                     }
