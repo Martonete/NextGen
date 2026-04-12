@@ -28,7 +28,7 @@ public partial class ZoneEditPopup : Window
     private SpinBox? _musicaSpin;
     private CheckBox? _lluviaCheck, _nieveCheck, _nieblaCheck;
     private VBoxContainer? _fogParamsBox;
-    private SpinBox? _fogDensitySpin, _fogRSpin, _fogGSpin, _fogBSpin, _fogSpeedXSpin, _fogSpeedYSpin;
+    private SpinBox? _fogDensitySpin, _fogRSpin, _fogGSpin, _fogBSpin, _fogSpeedXSpin, _fogSpeedYSpin, _fogSizeSpin;
     private CheckBox? _freeSmokeCheck;
     private SpinBox? _ambRSpin, _ambGSpin, _ambBSpin;
     private SpinBox? _salidaMapSpin, _salidaXSpin, _salidaYSpin;
@@ -167,6 +167,14 @@ public partial class ZoneEditPopup : Window
         AddSpinWithLabel(fogSpeedRow, "Speed Y:", -100, 100, Zone.NieblaSpeedY, out _fogSpeedYSpin);
         _fogParamsBox.AddChild(fogSpeedRow);
 
+        // Noise cell size — controls the visual scale of the smoke clouds.
+        // Bigger = softer/wider, smaller = denser/granular.
+        var fogSizeRow = new HBoxContainer();
+        fogSizeRow.AddThemeConstantOverride("separation", 8);
+        AddSpinWithLabel(fogSizeRow, "Tamaño:", 64, 2048, Zone.NieblaSize > 0 ? Zone.NieblaSize : 512, out _fogSizeSpin);
+        if (_fogSizeSpin != null) _fogSizeSpin.Step = 16;
+        _fogParamsBox.AddChild(fogSizeRow);
+
         // Humo libre — global map toggle (domain-warped multi-directional swirl).
         // When on, the speed vector is ignored and fog swirls chaotically like
         // real smoke. Stored on MapData (not the zone) since the shader runs
@@ -204,8 +212,6 @@ public partial class ZoneEditPopup : Window
             previewMat.SetShaderParameter("map_tile_size", new Vector2(1, 1));
             previewMat.SetShaderParameter("rect_world_origin", Vector2.Zero);
             previewMat.SetShaderParameter("rect_world_size", new Vector2(32, 32));
-            // Keep the player break far away so the preview doesn't get disrupted
-            previewMat.SetShaderParameter("player_world_pos", new Vector2(-1e6f, -1e6f));
 
             var fogPreview = new ColorRect
             {
@@ -223,6 +229,14 @@ public partial class ZoneEditPopup : Window
                 previewMat.SetShaderParameter("speed", new Vector2(
                     (float)(_fogSpeedXSpin?.Value ?? 5) / 100f,
                     (float)(_fogSpeedYSpin?.Value ?? 2) / 100f));
+                // Preview swatch spans only 32 world-px (see rect_world_size
+                // above), so we divide the user-facing size by 16 to map the
+                // slider range (64..2048) onto something the swatch can
+                // actually visualize (4..128 cell pixels). Without this the
+                // size slider would have nearly no visible effect in the
+                // preview because the whole swatch is smaller than one cell.
+                float previewSize = (float)(_fogSizeSpin?.Value ?? 512) / 16f;
+                previewMat.SetShaderParameter("noise_scale", previewSize);
                 previewMat.SetShaderParameter("free_smoke", (_freeSmokeCheck?.ButtonPressed ?? false) ? 1.0f : 0.0f);
             }
 
@@ -232,6 +246,7 @@ public partial class ZoneEditPopup : Window
             if (_fogBSpin != null) _fogBSpin.ValueChanged += (_) => UpdateFogPreview();
             if (_fogSpeedXSpin != null) _fogSpeedXSpin.ValueChanged += (_) => UpdateFogPreview();
             if (_fogSpeedYSpin != null) _fogSpeedYSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogSizeSpin != null) _fogSizeSpin.ValueChanged += (_) => UpdateFogPreview();
             if (_freeSmokeCheck != null) _freeSmokeCheck.Toggled += (_) => UpdateFogPreview();
 
             UpdateFogPreview();
@@ -360,6 +375,8 @@ public partial class ZoneEditPopup : Window
         Zone.NieblaB = (int)(_fogBSpin?.Value ?? 160);
         Zone.NieblaSpeedX = (int)(_fogSpeedXSpin?.Value ?? 5);
         Zone.NieblaSpeedY = (int)(_fogSpeedYSpin?.Value ?? 2);
+        Zone.NieblaSize = (int)(_fogSizeSpin?.Value ?? 512);
+        if (Zone.NieblaSize <= 0) Zone.NieblaSize = 512;
         // Humo libre is global — writes back to the map, not the zone
         if (Map != null && _freeSmokeCheck != null)
             Map.FogFreeSmoke = _freeSmokeCheck.ButtonPressed;

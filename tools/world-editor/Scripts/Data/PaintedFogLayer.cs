@@ -28,6 +28,12 @@ public class PaintedFogLayer
     public int B = 160;
     public int SpeedX = 5;
     public int SpeedY = 2;
+
+    /// <summary>Noise cell size in world pixels — controls the visual scale
+    /// of the smoke pattern. Larger = bigger, softer clouds. Smaller =
+    /// denser, more granular. 512 is the baseline. Range: 64..2048.</summary>
+    public int Size = 512;
+
     public HashSet<Vector2I> Tiles = new();
 
     /// <summary>Seed a new layer from a prefab template.</summary>
@@ -40,6 +46,7 @@ public class PaintedFogLayer
         B = p.B,
         SpeedX = p.SpeedX,
         SpeedY = p.SpeedY,
+        Size = p.Size,
     };
 
     public void CopyStyleFrom(SmokePrefab p)
@@ -51,12 +58,14 @@ public class PaintedFogLayer
         B = p.B;
         SpeedX = p.SpeedX;
         SpeedY = p.SpeedY;
+        Size = p.Size;
     }
 
     /// <summary>Serialize style header to a single .aofog line.
-    /// Format: name|density|r|g|b|sx|sy|group</summary>
+    /// Format: name|density|r|g|b|sx|sy|group|size
+    /// Size is optional for backward compat (older files default to 512).</summary>
     public string SerializeStyle() =>
-        $"{Name.Replace('|', ' ')}|{Density}|{R}|{G}|{B}|{SpeedX}|{SpeedY}|{Group.Replace('|', ' ')}";
+        $"{Name.Replace('|', ' ')}|{Density}|{R}|{G}|{B}|{SpeedX}|{SpeedY}|{Group.Replace('|', ' ')}|{Size}";
 
     public static PaintedFogLayer? TryParseStyle(string line)
     {
@@ -69,10 +78,15 @@ public class PaintedFogLayer
         if (!int.TryParse(parts[5], out var sx)) return null;
         if (!int.TryParse(parts[6], out var sy)) return null;
         string group = parts.Length >= 8 ? parts[7] : "";
+        // Size is optional — older files only had 8 fields. Pre-seeded
+        // default means discarding TryParse's bool is intentional.
+        int size = 512;
+        if (parts.Length >= 9) int.TryParse(parts[8], out size);
+        if (size <= 0) size = 512;
         return new PaintedFogLayer
         {
             Name = parts[0], Density = d, R = r, G = g, B = b, SpeedX = sx, SpeedY = sy,
-            Group = group,
+            Group = group, Size = size,
         };
     }
 }

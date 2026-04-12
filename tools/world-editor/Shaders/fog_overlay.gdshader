@@ -27,6 +27,11 @@ uniform vec4 fog_color : source_color = vec4(0.5, 0.55, 0.63, 1.0);
 
 uniform float free_smoke = 0.0;
 
+// Size of one noise "cell" in world pixels. Larger = bigger / softer
+// smoke clouds with fewer features visible on screen. Smaller = denser,
+// more granular pattern. 512 matches the old hardcoded value.
+uniform float noise_scale = 512.0;
+
 void fragment() {
     vec2 world_px = rect_world_origin + UV * rect_world_size;
 
@@ -41,7 +46,9 @@ void fragment() {
     vec2 hover = vec2(sin(TIME * 0.25), cos(TIME * 0.18)) * 0.12;
     vec2 offset = mix(wind, hover, clamp(free_smoke, 0.0, 1.0));
 
-    vec2 n_uv = world_px / 512.0 + offset;
+    // Guard against divide-by-zero if someone sets noise_scale to 0.
+    float ns = max(noise_scale, 1.0);
+    vec2 n_uv = world_px / ns + offset;
     float n = texture(noise_texture, n_uv).r;
     float fog = clamp(n * 2.0 - 1.0, 0.0, 1.0);
 

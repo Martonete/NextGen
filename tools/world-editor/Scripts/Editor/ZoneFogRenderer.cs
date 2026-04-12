@@ -158,6 +158,7 @@ public class ZoneFogRenderer
                 new Color(layer.R / 255f, layer.G / 255f, layer.B / 255f, 1f));
             sm.SetShaderParameter("speed",
                 new Vector2(layer.SpeedX / 100f, layer.SpeedY / 100f));
+            sm.SetShaderParameter("noise_scale", (float)(layer.Size > 0 ? layer.Size : 512));
             sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
         }
 
@@ -169,7 +170,15 @@ public class ZoneFogRenderer
             _zoneSprite.Visible = hasZoneFog && _zoneMaskTexture != null;
             if (_zoneSprite.Visible && _zoneSprite.Material is ShaderMaterial sm && _zoneMaskTexture != null)
             {
-                int dens = 90, r = 128, g = 140, b = 160, sx = 5, sy = 2;
+                // NOTE: this picks the FIRST niebla zone and uses its style
+                // for the whole combined zone-fog sprite. If two overlapping
+                // niebla zones have different Density/Color/Size, only the
+                // first one in iteration order is honoured. Per-zone style
+                // rendering would require one sprite+mask per zone, not one
+                // combined mask. This is a deliberate simplification — if it
+                // becomes a real problem, the fix is to move the renderer
+                // from a "one zone sprite" to a "pool like humo layers".
+                int dens = 90, r = 128, g = 140, b = 160, sx = 5, sy = 2, size = 512;
                 for (int i = 0; i < zones.Count; i++)
                 {
                     var z = zones[i];
@@ -181,6 +190,7 @@ public class ZoneFogRenderer
                         b = z.NieblaB > 0 ? z.NieblaB : 160;
                         sx = z.NieblaSpeedX;
                         sy = z.NieblaSpeedY;
+                        size = z.NieblaSize > 0 ? z.NieblaSize : 512;
                         break;
                     }
                 }
@@ -191,6 +201,7 @@ public class ZoneFogRenderer
                 sm.SetShaderParameter("density", dens / 255f);
                 sm.SetShaderParameter("fog_color", new Color(r / 255f, g / 255f, b / 255f, 1f));
                 sm.SetShaderParameter("speed", new Vector2(sx / 100f, sy / 100f));
+                sm.SetShaderParameter("noise_scale", (float)size);
                 sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
             }
         }

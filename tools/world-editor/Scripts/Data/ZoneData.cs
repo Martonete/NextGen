@@ -62,6 +62,7 @@ public class ZoneInfo
     public int NieblaB = 160;
     public int NieblaSpeedX = 5;    // -100..100 (roughly)
     public int NieblaSpeedY = 2;
+    public int NieblaSize = 512;    // noise cell size in world pixels (64..2048)
     public int AmbientR, AmbientG, AmbientB;
     public string Terreno = "";
 
@@ -192,6 +193,7 @@ public class MapZoneData
             sb.AppendLine($"FogB={z.NieblaB}");
             sb.AppendLine($"FogSpeedX={z.NieblaSpeedX}");
             sb.AppendLine($"FogSpeedY={z.NieblaSpeedY}");
+            sb.AppendLine($"FogSize={z.NieblaSize}");
             sb.AppendLine($"AmbientR={z.AmbientR}");
             sb.AppendLine($"AmbientG={z.AmbientG}");
             sb.AppendLine($"AmbientB={z.AmbientB}");
@@ -256,6 +258,7 @@ public class MapZoneData
             case "FOGB": z.NieblaB = int.TryParse(val, out int fb) ? fb : 160; break;
             case "FOGSPEEDX": z.NieblaSpeedX = int.TryParse(val, out int fsx) ? fsx : 5; break;
             case "FOGSPEEDY": z.NieblaSpeedY = int.TryParse(val, out int fsy) ? fsy : 2; break;
+            case "FOGSIZE": z.NieblaSize = int.TryParse(val, out int fsz) && fsz > 0 ? fsz : 512; break;
             case "AMBIENTR": z.AmbientR = int.TryParse(val, out int r) ? r : 0; break;
             case "AMBIENTG": z.AmbientG = int.TryParse(val, out int g) ? g : 0; break;
             case "AMBIENTB": z.AmbientB = int.TryParse(val, out int b) ? b : 0; break;

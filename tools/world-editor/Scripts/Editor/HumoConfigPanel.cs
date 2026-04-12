@@ -33,9 +33,11 @@ public partial class HumoConfigPanel : PanelContainer
     private Button? _newLayerBtn;
     private LineEdit? _newLayerNameEdit;
     private SpinBox? _densitySpin;
+    private SpinBox? _sizeSpin;
     private SpinBox? _rSpin, _gSpin, _bSpin;
     private ColorRect? _colorPreview;
     private CheckBox? _freeSmokeCheck;
+    private Label? _saveStatusLabel;
 
     // Entry types in the dropdown
     private enum EntryType { CurrentLayer, BuiltInPrefab, UserPrefab }
@@ -86,19 +88,27 @@ public partial class HumoConfigPanel : PanelContainer
         _deleteLayerBtn.Pressed += OnDeleteCurrentLayer;
         vbox.AddChild(_deleteLayerBtn);
 
-        // Save-as-prefab row
+        // Save-as-asset section — made more prominent so users find it easily.
+        vbox.AddChild(new HSeparator());
+        vbox.AddChild(EditorTheme.MakeLabel(
+            "Guardar como asset reutilizable:",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         var saveRow = new HBoxContainer();
         saveRow.AddThemeConstantOverride("separation", 4);
         _newPrefabNameEdit = new LineEdit
         {
-            PlaceholderText = "Guardar estilo como prefab...",
+            PlaceholderText = "Nombre del asset (ej: Humo rojo denso)...",
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
         };
         saveRow.AddChild(_newPrefabNameEdit);
-        _savePrefabBtn = new Button { Text = "+" };
+        _savePrefabBtn = new Button { Text = "💾 Guardar" };
         _savePrefabBtn.Pressed += OnSavePrefab;
         saveRow.AddChild(_savePrefabBtn);
         vbox.AddChild(saveRow);
+
+        _saveStatusLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _saveStatusLabel.Visible = false;
+        vbox.AddChild(_saveStatusLabel);
 
         vbox.AddChild(new HSeparator());
 
@@ -107,6 +117,19 @@ public partial class HumoConfigPanel : PanelContainer
         densRow.AddThemeConstantOverride("separation", 6);
         AddSpin(densRow, "Densidad:", 0, 255, 160, out _densitySpin);
         vbox.AddChild(densRow);
+
+        // Size (noise cell in world pixels) — controls how big the smoke
+        // clouds look. Step 16 gives fine control without feeling too jittery.
+        var sizeRow = new HBoxContainer();
+        sizeRow.AddThemeConstantOverride("separation", 6);
+        AddSpin(sizeRow, "Tamaño:", 64, 2048, 512, out _sizeSpin);
+        _sizeSpin!.Step = 16;
+        vbox.AddChild(sizeRow);
+        var sizeHelp = EditorTheme.MakeLabel(
+            "↑ más grande = nubes más amplias  |  ↓ más chico = denso/granular",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        sizeHelp.AutowrapMode = TextServer.AutowrapMode.Word;
+        vbox.AddChild(sizeHelp);
 
         vbox.AddChild(EditorTheme.MakeLabel("Color del humo:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         var colRow = new HBoxContainer();
@@ -133,6 +156,7 @@ public partial class HumoConfigPanel : PanelContainer
         vbox.AddChild(_freeSmokeCheck);
 
         _densitySpin!.ValueChanged += (_) => ApplyFromUi();
+        _sizeSpin!.ValueChanged += (_) => ApplyFromUi();
         _rSpin!.ValueChanged += (_) => ApplyFromUi();
         _gSpin!.ValueChanged += (_) => ApplyFromUi();
         _bSpin!.ValueChanged += (_) => ApplyFromUi();
@@ -265,6 +289,7 @@ public partial class HumoConfigPanel : PanelContainer
             B = (int)(_bSpin?.Value ?? 160),
             SpeedX = 5,
             SpeedY = 2,
+            Size = (int)(_sizeSpin?.Value ?? 512),
         };
         Map.PaintedFogLayers.Add(layer);
         Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
@@ -279,8 +304,15 @@ public partial class HumoConfigPanel : PanelContainer
     private void OnSavePrefab()
     {
         if (Map == null) return;
+        // Clear any stale status from a previous attempt before we report
+        // the outcome of this one.
+        if (_saveStatusLabel != null) _saveStatusLabel.Visible = false;
         string name = _newPrefabNameEdit?.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(name)) return;
+        if (string.IsNullOrEmpty(name))
+        {
+            ShowSaveStatus("⚠ Poné un nombre para el asset", false);
+            return;
+        }
         var prefab = new SmokePrefab
         {
             Name = name,
@@ -289,11 +321,22 @@ public partial class HumoConfigPanel : PanelContainer
             G = (int)(_gSpin?.Value ?? 140),
             B = (int)(_bSpin?.Value ?? 160),
             SpeedX = 5, SpeedY = 2,
+            Size = (int)(_sizeSpin?.Value ?? 512),
         };
         Map.UserFogPrefabs.Add(prefab);
         if (_newPrefabNameEdit != null) _newPrefabNameEdit.Text = "";
         RebuildDropdown();
-        GD.Print($"[HumoConfigPanel] Saved prefab '{name}'");
+        ShowSaveStatus($"✓ Asset '{name}' guardado — ya disponible en el dropdown", true);
+        GD.Print($"[HumoConfigPanel] Saved asset '{name}'");
+    }
+
+    private void ShowSaveStatus(string text, bool success)
+    {
+        if (_saveStatusLabel == null) return;
+        _saveStatusLabel.Text = text;
+        _saveStatusLabel.Visible = true;
+        _saveStatusLabel.AddThemeColorOverride("font_color",
+            success ? new Color(0.5f, 0.9f, 0.5f) : new Color(0.95f, 0.7f, 0.4f));
     }
 
     private void LoadActiveLayerIntoUi()
@@ -304,6 +347,7 @@ public partial class HumoConfigPanel : PanelContainer
         {
             var l = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
             _densitySpin.Value = l.Density;
+            if (_sizeSpin != null) _sizeSpin.Value = l.Size > 0 ? l.Size : 512;
             _rSpin!.Value = l.R;
             _gSpin!.Value = l.G;
             _bSpin!.Value = l.B;
@@ -316,6 +360,11 @@ public partial class HumoConfigPanel : PanelContainer
     {
         if (_suppressChangeEvents || Map == null) return;
 
+        // Dismiss any stale save-asset status message the moment the user
+        // starts editing again — otherwise a "✓ Asset guardado" or
+        // "⚠ Poné un nombre" could linger indefinitely.
+        if (_saveStatusLabel != null) _saveStatusLabel.Visible = false;
+
         // free_smoke is the only global on humo (affects all layers + zone)
         Map.FogFreeSmoke = _freeSmokeCheck?.ButtonPressed ?? false;
 
@@ -324,6 +373,7 @@ public partial class HumoConfigPanel : PanelContainer
         {
             var l = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
             l.Density = (int)(_densitySpin?.Value ?? 160);
+            l.Size = (int)(_sizeSpin?.Value ?? 512);
             l.R = (int)(_rSpin?.Value ?? 128);
             l.G = (int)(_gSpin?.Value ?? 140);
             l.B = (int)(_bSpin?.Value ?? 160);
