@@ -69,9 +69,12 @@ public class LightRenderer
     private readonly RandomNumberGenerator _rng = new();
 
     // ── Uniform scratch arrays (reused per-frame, avoid GC) ──
+    // lights[i] = (worldX, worldY, radius_px, energy × animMult)
+    // Energy is pre-multiplied by flicker/pulse so the shader doesn't
+    // need a separate float[] array (which Godot's shader compiler
+    // silently rejects — only vec4[] arrays are supported).
     private readonly float[] _lightData = new float[32 * 4]; // vec4 × 32
     private readonly float[] _lightColorData = new float[32 * 4];
-    private readonly float[] _lightEnergyMults = new float[32];
 
     public void AttachTo(Node parent)
     {
@@ -226,23 +229,22 @@ public class LightRenderer
             // Tile center in DrawTileGrh coordinates: tileX*32 + 16.
             // DrawTileGrh uses tileX * TileSize as the LEFT edge of the tile,
             // so center = tileX * 32 + 16 = (tileX + 0.5) * 32.
+            // Compute animated energy (flicker + pulse) and pack into w.
+            float energy = ml.Energy;
+            if (ml.PulseHz > 0f)
+                energy *= 0.7f + 0.3f * Mathf.Sin(_elapsedTime * ml.PulseHz * Mathf.Tau);
+            if (ml.FlickerPct > 0)
+                energy *= 1f - (ml.FlickerPct / 100f) * _rng.RandfRange(0f, 1f);
+
             _lightData[b]     = (ml.X + 0.5f) * TileSize;
             _lightData[b + 1] = (ml.Y + 0.5f) * TileSize;
             _lightData[b + 2] = ml.Radius * TileSize;
-            _lightData[b + 3] = ml.Energy;
+            _lightData[b + 3] = Mathf.Max(energy, 0f);
 
             _lightColorData[b]     = ml.R / 255f;
             _lightColorData[b + 1] = ml.G / 255f;
             _lightColorData[b + 2] = ml.B / 255f;
             _lightColorData[b + 3] = 1f;
-
-            // Compute animated energy multiplier (flicker + pulse)
-            float mult = 1f;
-            if (ml.PulseHz > 0f)
-                mult *= 0.7f + 0.3f * Mathf.Sin(_elapsedTime * ml.PulseHz * Mathf.Tau);
-            if (ml.FlickerPct > 0)
-                mult *= 1f - (ml.FlickerPct / 100f) * _rng.RandfRange(0f, 1f);
-            _lightEnergyMults[i] = Mathf.Max(mult, 0f);
         }
         // Zero-out remaining slots
         for (int i = count; i < 32; i++)
@@ -251,13 +253,10 @@ public class LightRenderer
             _lightData[b] = _lightData[b + 1] = _lightData[b + 2] = _lightData[b + 3] = 0f;
             _lightColorData[b] = _lightColorData[b + 1] = _lightColorData[b + 2] = 0f;
             _lightColorData[b + 3] = 1f;
-            _lightEnergyMults[i] = 0f;
         }
 
-        // Godot 4 C# accepts float[] for uniform vec4[] arrays.
         _material.SetShaderParameter("lights", _lightData);
         _material.SetShaderParameter("light_colors", _lightColorData);
-        _material.SetShaderParameter("light_energy_mults", _lightEnergyMults);
         _material.SetShaderParameter("num_lights", count);
 
         // Shadow atlas
