@@ -50,11 +50,10 @@ uniform float normal_strength = 0.6; // 0 = flat (no normal effect), 1 = full
 uniform vec2  character_pos = vec2(-1.0, -1.0);
 uniform float character_half = 10.0;
 
-// More steps = smoother shadow edges. 48 is high quality for an editor.
-// Each step samples the occlusion mask along the ray from pixel to light.
-// Higher = smoother shadow edges. 64 steps with jitter gives clean
-// shadows even for large lights (20+ tile radius).
-const int RAY_STEPS = 64;
+// More steps = finer mask sampling, fewer 'rays' (visible stripes from
+// gaps in the occluder mask getting different shadow results per pixel).
+// 96 is a good balance of quality vs perf.
+const int RAY_STEPS = 96;
 
 // Estimate surface normal from the occlusion mask gradient (Sobel filter).
 // Returns a vec3 normal where (0, 0, 1) = flat facing camera.
@@ -124,7 +123,12 @@ float shadow_factor(vec2 from_px, vec2 light_px) {
     float start_t = clamp(skip_px / len, 0.0, 0.3);
     float end_t   = clamp(1.0 - 8.0 / len, 0.55, 1.0);
 
-    float jitter = pixel_hash(from_px * 0.1) * 0.5;
+    // Reduced jitter (was 0.5 → 0.15) so adjacent pixels take similar
+    // ray paths. Higher jitter creates 'rays' radiating from light
+    // sources because two neighboring pixels disagree on whether a tiny
+    // mask gap is occluded. Lower jitter trades subtle banding for
+    // continuous shadow regions.
+    float jitter = pixel_hash(from_px * 0.1) * 0.15;
     float step_size = (end_t - start_t) / float(RAY_STEPS);
 
     // Perpendicular to the ray direction, for PCF-style shadow softening.
@@ -134,12 +138,15 @@ float shadow_factor(vec2 from_px, vec2 light_px) {
         float t = start_t + (float(i) + jitter) * step_size;
         vec2 p = from_px + dir * t;
 
-        // 3-tap PCF: center + 2 perpendicular offsets. Averaging gives
-        // soft penumbra-like transitions at occluder edges.
+        // 5-tap PCF: center + 4 perpendicular offsets at varying widths.
+        // The wider taps (±4 px) bridge small mask gaps that would
+        // otherwise let rays radiate out from each light source.
         float s0 = sample_occlusion(p);
         float s1 = sample_occlusion(p + perp * 2.0);
         float s2 = sample_occlusion(p - perp * 2.0);
-        float avg = (s0 + s1 + s2) * 0.3333;
+        float s3 = sample_occlusion(p + perp * 4.0);
+        float s4 = sample_occlusion(p - perp * 4.0);
+        float avg = (s0 + s1 + s2 + s3 + s4) * 0.2;
 
         if (avg > 0.5) {
             // FULL shadow — light is blocked by a wall/sprite. Walls
@@ -171,14 +178,14 @@ void fragment() {
         float r    = L.z;
         if (dist > r * 1.3) continue;
 
-        // Two-layer falloff for a more atmospheric, "glowing" look:
-        //   halo: wide soft gradient (exp × 3) = the main lit area
-        //   core: tight bright hot-spot (exp × 15) = warm glow at source
-        // Combined gives a bulb/candle feel instead of flat disc.
+        // Two-layer falloff: wide halo + subtle hot core for a 'glow'
+        // feel without the high contrast that makes raycast 'rays'
+        // through mask gaps super-visible. Core reduced from ×0.4 to
+        // ×0.15 so the hot spot is much less intense.
         float t = dist / r;
         float halo = exp(-t * t * 3.0);
         float core = exp(-t * t * 15.0);
-        float falloff = halo + core * 0.4;
+        float falloff = halo + core * 0.15;
 
         float energy = L.w;
 
