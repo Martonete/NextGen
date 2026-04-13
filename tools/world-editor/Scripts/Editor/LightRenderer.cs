@@ -23,14 +23,13 @@ public class LightRenderer
     private const int TileSize = 32;
 
     /// <summary>Mask resolution: each tile produces this many mask pixels per
-    /// axis. 16 means the mask is (mapW*16 × mapH*16). For a 100×100 map:
-    /// 1600×1600 = 2.5MB L8 — reasonable, and gives sharp silhouettes on
-    /// tree canopies and other detailed sprites. Each mask pixel covers
-    /// 2×2 world pixels.</summary>
-    private const int MaskPixelsPerTile = 16;
+    /// axis. 32 = full resolution (1 mask px = 1 world px). For a 100×100
+    /// map: 3200×3200 = 10MB L8. Costs more memory than 16 but eliminates
+    /// gaps in thin walls and gives pixel-perfect shadow silhouettes.</summary>
+    private const int MaskPixelsPerTile = 32;
 
-    /// <summary>Ratio of world pixels to mask pixels. With 16 mask-px per tile
-    /// and 32 world-px per tile, each mask pixel covers 2×2 world pixels.</summary>
+    /// <summary>Ratio of world pixels to mask pixels. With 32 mask-px per tile
+    /// and 32 world-px per tile, each mask pixel covers exactly 1×1 world px.</summary>
     private const int MaskDownsample = TileSize / MaskPixelsPerTile;
 
     private Node? _parent;
@@ -275,15 +274,19 @@ public class LightRenderer
             {
                 ref var tile = ref map.Tiles[tx, ty];
 
+                // Layer3 sprite contributes its alpha mask (pixel-perfect
+                // silhouette) — trees, walls, furniture, etc.
                 if (tile.Layer3 != 0 && _grhs != null && _textures != null)
                 {
                     StampGrhAlpha(map, tx, ty, tile.Layer3);
                 }
-                else if (tile.Blocked)
+                // Blocked tiles ALSO fill their full square — this is
+                // INDEPENDENT of Layer3 so a blocked wall always blocks
+                // light even if its Layer3 graphic doesn't fully cover the
+                // tile, or if the wall is represented only by the Blocked
+                // flag without a graphic.
+                if (tile.Blocked)
                 {
-                    // Blocked-only tile: fill the full tile area in the mask.
-                    // Uses tx * MaskPixelsPerTile to match DrawTileGrh's
-                    // coordinate system where tile (1,1) draws at world (32, 32).
                     int baseX = tx * MaskPixelsPerTile;
                     int baseY = ty * MaskPixelsPerTile;
                     for (int dy = 0; dy < MaskPixelsPerTile; dy++)

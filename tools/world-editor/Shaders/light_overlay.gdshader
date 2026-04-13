@@ -134,22 +134,21 @@ float shadow_factor(vec2 from_px, vec2 light_px) {
         float t = start_t + (float(i) + jitter) * step_size;
         vec2 p = from_px + dir * t;
 
-        // 3-tap PCF: center + 2 perpendicular offsets. Averaging the 3
-        // samples gives softer, more natural shadow edges instead of
-        // the hard binary cut a single sample would produce.
+        // 3-tap PCF: center + 2 perpendicular offsets. Averaging gives
+        // soft penumbra-like transitions at occluder edges.
         float s0 = sample_occlusion(p);
         float s1 = sample_occlusion(p + perp * 2.0);
         float s2 = sample_occlusion(p - perp * 2.0);
         float avg = (s0 + s1 + s2) * 0.3333;
 
         if (avg > 0.5) {
-            float occluder_dist = t * len;
-            // Sharp shadow at ≤1 tile, fading to none at 4 tiles.
-            float strength = 1.0 - smoothstep(32.0, 128.0, occluder_dist);
-            // The `avg` value also carries the partial coverage — use it
-            // to soften the shadow strength at the edge.
+            // FULL shadow — light is blocked by a wall/sprite. Walls
+            // should opaquely block light regardless of distance from the
+            // shadowed pixel. The previous distance-falloff design caused
+            // light to leak through walls into adjacent rooms.
+            // The PCF coverage still softens the shadow edge.
             float coverage = smoothstep(0.4, 0.9, avg);
-            return 1.0 - strength * coverage;
+            return 1.0 - coverage;
         }
     }
     return 1.0;
