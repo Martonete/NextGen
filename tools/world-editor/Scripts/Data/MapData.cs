@@ -72,6 +72,10 @@ public class MapData
 
     // User-defined named smoke presets (templates used to seed new layers).
     public List<SmokePrefab> UserFogPrefabs = new();
+    /// <summary>User-saved cloud prefabs: style + relative tile pattern,
+    /// stamped onto the map with one click. Different from SmokePrefab
+    /// (style only) — these also carry a SHAPE (relative tile offsets).</summary>
+    public List<CloudPrefab> UserCloudPrefabs = new();
     // Global map-level toggle: when true the shader uses a bounded
     // oscillation offset so the pattern "floats in place" without drift.
     public bool FogFreeSmoke = false;
@@ -121,7 +125,8 @@ public class MapData
         string path = Path.Combine(dir, $"Mapa{MapNumber}.aofog");
         int totalTiles = 0;
         foreach (var l in PaintedFogLayers) totalTiles += l.Tiles.Count;
-        if (totalTiles == 0 && UserFogPrefabs.Count == 0 && !FogFreeSmoke)
+        if (totalTiles == 0 && UserFogPrefabs.Count == 0
+            && UserCloudPrefabs.Count == 0 && !FogFreeSmoke)
         {
             if (File.Exists(path)) File.Delete(path);
             return;
@@ -130,6 +135,13 @@ public class MapData
         sb.AppendLine($"FreeSmoke={(FogFreeSmoke ? 1 : 0)}");
         foreach (var p in UserFogPrefabs)
             sb.AppendLine($"Prefab={p.Serialize()}");
+        // Cloud prefabs: header line + one CT line per relative tile
+        foreach (var c in UserCloudPrefabs)
+        {
+            sb.AppendLine($"Cloud={c.SerializeHeader()}");
+            foreach (var rt in c.RelativeTiles)
+                sb.AppendLine($"CT={rt.X},{rt.Y}");
+        }
         foreach (var layer in PaintedFogLayers)
         {
             if (layer.Tiles.Count == 0) continue;
@@ -149,6 +161,7 @@ public class MapData
         string path = Path.Combine(dir, $"Mapa{MapNumber}.aofog");
         PaintedFogLayers.Clear();
         UserFogPrefabs.Clear();
+        UserCloudPrefabs.Clear();
         ActiveFogLayerIndex = -1;
         FogFreeSmoke = false;
         if (!File.Exists(path)) return;
@@ -158,6 +171,7 @@ public class MapData
         var legacyTiles = new HashSet<Vector2I>();
         bool sawLayer = false;
         PaintedFogLayer? currentLayer = null;
+        CloudPrefab? currentCloud = null;
 
         foreach (var rawLine in File.ReadAllLines(path))
         {
@@ -174,6 +188,24 @@ public class MapData
                     var pf = SmokePrefab.TryParse(val);
                     if (pf != null) UserFogPrefabs.Add(pf);
                     break;
+                case "CLOUD":
+                    var cp = CloudPrefab.TryParseHeader(val);
+                    if (cp != null)
+                    {
+                        UserCloudPrefabs.Add(cp);
+                        currentCloud = cp;
+                        currentLayer = null; // switch context away from layer
+                    }
+                    break;
+                case "CT":
+                    var ctParts = val.Split(',');
+                    if (currentCloud != null && ctParts.Length == 2
+                        && int.TryParse(ctParts[0], out var ctx)
+                        && int.TryParse(ctParts[1], out var cty))
+                    {
+                        currentCloud.RelativeTiles.Add(new Vector2I(ctx, cty));
+                    }
+                    break;
                 case "LAYER":
                     var nl = PaintedFogLayer.TryParseStyle(val);
                     if (nl != null)
@@ -181,6 +213,7 @@ public class MapData
                         sawLayer = true;
                         PaintedFogLayers.Add(nl);
                         currentLayer = nl;
+                        currentCloud = null; // switch context away from cloud
                     }
                     break;
                 case "T":

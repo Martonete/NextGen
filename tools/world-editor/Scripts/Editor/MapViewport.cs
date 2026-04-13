@@ -11,6 +11,10 @@ public partial class MapViewport : Control
 
     // Injected dependencies
     public MapData? Map;
+    /// <summary>Reference to the humo config panel so the fog paint tool
+    /// can read the current brush radius. Set by EditorMain after both
+    /// are constructed.</summary>
+    public HumoConfigPanel? HumoPanelRef;
     public GrhData[]? Grhs;
     public TextureManager? Textures;
     public EditorState? State;
@@ -2489,9 +2493,17 @@ public partial class MapViewport : Control
     private void PaintFogAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y) || State == null) return;
-        int key = y * 10000 + x;
-        if (_paintedThisStroke.Contains(key)) return;
-        _paintedThisStroke.Add(key);
+
+        // Cloud stamp mode: stamp a saved cloud pattern at the click anchor.
+        // The cloud's RelativeTiles are offsets from (0,0); we add (x,y) to
+        // each. Stamp uses the cloud's own style — a fresh layer is created
+        // if the active one's style doesn't match.
+        var stamp = HumoPanelRef?.GetActiveStampCloud();
+        if (stamp != null)
+        {
+            StampCloudAt(x, y, stamp);
+            return;
+        }
 
         // Auto-create a default layer if none exists yet
         if (Map.PaintedFogLayers.Count == 0)
@@ -2503,7 +2515,24 @@ public partial class MapViewport : Control
             Map.ActiveFogLayerIndex = 0;
 
         var layer = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
-        if (layer.Tiles.Add(new Godot.Vector2I(x, y)))
+        int radius = HumoPanelRef?.BrushRadius ?? 0;
+
+        bool anyAdded = false;
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                if (radius > 0 && dx * dx + dy * dy > radius * radius) continue;
+                int tx = x + dx, ty = y + dy;
+                if (!Map.InBounds(tx, ty)) continue;
+                int key = ty * 10000 + tx;
+                if (_paintedThisStroke.Contains(key)) continue;
+                _paintedThisStroke.Add(key);
+                if (layer.Tiles.Add(new Godot.Vector2I(tx, ty))) anyAdded = true;
+            }
+        }
+
+        if (anyAdded)
         {
             _zoneFog.MarkDirty();
             OnFogPainted?.Invoke();
@@ -2511,17 +2540,81 @@ public partial class MapViewport : Control
         QueueRedraw();
     }
 
-    /// <summary>Erase fog from a tile — removes it from whichever layer(s)
-    /// contain it. Multiple layers can touch the same tile; we clean all.</summary>
+    /// <summary>Stamp a cloud prefab at (x,y). Looks for an existing layer
+    /// with the same style+name; if not found, creates a new one. Adds all
+    /// of the cloud's relative tiles to that layer.</summary>
+    private void StampCloudAt(int x, int y, CloudPrefab cloud)
+    {
+        if (Map == null) return;
+
+        // Find or create a layer with the cloud's style + name.
+        PaintedFogLayer? target = null;
+        foreach (var l in Map.PaintedFogLayers)
+        {
+            if (l.Name == cloud.Name && l.Density == cloud.Density
+                && l.R == cloud.R && l.G == cloud.G && l.B == cloud.B
+                && l.Size == cloud.Size && l.SpeedX == cloud.SpeedX && l.SpeedY == cloud.SpeedY)
+            {
+                target = l;
+                break;
+            }
+        }
+        if (target == null)
+        {
+            target = new PaintedFogLayer
+            {
+                Name = cloud.Name,
+                Density = cloud.Density,
+                R = cloud.R, G = cloud.G, B = cloud.B,
+                SpeedX = cloud.SpeedX, SpeedY = cloud.SpeedY, Size = cloud.Size,
+            };
+            Map.PaintedFogLayers.Add(target);
+            Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
+        }
+
+        bool anyAdded = false;
+        foreach (var off in cloud.RelativeTiles)
+        {
+            int tx = x + off.X, ty = y + off.Y;
+            if (!Map.InBounds(tx, ty)) continue;
+            int key = ty * 10000 + tx;
+            if (_paintedThisStroke.Contains(key)) continue;
+            _paintedThisStroke.Add(key);
+            if (target.Tiles.Add(new Godot.Vector2I(tx, ty))) anyAdded = true;
+        }
+
+        if (anyAdded)
+        {
+            _zoneFog.MarkDirty();
+            OnFogPainted?.Invoke();
+        }
+        QueueRedraw();
+    }
+
+    /// <summary>Erase fog from a tile (and circle brush around it) —
+    /// removes from ALL layers so you don't need to know which layer
+    /// painted the tile. Circular brush matches the paint brush radius.</summary>
     private void EraseFogAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y)) return;
-        var tile = new Godot.Vector2I(x, y);
+        int radius = HumoPanelRef?.BrushRadius ?? 0;
         bool removed = false;
-        foreach (var layer in Map.PaintedFogLayers)
+
+        for (int dy = -radius; dy <= radius; dy++)
         {
-            if (layer.Tiles.Remove(tile)) removed = true;
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                if (radius > 0 && dx * dx + dy * dy > radius * radius) continue;
+                int tx = x + dx, ty = y + dy;
+                if (!Map.InBounds(tx, ty)) continue;
+                var tile = new Godot.Vector2I(tx, ty);
+                foreach (var layer in Map.PaintedFogLayers)
+                {
+                    if (layer.Tiles.Remove(tile)) removed = true;
+                }
+            }
         }
+
         if (removed)
         {
             _zoneFog.MarkDirty();

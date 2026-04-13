@@ -72,6 +72,10 @@ public class EditorState
     // Fog paint tool: density 0..255 to stamp on tiles (0 = erase)
     public int SelectedFogDensity = 90;
     public bool ShowFog = true;
+    /// <summary>Brush radius for the Fog tool — tiles within this many
+    /// tiles of the click (Chebyshev distance) are stamped in one click.
+    /// 0 = single tile. Set from HumoConfigPanel brushSpin.</summary>
+    public int FogBrushRadius = 0;
 
     // Zone system (editor metadata for sub-regions)
     public List<MapZone> Zones { get; } = new();

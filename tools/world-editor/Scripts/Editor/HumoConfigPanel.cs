@@ -34,6 +34,34 @@ public partial class HumoConfigPanel : PanelContainer
     private LineEdit? _newLayerNameEdit;
     private SpinBox? _densitySpin;
     private SpinBox? _sizeSpin;
+    private SpinBox? _brushSpin;
+    /// <summary>Brush radius in tiles — read by MapViewport when painting.
+    /// 0 = single tile per click; 1+ = paint a circle of that radius.</summary>
+    public int BrushRadius => (int)(_brushSpin?.Value ?? 0);
+
+    // ── Cloud prefab section ──
+    private OptionButton? _cloudOption;
+    private LineEdit? _cloudNameEdit;
+    private Button? _saveCloudBtn;
+    private Button? _stampModeBtn;
+    private Label? _cloudStatusLabel;
+    /// <summary>When > -1, the Fog tool stamps the selected cloud prefab at
+    /// each click instead of placing a single tile. Index into the combined
+    /// BuiltIn + Map.UserCloudPrefabs list. MapViewport reads this every
+    /// paint to decide between brush-radius and cloud-stamp mode.</summary>
+    public int StampCloudIndex { get; private set; } = -1;
+    /// <summary>Resolves StampCloudIndex into a CloudPrefab reference.
+    /// Returns null if no stamp mode is active.</summary>
+    public CloudPrefab? GetActiveStampCloud()
+    {
+        if (StampCloudIndex < 0 || Map == null) return null;
+        if (StampCloudIndex < CloudPrefab.BuiltIn.Count)
+            return CloudPrefab.BuiltIn[StampCloudIndex];
+        int userIdx = StampCloudIndex - CloudPrefab.BuiltIn.Count;
+        if (userIdx >= 0 && userIdx < Map.UserCloudPrefabs.Count)
+            return Map.UserCloudPrefabs[userIdx];
+        return null;
+    }
     private SpinBox? _rSpin, _gSpin, _bSpin;
     private ColorRect? _colorPreview;
     private CheckBox? _freeSmokeCheck;
@@ -110,6 +138,47 @@ public partial class HumoConfigPanel : PanelContainer
         _saveStatusLabel.Visible = false;
         vbox.AddChild(_saveStatusLabel);
 
+        // ── Cloud Prefab section ──
+        vbox.AddChild(new HSeparator());
+        vbox.AddChild(EditorTheme.MakeLabel(
+            "☁ Nubes prefabricadas:",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        var cloudHelp = EditorTheme.MakeLabel(
+            "Dibujá una nube en el mapa (con esta capa), ponele nombre y guardala. Después pickeala del dropdown + 🖨 Modo Stamp para pegarla en otros lugares con un click.",
+            EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+        cloudHelp.AutowrapMode = TextServer.AutowrapMode.Word;
+        vbox.AddChild(cloudHelp);
+
+        _cloudOption = new OptionButton();
+        _cloudOption.CustomMinimumSize = new Vector2(0, 24);
+        vbox.AddChild(_cloudOption);
+        _cloudOption.ItemSelected += (_) => UpdateStampButton();
+
+        var cloudSaveRow = new HBoxContainer();
+        cloudSaveRow.AddThemeConstantOverride("separation", 4);
+        _cloudNameEdit = new LineEdit
+        {
+            PlaceholderText = "Nombre (ej: Niebla DV)...",
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        cloudSaveRow.AddChild(_cloudNameEdit);
+        _saveCloudBtn = new Button { Text = "☁+ Guardar" };
+        _saveCloudBtn.Pressed += OnSaveCloud;
+        cloudSaveRow.AddChild(_saveCloudBtn);
+        vbox.AddChild(cloudSaveRow);
+
+        _stampModeBtn = new Button
+        {
+            Text = "🖨 Modo Stamp: OFF",
+            ToggleMode = true,
+        };
+        _stampModeBtn.Toggled += OnStampModeToggled;
+        vbox.AddChild(_stampModeBtn);
+
+        _cloudStatusLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _cloudStatusLabel.Visible = false;
+        vbox.AddChild(_cloudStatusLabel);
+
         vbox.AddChild(new HSeparator());
 
         // Density
@@ -120,16 +189,30 @@ public partial class HumoConfigPanel : PanelContainer
 
         // Size (noise cell in world pixels) — controls how big the smoke
         // clouds look. Step 16 gives fine control without feeling too jittery.
+        // Max raised to 8192 so users can make REALLY big cloud formations.
         var sizeRow = new HBoxContainer();
         sizeRow.AddThemeConstantOverride("separation", 6);
-        AddSpin(sizeRow, "Tamaño:", 64, 2048, 512, out _sizeSpin);
+        AddSpin(sizeRow, "Tamaño:", 64, 8192, 512, out _sizeSpin);
         _sizeSpin!.Step = 16;
         vbox.AddChild(sizeRow);
         var sizeHelp = EditorTheme.MakeLabel(
-            "↑ más grande = nubes más amplias  |  ↓ más chico = denso/granular",
+            "↑ más grande = nubes más amplias (hasta 8192)  |  ↓ más chico = denso/granular",
             EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
         sizeHelp.AutowrapMode = TextServer.AutowrapMode.Word;
         vbox.AddChild(sizeHelp);
+
+        // Brush radius: how many tiles get painted per click. 0 = single
+        // tile. N = N-tile radius (circle) around the cursor. Makes it
+        // much faster to cover large areas with dense fog.
+        var brushRow = new HBoxContainer();
+        brushRow.AddThemeConstantOverride("separation", 6);
+        AddSpin(brushRow, "Pincel (radio):", 0, 10, 0, out _brushSpin);
+        vbox.AddChild(brushRow);
+        var brushHelp = EditorTheme.MakeLabel(
+            "0 = 1 tile por click. 1+ = pinta un círculo de ese radio. Acelera pintar áreas grandes.",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        brushHelp.AutowrapMode = TextServer.AutowrapMode.Word;
+        vbox.AddChild(brushHelp);
 
         vbox.AddChild(EditorTheme.MakeLabel("Color del humo:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         var colRow = new HBoxContainer();
@@ -169,6 +252,7 @@ public partial class HumoConfigPanel : PanelContainer
         if (_freeSmokeCheck != null) _freeSmokeCheck.ButtonPressed = Map.FogFreeSmoke;
         _suppressChangeEvents = false;
         RebuildDropdown();
+        RebuildCloudDropdown();
         LoadActiveLayerIntoUi();
     }
 
@@ -404,5 +488,109 @@ public partial class HumoConfigPanel : PanelContainer
             CustomMinimumSize = new Vector2(64, 0),
         };
         parent.AddChild(spin);
+    }
+
+    // ── Cloud Prefab handlers ──
+
+    /// <summary>Rebuild the cloud dropdown. Call this after saving a new
+    /// cloud, deleting one, or switching maps.</summary>
+    public void RebuildCloudDropdown()
+    {
+        if (_cloudOption == null) return;
+        _cloudOption.Clear();
+        _cloudOption.AddItem("(ninguna)");
+        // Built-in presets first
+        foreach (var bc in CloudPrefab.BuiltIn)
+            _cloudOption.AddItem($"◆ {bc.Name} ({bc.RelativeTiles.Count} tiles)");
+        // User-saved on this map
+        if (Map != null)
+            foreach (var uc in Map.UserCloudPrefabs)
+                _cloudOption.AddItem($"✦ {uc.Name} ({uc.RelativeTiles.Count} tiles)");
+
+        // Re-sync selected
+        int wanted = StampCloudIndex + 1; // +1 for "(ninguna)"
+        if (wanted > 0 && wanted < _cloudOption.ItemCount)
+            _cloudOption.Select(wanted);
+        else
+            _cloudOption.Select(0);
+    }
+
+    /// <summary>Save the CURRENTLY active fog layer as a named cloud prefab.
+    /// Captures its style + all its tiles as relative offsets (centered on
+    /// the layer's centroid). Empty name or no tiles = warning and abort.</summary>
+    private void OnSaveCloud()
+    {
+        if (Map == null) return;
+        if (_cloudStatusLabel != null) _cloudStatusLabel.Visible = false;
+        string name = _cloudNameEdit?.Text?.Trim() ?? "";
+        if (string.IsNullOrEmpty(name))
+        {
+            ShowCloudStatus("⚠ Poné un nombre", false);
+            return;
+        }
+        if (Map.ActiveFogLayerIndex < 0 || Map.ActiveFogLayerIndex >= Map.PaintedFogLayers.Count)
+        {
+            ShowCloudStatus("⚠ No hay capa activa", false);
+            return;
+        }
+        var src = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
+        if (src.Tiles.Count == 0)
+        {
+            ShowCloudStatus("⚠ La capa activa no tiene tiles pintados", false);
+            return;
+        }
+
+        // Compute centroid to anchor the relative offsets.
+        int sumX = 0, sumY = 0;
+        foreach (var t in src.Tiles) { sumX += t.X; sumY += t.Y; }
+        int cx = sumX / src.Tiles.Count;
+        int cy = sumY / src.Tiles.Count;
+
+        var cloud = new CloudPrefab
+        {
+            Name = name,
+            Density = src.Density, R = src.R, G = src.G, B = src.B,
+            SpeedX = src.SpeedX, SpeedY = src.SpeedY, Size = src.Size,
+        };
+        foreach (var t in src.Tiles)
+            cloud.RelativeTiles.Add(new Godot.Vector2I(t.X - cx, t.Y - cy));
+
+        Map.UserCloudPrefabs.Add(cloud);
+        if (_cloudNameEdit != null) _cloudNameEdit.Text = "";
+        RebuildCloudDropdown();
+        ShowCloudStatus($"✓ Nube '{name}' guardada ({cloud.RelativeTiles.Count} tiles)", true);
+    }
+
+    private void OnStampModeToggled(bool on)
+    {
+        if (_stampModeBtn != null)
+            _stampModeBtn.Text = on ? "🖨 Modo Stamp: ON" : "🖨 Modo Stamp: OFF";
+        UpdateStampButton();
+    }
+
+    /// <summary>Updates StampCloudIndex based on dropdown selection + toggle.</summary>
+    private void UpdateStampButton()
+    {
+        if (_cloudOption == null || _stampModeBtn == null)
+        {
+            StampCloudIndex = -1;
+            return;
+        }
+        if (!_stampModeBtn.ButtonPressed || _cloudOption.Selected <= 0)
+        {
+            StampCloudIndex = -1;
+            return;
+        }
+        // dropdown[0] = "(ninguna)" sentinel, so subtract 1.
+        StampCloudIndex = _cloudOption.Selected - 1;
+    }
+
+    private void ShowCloudStatus(string text, bool ok)
+    {
+        if (_cloudStatusLabel == null) return;
+        _cloudStatusLabel.Text = text;
+        _cloudStatusLabel.Visible = true;
+        _cloudStatusLabel.AddThemeColorOverride("font_color",
+            ok ? new Color(0.5f, 0.9f, 0.5f) : new Color(0.95f, 0.7f, 0.4f));
     }
 }

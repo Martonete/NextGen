@@ -669,6 +669,7 @@ public partial class EditorMain : Control
         // Humo (paint smoke) config panel — only visible when Humo tool is active
         _humoPanel = new HumoConfigPanel { Map = _map, Visible = false };
         _humoPanel.OnChanged += () => _viewport?.MarkFogMaskDirty();
+        if (_viewport != null) _viewport.HumoPanelRef = _humoPanel;
         rightVBox.AddChild(_humoPanel);
 
         // Advanced light editor panel — only visible when Luz+ tool is active.
