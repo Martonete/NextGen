@@ -3600,12 +3600,14 @@ public partial class EditorMain : Control
     }
 
     /// <summary>Update the FPS pill in the status bar. Averages over
-    /// ~0.5 s so the number doesn't flicker frame-to-frame. Color-codes
-    /// the text based on the performance tier (green ≥55, yellow ≥30,
-    /// red &lt; 30).</summary>
+    /// ~0.5 s so the number doesn't flicker frame-to-frame. Defensive
+    /// against startup ordering — if the label or Performance API isn't
+    /// ready yet, silently skips this frame.</summary>
     private void UpdateFpsLabel(float delta)
     {
-        if (_fpsLabel == null) return;
+        if (_fpsLabel == null || !GodotObject.IsInstanceValid(_fpsLabel)) return;
+        if (delta <= 0f) return;
+
         _fpsAccumTime += delta;
         _fpsAccumFrames++;
         if (_fpsAccumTime < 0.5f) return;
@@ -3614,11 +3616,9 @@ public partial class EditorMain : Control
         _fpsAccumTime = 0f;
         _fpsAccumFrames = 0;
 
-        // Use Engine's frame time measurement for a more accurate number
-        // — Process delta can be clamped by Godot's vsync. Engine.GetFramesPerSecond
-        // returns the true render-loop fps.
-        double engineFps = Performance.GetMonitor(Performance.Monitor.TimeFps);
-        float reportedFps = engineFps > 0 ? (float)engineFps : avgFps;
+        // Simple 1/delta average — more reliable than Performance.GetMonitor
+        // which can return 0 or throw during the first few frames.
+        float reportedFps = avgFps;
 
         _fpsLabel.Text = $"{reportedFps:F0} fps";
         if (reportedFps >= 55f)
