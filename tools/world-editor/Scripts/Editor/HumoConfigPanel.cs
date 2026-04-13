@@ -44,7 +44,12 @@ public partial class HumoConfigPanel : PanelContainer
     private LineEdit? _cloudNameEdit;
     private Button? _saveCloudBtn;
     private Button? _stampModeBtn;
+    private CheckBox? _randomRotateCheck;
     private Label? _cloudStatusLabel;
+    /// <summary>When true, each cloud stamp gets a random orientation
+    /// (one of 4 cardinal rotations + optional horizontal flip = 8 total
+    /// variants). Keeps the same shape but breaks visual repetition.</summary>
+    public bool RandomRotateStamps => _randomRotateCheck?.ButtonPressed ?? true;
     /// <summary>When > -1, the Fog tool stamps the selected cloud prefab at
     /// each click instead of placing a single tile. Index into the combined
     /// BuiltIn + Map.UserCloudPrefabs list. MapViewport reads this every
@@ -174,6 +179,16 @@ public partial class HumoConfigPanel : PanelContainer
         };
         _stampModeBtn.Toggled += OnStampModeToggled;
         vbox.AddChild(_stampModeBtn);
+
+        // Random rotation toggle — when ON, each stamp gets a random
+        // orientation (4 cardinal rotations × optional horizontal flip
+        // = 8 variants) so repeated stamps don't look identical.
+        _randomRotateCheck = new CheckBox
+        {
+            Text = "🎲 Rotación aleatoria por stamp",
+            ButtonPressed = true,
+        };
+        vbox.AddChild(_randomRotateCheck);
 
         _cloudStatusLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
         _cloudStatusLabel.Visible = false;

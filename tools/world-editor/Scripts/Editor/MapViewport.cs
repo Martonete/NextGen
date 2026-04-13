@@ -2572,10 +2572,28 @@ public partial class MapViewport : Control
             Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
         }
 
+        // Pick a random orientation if enabled. 4 cardinal rotations ×
+        // optional horizontal flip = 8 variants. Integer-coord-safe so
+        // tiles always land on the grid.
+        bool randomize = HumoPanelRef?.RandomRotateStamps ?? false;
+        int rot = randomize ? GD.RandRange(0, 3) : 0; // 0=0° 1=90° 2=180° 3=270°
+        bool flipX = randomize && GD.Randi() % 2 == 0;
+
         bool anyAdded = false;
         foreach (var off in cloud.RelativeTiles)
         {
-            int tx = x + off.X, ty = y + off.Y;
+            // Apply flip first, then rotate around origin.
+            int rdx = flipX ? -off.X : off.X;
+            int rdy = off.Y;
+            int rotDx, rotDy;
+            switch (rot)
+            {
+                case 1: rotDx = -rdy; rotDy = rdx; break;   //  90° CW
+                case 2: rotDx = -rdx; rotDy = -rdy; break;  // 180°
+                case 3: rotDx = rdy;  rotDy = -rdx; break;  // 270° CW
+                default: rotDx = rdx; rotDy = rdy; break;   //   0°
+            }
+            int tx = x + rotDx, ty = y + rotDy;
             if (!Map.InBounds(tx, ty)) continue;
             int key = ty * 10000 + tx;
             if (_paintedThisStroke.Contains(key)) continue;
