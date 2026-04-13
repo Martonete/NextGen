@@ -80,11 +80,30 @@ public partial class HumoConfigPanel : PanelContainer
     public override void _Ready()
     {
         CustomMinimumSize = new Vector2(260, 0);
+        // Fill the sidebar vertically so the inner ScrollContainer has
+        // a real height to scroll within. Without this the PanelContainer
+        // shrinks to its content's minimum size and the ScrollContainer
+        // can't show scrollbars (see LightToolPanel for the failure mode).
+        SizeFlagsVertical = SizeFlags.ExpandFill;
         AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(EditorTheme.BG_PANEL, 4, 8, 6, EditorTheme.BORDER, 1));
 
-        var vbox = new VBoxContainer();
+        // ScrollContainer so the panel can grow taller than the sidebar
+        // viewport — needed now that the cloud prefab section adds many
+        // more controls. Vertical scroll only; horizontal disabled.
+        var scroll = new ScrollContainer
+        {
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+        };
+        AddChild(scroll);
+
+        var vbox = new VBoxContainer
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
         vbox.AddThemeConstantOverride("separation", 6);
-        AddChild(vbox);
+        scroll.AddChild(vbox);
 
         vbox.AddChild(EditorTheme.Heading("Humo (pintar)"));
         var help = EditorTheme.MakeLabel(
