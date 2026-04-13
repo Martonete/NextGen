@@ -143,9 +143,12 @@ float shadow_factor(vec2 from_px, vec2 light_px) {
         float avg = (s0 + s1 + s2) * 0.3333;
 
         if (avg > 0.5) {
-            float occluder_dist = t * len;
-            // Sharp shadow at ≤1 tile, fading to none at 4 tiles.
-            float strength = 1.0 - smoothstep(32.0, 128.0, occluder_dist);
+            // FULL shadow — walls block light opaquely regardless of the
+            // shadowed pixel's distance from the wall. (Previous design
+            // faded shadows after 4 tiles, causing light to leak through
+            // walls into adjacent rooms.)
+            // The PCF coverage still softens the shadow edge.
+            float strength = 1.0;
             // The `avg` value also carries the partial coverage — use it
             // to soften the shadow strength at the edge.
             float coverage = smoothstep(0.4, 0.9, avg);

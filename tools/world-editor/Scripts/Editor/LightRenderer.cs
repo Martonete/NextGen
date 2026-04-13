@@ -275,15 +275,18 @@ public class LightRenderer
             {
                 ref var tile = ref map.Tiles[tx, ty];
 
+                // Layer3 sprite contributes its alpha mask (pixel-perfect
+                // silhouette) — trees, walls, furniture, etc.
                 if (tile.Layer3 != 0 && _grhs != null && _textures != null)
                 {
                     StampGrhAlpha(map, tx, ty, tile.Layer3);
                 }
-                else if (tile.Blocked)
+                // Blocked tiles ALSO fill their full square (independent
+                // of Layer3) so a blocked wall always fully opaque in the
+                // mask, even if its Layer3 graphic has alpha holes around
+                // the edges.
+                if (tile.Blocked)
                 {
-                    // Blocked-only tile: fill the full tile area in the mask.
-                    // Uses tx * MaskPixelsPerTile to match DrawTileGrh's
-                    // coordinate system where tile (1,1) draws at world (32, 32).
                     int baseX = tx * MaskPixelsPerTile;
                     int baseY = ty * MaskPixelsPerTile;
                     for (int dy = 0; dy < MaskPixelsPerTile; dy++)
