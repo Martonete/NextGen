@@ -79,6 +79,9 @@ public partial class EditorMain : Control
     private HBoxContainer? _statusBar;
     private Label? _statusLabel;
     private Label? _coordLabel;
+    private Label? _fpsLabel;
+    private float _fpsAccumTime;
+    private int _fpsAccumFrames;
     private Label? _layerLabel;
     private Label? _toolLabel;
 
@@ -711,6 +714,14 @@ public partial class EditorMain : Control
         // Coordinates (monospace-style)
         _coordLabel = EditorTheme.MakeLabel("(0, 0)", EditorTheme.TEXT_PRIMARY, EditorTheme.FONT_SM);
         _statusBar.AddChild(_coordLabel);
+
+        // FPS indicator — averaged over the last ~0.5 s so the number
+        // doesn't flicker frame-to-frame. Green when ≥55 FPS, yellow
+        // 30-55, red below 30. Helpful for profiling the light pipeline
+        // + fog pipeline while iterating.
+        _fpsLabel = EditorTheme.MakeLabel("60 fps", Colors.White, EditorTheme.FONT_SM);
+        var fpsPill = EditorTheme.StatusPill(_fpsLabel, new Color(0.12f, 0.22f, 0.12f));
+        _statusBar.AddChild(fpsPill);
 
         _statusLabel = EditorTheme.MakeLabel("Listo", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
         _statusLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -3181,6 +3192,7 @@ public partial class EditorMain : Control
     public override void _Process(double delta)
     {
         DoLayout();
+        UpdateFpsLabel((float)delta);
 
         // Blocking preload — nothing else runs until textures + previews are done
         if (_preloadPhase > 0)
@@ -3585,5 +3597,35 @@ public partial class EditorMain : Control
         };
         AddChild(popup);
         popup.PopupCentered();
+    }
+
+    /// <summary>Update the FPS pill in the status bar. Averages over
+    /// ~0.5 s so the number doesn't flicker frame-to-frame. Color-codes
+    /// the text based on the performance tier (green ≥55, yellow ≥30,
+    /// red &lt; 30).</summary>
+    private void UpdateFpsLabel(float delta)
+    {
+        if (_fpsLabel == null) return;
+        _fpsAccumTime += delta;
+        _fpsAccumFrames++;
+        if (_fpsAccumTime < 0.5f) return;
+
+        float avgFps = _fpsAccumFrames / _fpsAccumTime;
+        _fpsAccumTime = 0f;
+        _fpsAccumFrames = 0;
+
+        // Use Engine's frame time measurement for a more accurate number
+        // — Process delta can be clamped by Godot's vsync. Engine.GetFramesPerSecond
+        // returns the true render-loop fps.
+        double engineFps = Performance.GetMonitor(Performance.Monitor.TimeFps);
+        float reportedFps = engineFps > 0 ? (float)engineFps : avgFps;
+
+        _fpsLabel.Text = $"{reportedFps:F0} fps";
+        if (reportedFps >= 55f)
+            _fpsLabel.AddThemeColorOverride("font_color", new Color(0.55f, 1f, 0.55f));
+        else if (reportedFps >= 30f)
+            _fpsLabel.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.4f));
+        else
+            _fpsLabel.AddThemeColorOverride("font_color", new Color(1f, 0.45f, 0.45f));
     }
 }
