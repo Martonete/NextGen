@@ -34,9 +34,23 @@ public class PaintedFogLayer
     /// denser, more granular. 512 is the baseline. Range: 64..2048.</summary>
     public int Size = 512;
 
+    /// <summary>Random seed (0..9999) used by the shader to offset this
+    /// layer's noise sample and rotate its drift direction slightly.
+    /// Without it, multiple layers with identical settings move in unison
+    /// (same wind direction, same noise pattern). Set automatically when
+    /// a new layer is created (NewRandomSeed); 0 = no offset for backward
+    /// compat with .aofog files written before this field existed.</summary>
+    public int RandomSeed = 0;
+
     public HashSet<Vector2I> Tiles = new();
 
-    /// <summary>Seed a new layer from a prefab template.</summary>
+    /// <summary>Generate a new random seed in [1, 9999]. Use when creating
+    /// a fresh layer so it doesn't sync visually with existing ones.</summary>
+    public static int NewRandomSeed() => 1 + (int)(GD.Randi() % 9999);
+
+    /// <summary>Seed a new layer from a prefab template. A fresh
+    /// RandomSeed is assigned so this layer doesn't visually sync with
+    /// any other layer that happens to share the same style.</summary>
     public static PaintedFogLayer FromPrefab(SmokePrefab p) => new PaintedFogLayer
     {
         Name = p.Name,
@@ -47,6 +61,7 @@ public class PaintedFogLayer
         SpeedX = p.SpeedX,
         SpeedY = p.SpeedY,
         Size = p.Size,
+        RandomSeed = NewRandomSeed(),
     };
 
     public void CopyStyleFrom(SmokePrefab p)
@@ -62,10 +77,10 @@ public class PaintedFogLayer
     }
 
     /// <summary>Serialize style header to a single .aofog line.
-    /// Format: name|density|r|g|b|sx|sy|group|size
-    /// Size is optional for backward compat (older files default to 512).</summary>
+    /// Format: name|density|r|g|b|sx|sy|group|size|seed
+    /// Trailing fields (size, seed) are optional for backward compat.</summary>
     public string SerializeStyle() =>
-        $"{Name.Replace('|', ' ')}|{Density}|{R}|{G}|{B}|{SpeedX}|{SpeedY}|{Group.Replace('|', ' ')}|{Size}";
+        $"{Name.Replace('|', ' ')}|{Density}|{R}|{G}|{B}|{SpeedX}|{SpeedY}|{Group.Replace('|', ' ')}|{Size}|{RandomSeed}";
 
     public static PaintedFogLayer? TryParseStyle(string line)
     {
@@ -78,15 +93,17 @@ public class PaintedFogLayer
         if (!int.TryParse(parts[5], out var sx)) return null;
         if (!int.TryParse(parts[6], out var sy)) return null;
         string group = parts.Length >= 8 ? parts[7] : "";
-        // Size is optional — older files only had 8 fields. Pre-seeded
-        // default means discarding TryParse's bool is intentional.
         int size = 512;
         if (parts.Length >= 9) int.TryParse(parts[8], out size);
         if (size <= 0) size = 512;
+        // RandomSeed is optional — old files without it get a freshly
+        // generated seed so they immediately benefit from de-syncing.
+        int seed;
+        if (parts.Length < 10 || !int.TryParse(parts[9], out seed)) seed = NewRandomSeed();
         return new PaintedFogLayer
         {
             Name = parts[0], Density = d, R = r, G = g, B = b, SpeedX = sx, SpeedY = sy,
-            Group = group, Size = size,
+            Group = group, Size = size, RandomSeed = seed,
         };
     }
 }

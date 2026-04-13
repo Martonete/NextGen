@@ -35,8 +35,10 @@ public partial class HumoConfigPanel : PanelContainer
     private SpinBox? _densitySpin;
     private SpinBox? _sizeSpin;
     private SpinBox? _brushSpin;
+    private Label? _brushHelpLabel;
     /// <summary>Brush radius in tiles — read by MapViewport when painting.
-    /// 0 = single tile per click; 1+ = paint a circle of that radius.</summary>
+    /// 0 = single tile per click; 1+ = paint a circle of that radius.
+    /// Range: 0..30. Diameter = 2 * radius + 1 tiles.</summary>
     public int BrushRadius => (int)(_brushSpin?.Value ?? 0);
 
     // ── Cloud prefab section ──
@@ -236,17 +238,20 @@ public partial class HumoConfigPanel : PanelContainer
         vbox.AddChild(sizeHelp);
 
         // Brush radius: how many tiles get painted per click. 0 = single
-        // tile. N = N-tile radius (circle) around the cursor. Makes it
-        // much faster to cover large areas with dense fog.
+        // tile. N = N-tile radius (circle) = (2N+1) tile diameter.
+        // Max raised to 30 so users can paint very wide strokes (61-tile
+        // diameter) for huge fog areas in a single drag.
         var brushRow = new HBoxContainer();
         brushRow.AddThemeConstantOverride("separation", 6);
-        AddSpin(brushRow, "Pincel (radio):", 0, 10, 0, out _brushSpin);
+        AddSpin(brushRow, "Ancho pincel:", 0, 30, 0, out _brushSpin);
         vbox.AddChild(brushRow);
-        var brushHelp = EditorTheme.MakeLabel(
-            "0 = 1 tile por click. 1+ = pinta un círculo de ese radio. Acelera pintar áreas grandes.",
+        _brushHelpLabel = EditorTheme.MakeLabel(
+            "0 = 1 tile por click  ·  pincel actual: 1×1 tiles",
             EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
-        brushHelp.AutowrapMode = TextServer.AutowrapMode.Word;
-        vbox.AddChild(brushHelp);
+        _brushHelpLabel.AutowrapMode = TextServer.AutowrapMode.Word;
+        vbox.AddChild(_brushHelpLabel);
+        // Update the diameter label live as the user moves the spinner.
+        _brushSpin!.ValueChanged += (_) => UpdateBrushHelpLabel();
 
         vbox.AddChild(EditorTheme.MakeLabel("Color del humo:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         var colRow = new HBoxContainer();
@@ -408,6 +413,7 @@ public partial class HumoConfigPanel : PanelContainer
             SpeedX = 5,
             SpeedY = 2,
             Size = (int)(_sizeSpin?.Value ?? 512),
+            RandomSeed = PaintedFogLayer.NewRandomSeed(),
         };
         Map.PaintedFogLayers.Add(layer);
         Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
@@ -617,6 +623,20 @@ public partial class HumoConfigPanel : PanelContainer
         }
         // dropdown[0] = "(ninguna)" sentinel, so subtract 1.
         StampCloudIndex = _cloudOption.Selected - 1;
+    }
+
+    /// <summary>Update the live brush diameter label so the user can see
+    /// the effective tile coverage of the current brush radius without
+    /// doing the math themselves. Diameter = 2 × radius + 1.</summary>
+    private void UpdateBrushHelpLabel()
+    {
+        if (_brushHelpLabel == null) return;
+        int r = BrushRadius;
+        int diameter = 2 * r + 1;
+        string suffix = r == 0
+            ? "0 = 1 tile por click"
+            : $"radio {r} → círculo de {diameter}×{diameter} tiles";
+        _brushHelpLabel.Text = $"{suffix}  ·  pincel actual: {diameter}×{diameter} tiles";
     }
 
     private void ShowCloudStatus(string text, bool ok)

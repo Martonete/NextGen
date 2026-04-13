@@ -2508,7 +2508,11 @@ public partial class MapViewport : Control
         // Auto-create a default layer if none exists yet
         if (Map.PaintedFogLayers.Count == 0)
         {
-            Map.PaintedFogLayers.Add(new PaintedFogLayer { Name = "Humo" });
+            Map.PaintedFogLayers.Add(new PaintedFogLayer
+            {
+                Name = "Humo",
+                RandomSeed = PaintedFogLayer.NewRandomSeed(),
+            });
             Map.ActiveFogLayerIndex = 0;
         }
         if (Map.ActiveFogLayerIndex < 0 || Map.ActiveFogLayerIndex >= Map.PaintedFogLayers.Count)
@@ -2567,6 +2571,9 @@ public partial class MapViewport : Control
                 Density = cloud.Density,
                 R = cloud.R, G = cloud.G, B = cloud.B,
                 SpeedX = cloud.SpeedX, SpeedY = cloud.SpeedY, Size = cloud.Size,
+                // Fresh random seed so each cloud-stamp layer drifts and
+                // patterns differently from the others on the map.
+                RandomSeed = PaintedFogLayer.NewRandomSeed(),
             };
             Map.PaintedFogLayers.Add(target);
             Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;

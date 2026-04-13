@@ -160,6 +160,16 @@ public class ZoneFogRenderer
                 new Vector2(layer.SpeedX / 100f, layer.SpeedY / 100f));
             sm.SetShaderParameter("noise_scale", (float)(layer.Size > 0 ? layer.Size : 512));
             sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
+            // Per-layer randomization to break visual sync with other layers
+            // that share the same speed/size. The seed is hashed two ways
+            // for the noise UV offset (vec2) and once for the wind-angle
+            // rotation (small ±0.5 rad jitter ≈ ±28°).
+            int seed = layer.RandomSeed;
+            float seedX = (seed * 0.1234f) % 7.0f;
+            float seedY = (seed * 0.5678f) % 7.0f;
+            float angleOffset = ((seed % 100) / 100f - 0.5f) * 1.0f;
+            sm.SetShaderParameter("noise_seed", new Vector2(seedX, seedY));
+            sm.SetShaderParameter("wind_angle_offset", angleOffset);
         }
 
         // --- Zone sprite ---
@@ -202,6 +212,10 @@ public class ZoneFogRenderer
                 sm.SetShaderParameter("fog_color", new Color(r / 255f, g / 255f, b / 255f, 1f));
                 sm.SetShaderParameter("speed", new Vector2(sx / 100f, sy / 100f));
                 sm.SetShaderParameter("noise_scale", (float)size);
+                // Zone fog uses a fixed seed (no per-zone variation needed
+                // since only one zone fog sprite is rendered at a time).
+                sm.SetShaderParameter("noise_seed", new Vector2(0f, 0f));
+                sm.SetShaderParameter("wind_angle_offset", 0f);
                 sm.SetShaderParameter("free_smoke", map.FogFreeSmoke ? 1.0f : 0.0f);
             }
         }

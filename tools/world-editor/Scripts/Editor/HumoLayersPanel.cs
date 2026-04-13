@@ -290,6 +290,7 @@ public partial class HumoLayersPanel : PanelContainer
             Name = $"Capa 1",
             Group = name,
             Density = 160, R = 128, G = 140, B = 160,
+            RandomSeed = PaintedFogLayer.NewRandomSeed(),
         };
         Map.PaintedFogLayers.Add(layer);
         Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
@@ -334,6 +335,7 @@ public partial class HumoLayersPanel : PanelContainer
             Group = group,
             Density = 160, R = 128, G = 140, B = 160,
             SpeedX = 5, SpeedY = 2,
+            RandomSeed = PaintedFogLayer.NewRandomSeed(),
         };
         Map.PaintedFogLayers.Add(layer);
         Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
