@@ -353,16 +353,31 @@ public class LightRenderer
             {
                 if (mx < 0 || mx >= maskW || my < 0 || my >= maskH) continue;
 
-                // Convert mask pixel → source image pixel
-                float worldX = mx * MaskDownsample - worldDrawX;
-                float worldY = my * MaskDownsample - worldDrawY;
-                int srcX = grh.SX + (int)worldX;
-                int srcY = grh.SY + (int)worldY;
-
-                if (srcX < 0 || srcX >= imgW || srcY < 0 || srcY >= imgH) continue;
-
-                var pixel = srcImg.GetPixel(srcX, srcY);
-                if (pixel.A > 0.3f)
+                // Each mask pixel covers MaskDownsample × MaskDownsample
+                // world pixels (typically 2×2). We sample ALL of them and
+                // mark the mask as opaque if ANY one is opaque (max-pool).
+                // Lower threshold (0.1) catches semi-transparent sprite
+                // halos so walls don't have 1-pixel gaps that let light
+                // 'rays' leak through. This thickens the mask without an
+                // expensive separate dilation pass.
+                int worldBaseX = (int)(mx * MaskDownsample - worldDrawX);
+                int worldBaseY = (int)(my * MaskDownsample - worldDrawY);
+                bool anyOpaque = false;
+                for (int sy = 0; sy < MaskDownsample && !anyOpaque; sy++)
+                {
+                    for (int sx = 0; sx < MaskDownsample; sx++)
+                    {
+                        int srcX = grh.SX + worldBaseX + sx;
+                        int srcY = grh.SY + worldBaseY + sy;
+                        if (srcX < 0 || srcX >= imgW || srcY < 0 || srcY >= imgH) continue;
+                        if (srcImg.GetPixel(srcX, srcY).A > 0.1f)
+                        {
+                            anyOpaque = true;
+                            break;
+                        }
+                    }
+                }
+                if (anyOpaque)
                     _maskImage!.SetPixel(mx, my, Colors.White);
             }
         }

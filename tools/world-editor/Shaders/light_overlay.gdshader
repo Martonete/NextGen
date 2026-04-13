@@ -138,14 +138,15 @@ float shadow_factor(vec2 from_px, vec2 light_px) {
         float t = start_t + (float(i) + jitter) * step_size;
         vec2 p = from_px + dir * t;
 
-        // 5-tap PCF: center + 4 perpendicular offsets at varying widths.
-        // The wider taps (±4 px) bridge small mask gaps that would
-        // otherwise let rays radiate out from each light source.
+        // 5-tap PCF: center + 4 perpendicular offsets at small distances.
+        // Tight spacing (±1, ±2 px) so the PCF doesn't reach across thin
+        // walls — the mask is already thickened in CPU stamping so wider
+        // GPU taps aren't needed to bridge gaps.
         float s0 = sample_occlusion(p);
-        float s1 = sample_occlusion(p + perp * 2.0);
-        float s2 = sample_occlusion(p - perp * 2.0);
-        float s3 = sample_occlusion(p + perp * 4.0);
-        float s4 = sample_occlusion(p - perp * 4.0);
+        float s1 = sample_occlusion(p + perp * 1.0);
+        float s2 = sample_occlusion(p - perp * 1.0);
+        float s3 = sample_occlusion(p + perp * 2.0);
+        float s4 = sample_occlusion(p - perp * 2.0);
         float avg = (s0 + s1 + s2 + s3 + s4) * 0.2;
 
         if (avg > 0.5) {
