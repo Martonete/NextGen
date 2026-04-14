@@ -89,22 +89,23 @@ public class WalkModeLightSystem
                     tile.LightRange);
             }
 
-        // Apply advanced lights (MapData.LightData) the same way. No shadows
-        // in walk mode — matches VB6 client parity. Energy scales color.
+        // Advanced lights → ADDITIVE per-tile accumulator (NOT MAX-blend
+        // toward ambient). MAX-blend silently zero-outs any channel where
+        // the light color ≤ ambient — torches (B=180) against bright map
+        // ambient (B=180) become invisible. Additive on top of the MAX-
+        // blend ensures advanced lights always brighten the scene by their
+        // Energy contribution, regardless of ambient.
+        float[,] addR = new float[_mapWidth + 1, _mapHeight + 1];
+        float[,] addG = new float[_mapWidth + 1, _mapHeight + 1];
+        float[,] addB = new float[_mapWidth + 1, _mapHeight + 1];
         foreach (var ml in map.LightData.Lights)
         {
             if (ml.X < 1 || ml.Y < 1 || ml.X > _mapWidth || ml.Y > _mapHeight) continue;
-            float energy = MathF.Max(0f, ml.Energy);
-            float lr = Math.Clamp(ml.R / 255f * energy, 0f, 1f);
-            float lg = Math.Clamp(ml.G / 255f * energy, 0f, 1f);
-            float lb = Math.Clamp(ml.B / 255f * energy, 0f, 1f);
-            int range = (int)MathF.Ceiling(ml.Radius);
-            if (range < 1) range = 1;
-            ApplyLight(ambR, ambG, ambB, lR, lG, lB, ml.X, ml.Y, lr, lg, lb, range);
+            ApplyAdditiveLight(addR, addG, addB, ml);
         }
 
-        // Final tile = own ambient + light excess (corner avg WITH lights - corner avg WITHOUT lights).
-        // This eliminates zone ambient bleeding from corner averaging while keeping smooth light gradients.
+        // Final tile = own ambient + legacy-light excess (MAX-blend lift)
+        //            + advanced-light additive contribution.
         for (int y = 1; y <= _mapHeight; y++)
             for (int x = 1; x <= _mapWidth; x++)
             {
@@ -116,9 +117,49 @@ public class WalkModeLightSystem
                 float litAvgB = (lB[x, y] + lB[x + 1, y] + lB[x, y + 1] + lB[x + 1, y + 1]) * 0.25f;
 
                 _tileColors[x, y] = new Color(
-                    MathF.Min(1f, ambR[x, y] + MathF.Max(0, litAvgR - ambAvgR)),
-                    MathF.Min(1f, ambG[x, y] + MathF.Max(0, litAvgG - ambAvgG)),
-                    MathF.Min(1f, ambB[x, y] + MathF.Max(0, litAvgB - ambAvgB)));
+                    MathF.Min(1f, ambR[x, y] + MathF.Max(0, litAvgR - ambAvgR) + addR[x, y]),
+                    MathF.Min(1f, ambG[x, y] + MathF.Max(0, litAvgG - ambAvgG) + addG[x, y]),
+                    MathF.Min(1f, ambB[x, y] + MathF.Max(0, litAvgB - ambAvgB) + addB[x, y]));
+            }
+    }
+
+    /// <summary>Quadratic-falloff additive contribution from one advanced
+    /// light into a per-tile accumulator. Scales by <c>Energy</c> so the
+    /// user's energy slider directly controls visible brightness above
+    /// ambient. No shadows (VB6 client parity).</summary>
+    private void ApplyAdditiveLight(
+        float[,] addR, float[,] addG, float[,] addB, MapLight ml)
+    {
+        float energy = MathF.Max(0f, ml.Energy);
+        if (energy <= 0f) return;
+        float lr = ml.R / 255f * energy;
+        float lg = ml.G / 255f * energy;
+        float lb = ml.B / 255f * energy;
+        float rangePx = ml.Radius * TileSize;
+        if (rangePx <= 0f) return;
+        float centerX = ml.X * TileSize + HalfTile;
+        float centerY = ml.Y * TileSize + HalfTile;
+
+        int rangeTiles = (int)MathF.Ceiling(ml.Radius) + 1;
+        int x1 = Math.Max(1, ml.X - rangeTiles), x2 = Math.Min(_mapWidth, ml.X + rangeTiles);
+        int y1 = Math.Max(1, ml.Y - rangeTiles), y2 = Math.Min(_mapHeight, ml.Y + rangeTiles);
+
+        for (int ty = y1; ty <= y2; ty++)
+            for (int tx = x1; tx <= x2; tx++)
+            {
+                // Sample at tile CENTER (matches DrawTileGrh coords used
+                // for light positions: tileX*32 + 16).
+                float dx = (tx * TileSize + HalfTile) - centerX;
+                float dy = (ty * TileSize + HalfTile) - centerY;
+                float dist = MathF.Sqrt(dx * dx + dy * dy);
+                if (dist >= rangePx) continue;
+                float t = dist / rangePx;
+                // Quadratic falloff (1-t)^2 — stronger center, soft edge.
+                // Matches the shader's `exp(-t²×3)` halo character roughly.
+                float f = (1f - t) * (1f - t);
+                addR[tx, ty] += lr * f;
+                addG[tx, ty] += lg * f;
+                addB[tx, ty] += lb * f;
             }
     }
 
