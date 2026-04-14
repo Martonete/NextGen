@@ -77,12 +77,9 @@ public partial class WalkModePanel : Control
     /// <summary>Force CPU lighting recalculation (call after editing lights/zones in the main editor).</summary>
     public void InvalidateLighting()
     {
+        // CPU per-tile system handles everything in walk mode — just mark
+        // dirty and it picks up legacy + advanced lights on next draw.
         _cpuLightsDirty = true;
-        // Forward the GRH resources to the light renderer so it can build
-        // the occlusion mask from L3 sprite alphas. Without this, walk mode
-        // shadows don't know what the sprites look like and the mask is empty.
-        _lightRenderer.SetGraphicsResources(Grhs, Textures);
-        _lightRenderer.MarkDirty();
         // Also force the fog renderer to rebuild its masks so painted
         // humo layers show up correctly on first frame of walk mode.
         _zoneFog.MarkDirty();
@@ -119,7 +116,6 @@ public partial class WalkModePanel : Control
     // ── Weather FX ──
     private readonly WeatherFx _weather = new();
     private readonly ZoneFogRenderer _zoneFog = new();
-    private readonly LightRenderer _lightRenderer = new();
 
     // ── Particle overlay (additive-blend child CanvasItem for correct particle glow) ──
     private WalkParticleOverlay? _particleOverlay;
@@ -141,7 +137,12 @@ public partial class WalkModePanel : Control
         _particleOverlay = particleOverlay;
 
         _zoneFog.AttachTo(this);
-        _lightRenderer.AttachTo(this);
+        // NOTE: the shader-based LightRenderer is NOT used in walk mode.
+        // Walk mode uses WalkModeLightSystem (CPU per-tile VB6-faithful
+        // corner lighting) which already handles ambient + legacy lights
+        // + advanced MapLight sources. Stacking the shader overlay on top
+        // caused double-darkening and rendered the raycast 'ray' artifacts
+        // at the small walk viewport scale. Client parity > fancy shadows.
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
@@ -269,13 +270,6 @@ public partial class WalkModePanel : Control
                 (CharX - _halfTilesX - 1) * 32f - _moveOffsetX,
                 (CharY - _halfTilesY - 1) * 32f - _moveOffsetY);
             _zoneFog.Update(Size, worldOrigin, Size, zoneList, Map, playerWorldPx);
-            // Character occluder at feet (bottom-center of tile) in the
-            // same coordinate system as the light positions (DrawTileGrh
-            // coords: tileX*32+16 = center, tileY*32+32 = bottom).
-            var playerFeetPx = new Vector2(
-                (CharX + 0.5f) * 32f - _moveOffsetX,
-                (CharY + 1f) * 32f - _moveOffsetY);
-            _lightRenderer.Update(Size, worldOrigin, Size, Map, (float)delta, playerFeetPx);
         }
 
         if (_isMoving)

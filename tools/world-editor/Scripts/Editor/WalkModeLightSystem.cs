@@ -52,12 +52,12 @@ public class WalkModeLightSystem
 
         // Step 2: Light sources — two grids (ambient-only and with-lights)
         // to isolate light contribution from zone ambient bleeding.
-        bool hasLights = false;
-        for (int y = 1; y <= _mapHeight && !hasLights; y++)
-            for (int x = 1; x <= _mapWidth && !hasLights; x++)
-                hasLights = map.Tiles[x, y].HasLight;
-
-        if (!hasLights) return; // No lights → ambient-only, already set
+        bool hasLegacy = false;
+        for (int y = 1; y <= _mapHeight && !hasLegacy; y++)
+            for (int x = 1; x <= _mapWidth && !hasLegacy; x++)
+                hasLegacy = map.Tiles[x, y].HasLight;
+        bool hasAdvanced = map.LightData.Lights.Count > 0;
+        if (!hasLegacy && !hasAdvanced) return; // ambient-only
 
         // Grid A: corners with ambient only (for measuring baseline bleed)
         // Grid B: corners with ambient + lights
@@ -77,39 +77,31 @@ public class WalkModeLightSystem
                 lR[cx, cy] = r; lG[cx, cy] = g; lB[cx, cy] = b;
             }
 
-        // Apply lights to grid B only
+        // Apply legacy per-tile lights to grid B
         for (int ly = 1; ly <= _mapHeight; ly++)
             for (int lx = 1; lx <= _mapWidth; lx++)
             {
                 ref var tile = ref map.Tiles[lx, ly];
                 if (!tile.HasLight) continue;
-
-                float lr = tile.LightR / 255f, lg = tile.LightG / 255f, lb = tile.LightB / 255f;
-                float rangePx = tile.LightRange * TileSize;
-                float centerX = lx * TileSize + HalfTile;
-                float centerY = ly * TileSize + HalfTile;
-
-                int range = tile.LightRange + 1;
-                int x1 = Math.Max(1, lx - range), x2 = Math.Min(_mapWidth + 1, lx + range + 1);
-                int y1 = Math.Max(1, ly - range), y2 = Math.Min(_mapHeight + 1, ly + range + 1);
-
-                for (int cy = y1; cy <= y2; cy++)
-                    for (int cx = x1; cx <= x2; cx++)
-                    {
-                        float dx = cx * TileSize - centerX;
-                        float dy = cy * TileSize - centerY;
-                        float dist = MathF.Sqrt(dx * dx + dy * dy);
-                        if (dist > rangePx) continue;
-
-                        float f = dist / rangePx;
-                        int atx = Math.Clamp(cx, 1, _mapWidth), aty = Math.Clamp(cy, 1, _mapHeight);
-                        float ar = ambR[atx, aty], ag = ambG[atx, aty], ab = ambB[atx, aty];
-
-                        lR[cx, cy] = MathF.Max(lR[cx, cy], lr + (ar - lr) * f);
-                        lG[cx, cy] = MathF.Max(lG[cx, cy], lg + (ag - lg) * f);
-                        lB[cx, cy] = MathF.Max(lB[cx, cy], lb + (ab - lb) * f);
-                    }
+                ApplyLight(ambR, ambG, ambB, lR, lG, lB,
+                    lx, ly,
+                    tile.LightR / 255f, tile.LightG / 255f, tile.LightB / 255f,
+                    tile.LightRange);
             }
+
+        // Apply advanced lights (MapData.LightData) the same way. No shadows
+        // in walk mode — matches VB6 client parity. Energy scales color.
+        foreach (var ml in map.LightData.Lights)
+        {
+            if (ml.X < 1 || ml.Y < 1 || ml.X > _mapWidth || ml.Y > _mapHeight) continue;
+            float energy = MathF.Max(0f, ml.Energy);
+            float lr = Math.Clamp(ml.R / 255f * energy, 0f, 1f);
+            float lg = Math.Clamp(ml.G / 255f * energy, 0f, 1f);
+            float lb = Math.Clamp(ml.B / 255f * energy, 0f, 1f);
+            int range = (int)MathF.Ceiling(ml.Radius);
+            if (range < 1) range = 1;
+            ApplyLight(ambR, ambG, ambB, lR, lG, lB, ml.X, ml.Y, lr, lg, lb, range);
+        }
 
         // Final tile = own ambient + light excess (corner avg WITH lights - corner avg WITHOUT lights).
         // This eliminates zone ambient bleeding from corner averaging while keeping smooth light gradients.
@@ -135,5 +127,37 @@ public class WalkModeLightSystem
         if (_tileColors == null || x < 1 || y < 1 || x > _mapWidth || y > _mapHeight)
             return Colors.White;
         return _tileColors[x, y];
+    }
+
+    /// <summary>Apply one light source to the corner-grid B using the same
+    /// linear-falloff MAX-blend the client LightSystem uses. Shared between
+    /// legacy per-tile lights and advanced MapLight sources so both render
+    /// VB6-faithfully in walk mode (no shadows — that matches the client).</summary>
+    private void ApplyLight(
+        float[,] ambR, float[,] ambG, float[,] ambB,
+        float[,] lR, float[,] lG, float[,] lB,
+        int lx, int ly, float lr, float lg, float lb, int rangeTiles)
+    {
+        float rangePx = rangeTiles * TileSize;
+        float centerX = lx * TileSize + HalfTile;
+        float centerY = ly * TileSize + HalfTile;
+        int range = rangeTiles + 1;
+        int x1 = Math.Max(1, lx - range), x2 = Math.Min(_mapWidth + 1, lx + range + 1);
+        int y1 = Math.Max(1, ly - range), y2 = Math.Min(_mapHeight + 1, ly + range + 1);
+
+        for (int cy = y1; cy <= y2; cy++)
+            for (int cx = x1; cx <= x2; cx++)
+            {
+                float dx = cx * TileSize - centerX;
+                float dy = cy * TileSize - centerY;
+                float dist = MathF.Sqrt(dx * dx + dy * dy);
+                if (dist > rangePx) continue;
+                float f = dist / rangePx;
+                int atx = Math.Clamp(cx, 1, _mapWidth), aty = Math.Clamp(cy, 1, _mapHeight);
+                float ar = ambR[atx, aty], ag = ambG[atx, aty], ab = ambB[atx, aty];
+                lR[cx, cy] = MathF.Max(lR[cx, cy], lr + (ar - lr) * f);
+                lG[cx, cy] = MathF.Max(lG[cx, cy], lg + (ag - lg) * f);
+                lB[cx, cy] = MathF.Max(lB[cx, cy], lb + (ab - lb) * f);
+            }
     }
 }
