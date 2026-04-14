@@ -50,6 +50,22 @@ public class LightRenderer
     private int _lastMapH = -1;
     private System.WeakReference<MapData>? _lastMap;
 
+    // ── 1D Shadow Atlas per light ──
+    // 720 × 32 pixel R8 texture. Width = angles (720 = 0.5° resolution,
+    // covers 360°). Height = light slot. Value = normalized distance to
+    // nearest occluder along that ray (0 = at light, 255 = at max radius
+    // unobstructed). Computed on CPU once per mask change OR light move,
+    // not per frame. Lets the shader avoid per-pixel raycasting → no more
+    // visible 'rays' radiating from light sources.
+    private const int ShadowAtlasW = 720;
+    private const int MaxLights = 32;
+    private Image? _shadowAtlasImage;
+    private ImageTexture? _shadowAtlasTexture;
+    private bool _shadowAtlasDirty = true;
+    /// <summary>Cached per-light hash so we know when a light's position
+    /// or radius changed (and the atlas needs recomputing for that row).</summary>
+    private readonly int[] _lastLightHash = new int[MaxLights];
+
     // ── Graphics resources for mask generation ──
     private GrhData[]? _grhs;
     private TextureManager? _textures;
@@ -91,6 +107,13 @@ public class LightRenderer
         parent.AddChild(_sprite);
 
         _rng.Randomize();
+
+        // Allocate the shadow atlas (720 angles × 32 lights, R8 = 1 byte
+        // per cell = 23 KB). Filled with 255 (no occluder) so all lights
+        // render unshadowed until the first RebuildShadowAtlas pass.
+        _shadowAtlasImage = Image.CreateEmpty(ShadowAtlasW, MaxLights, false, Image.Format.R8);
+        _shadowAtlasImage.Fill(new Color(1f, 1f, 1f, 1f));
+        _shadowAtlasTexture = ImageTexture.CreateFromImage(_shadowAtlasImage);
     }
 
     /// <summary>Inject graphics resources for mask generation. Call after
@@ -117,7 +140,11 @@ public class LightRenderer
 
     private Vector3 _ambient = new(0.4f, 0.4f, 0.5f);
 
-    public void MarkDirty() => _maskDirty = true;
+    public void MarkDirty()
+    {
+        _maskDirty = true;
+        _shadowAtlasDirty = true;
+    }
 
     /// <summary>
     /// Per-frame update. Rebuilds the occlusion mask when dirty, then uploads
@@ -165,6 +192,29 @@ public class LightRenderer
         {
             RebuildOcclusionMask(map);
             _maskDirty = false;
+            _shadowAtlasDirty = true; // mask changed → shadows changed
+        }
+
+        // ── Shadow atlas rebuild ──
+        // Detect light position/radius changes via per-light hash so the
+        // user can drag a light in the editor and see shadows update
+        // without explicitly invalidating.
+        bool lightsMoved = false;
+        var ls = map.LightData.Lights;
+        int lc = Mathf.Min(ls.Count, MaxLights);
+        for (int i = 0; i < lc; i++)
+        {
+            int h = (int)((ls[i].X * 73856093) ^ (ls[i].Y * 19349663) ^ (int)(ls[i].Radius * 100));
+            if (_lastLightHash[i] != h)
+            {
+                _lastLightHash[i] = h;
+                lightsMoved = true;
+            }
+        }
+        if (_shadowAtlasDirty || lightsMoved)
+        {
+            RebuildShadowAtlas(map);
+            _shadowAtlasDirty = false;
         }
 
         // ── Sprite sizing (panel-sized, same trick as fog) ──
@@ -225,6 +275,7 @@ public class LightRenderer
         _material.SetShaderParameter("lights", _lightData);
         _material.SetShaderParameter("light_colors", _lightColorData);
         _material.SetShaderParameter("num_lights", count);
+        _material.SetShaderParameter("shadow_atlas", _shadowAtlasTexture!);
 
         // Character occluder
         if (characterWorldPx.HasValue)
@@ -306,6 +357,80 @@ public class LightRenderer
             _maskTexture = ImageTexture.CreateFromImage(_maskImage);
         else
             _maskTexture.Update(_maskImage);
+    }
+
+    /// <summary>Compute the 1D shadow atlas for ALL active lights. For each
+    /// light, marches 720 rays outward (one per 0.5°) through the occlusion
+    /// mask and records the normalized distance to the first opaque pixel.
+    /// The shader then samples this atlas by ANGLE rather than computing
+    /// per-pixel raycasts — eliminates the 'rays radiating from light
+    /// sources' artifact caused by per-pixel raycast divergence.
+    ///
+    /// Only call when masks change OR light positions/radii change. Per-frame
+    /// flicker/pulse animation does NOT require recomputation since it only
+    /// affects intensity, not occlusion.</summary>
+    private void RebuildShadowAtlas(MapData map)
+    {
+        if (_shadowAtlasImage == null || _maskImage == null) return;
+
+        int maskW = _maskImage.GetWidth();
+        int maskH = _maskImage.GetHeight();
+        var lights = map.LightData.Lights;
+        int count = Mathf.Min(lights.Count, MaxLights);
+
+        // Default unfilled rows to 'no occluder' (255).
+        for (int li = count; li < MaxLights; li++)
+        {
+            for (int a = 0; a < ShadowAtlasW; a++)
+                _shadowAtlasImage.SetPixel(a, li, new Color(1f, 0f, 0f, 1f));
+        }
+
+        for (int li = 0; li < count; li++)
+        {
+            var ml = lights[li];
+            // Light center in world pixels — must match the position the
+            // shader uses (tile center via DrawTileGrh coords).
+            float lightWX = (ml.X + 0.5f) * TileSize;
+            float lightWY = (ml.Y + 0.5f) * TileSize;
+            float maxRadiusPx = ml.Radius * TileSize;
+            int maxStepsMask = (int)(maxRadiusPx / MaskDownsample) + 2;
+
+            // Mask coords for the light center (clamped so out-of-map lights
+            // still produce a valid atlas row).
+            float lightMX = lightWX / MaskDownsample;
+            float lightMY = lightWY / MaskDownsample;
+
+            for (int a = 0; a < ShadowAtlasW; a++)
+            {
+                float angle = a * Mathf.Tau / ShadowAtlasW;
+                float dx = Mathf.Cos(angle);
+                float dy = Mathf.Sin(angle);
+
+                // March step-by-step in mask space (1 mask px per step).
+                float occluderDist = 1.0f; // default: no occluder
+                for (int s = 1; s <= maxStepsMask; s++)
+                {
+                    int sx = (int)(lightMX + dx * s);
+                    int sy = (int)(lightMY + dy * s);
+                    if (sx < 0 || sx >= maskW || sy < 0 || sy >= maskH) break;
+                    if (_maskImage.GetPixel(sx, sy).R > 0.5f)
+                    {
+                        // Convert mask-step distance back to normalized
+                        // [0..1] within the light's max radius.
+                        float distWorldPx = s * MaskDownsample;
+                        occluderDist = Mathf.Clamp(distWorldPx / maxRadiusPx, 0f, 1f);
+                        break;
+                    }
+                }
+
+                _shadowAtlasImage.SetPixel(a, li, new Color(occluderDist, 0f, 0f, 1f));
+            }
+        }
+
+        if (_shadowAtlasTexture == null)
+            _shadowAtlasTexture = ImageTexture.CreateFromImage(_shadowAtlasImage);
+        else
+            _shadowAtlasTexture.Update(_shadowAtlasImage);
     }
 
     /// <summary>Sample a single L3 GRH's alpha and stamp opaque pixels into
