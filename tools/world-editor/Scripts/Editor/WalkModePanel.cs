@@ -77,11 +77,13 @@ public partial class WalkModePanel : Control
     /// <summary>Force CPU lighting recalculation (call after editing lights/zones in the main editor).</summary>
     public void InvalidateLighting()
     {
-        // CPU per-tile system handles everything in walk mode — just mark
-        // dirty and it picks up legacy + advanced lights on next draw.
         _cpuLightsDirty = true;
-        // Also force the fog renderer to rebuild its masks so painted
-        // humo layers show up correctly on first frame of walk mode.
+        // Forward the GRH resources to the shader light renderer so it
+        // can build its occlusion mask from L3 sprite alphas — required
+        // for shadows in walk mode to match what the WE editor canvas
+        // shows.
+        _lightRenderer.SetGraphicsResources(Grhs, Textures);
+        _lightRenderer.MarkDirty();
         _zoneFog.MarkDirty();
     }
 
@@ -109,13 +111,19 @@ public partial class WalkModePanel : Control
 
     private int _lastMapNumber = -1;
 
-    // ── CPU per-tile lighting (per-tile modulate, doesn't affect overlays/UI) ──
+    // ── CPU per-tile lighting (LEGACY-only fallback) ──
+    // When the map has no advanced lights (`MapData.LightData.Lights`)
+    // we still want legacy per-tile ambient + tile.HasLight to render.
+    // When it DOES have advanced lights, _cpuLights returns Color.White
+    // (no modulate) and the shader-based _lightRenderer handles all
+    // ambient + lights + shadows + flicker, identical to MapViewport.
     private readonly WalkModeLightSystem _cpuLights = new();
     private bool _cpuLightsDirty = true;
 
     // ── Weather FX ──
     private readonly WeatherFx _weather = new();
     private readonly ZoneFogRenderer _zoneFog = new();
+    private readonly LightRenderer _lightRenderer = new();
 
     // ── Particle overlay (additive-blend child CanvasItem for correct particle glow) ──
     private WalkParticleOverlay? _particleOverlay;
@@ -137,12 +145,7 @@ public partial class WalkModePanel : Control
         _particleOverlay = particleOverlay;
 
         _zoneFog.AttachTo(this);
-        // NOTE: the shader-based LightRenderer is NOT used in walk mode.
-        // Walk mode uses WalkModeLightSystem (CPU per-tile VB6-faithful
-        // corner lighting) which already handles ambient + legacy lights
-        // + advanced MapLight sources. Stacking the shader overlay on top
-        // caused double-darkening and rendered the raycast 'ray' artifacts
-        // at the small walk viewport scale. Client parity > fancy shadows.
+        _lightRenderer.AttachTo(this);
     }
 
     /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
@@ -270,6 +273,12 @@ public partial class WalkModePanel : Control
                 (CharX - _halfTilesX - 1) * 32f - _moveOffsetX,
                 (CharY - _halfTilesY - 1) * 32f - _moveOffsetY);
             _zoneFog.Update(Size, worldOrigin, Size, zoneList, Map, playerWorldPx);
+            // Character occluder at feet (bottom-center of tile) in
+            // DrawTileGrh coords — matches the light positions exactly.
+            var playerFeetPx = new Vector2(
+                (CharX + 0.5f) * 32f - _moveOffsetX,
+                (CharY + 1f) * 32f - _moveOffsetY);
+            _lightRenderer.Update(Size, worldOrigin, Size, Map, (float)delta, playerFeetPx);
         }
 
         if (_isMoving)
