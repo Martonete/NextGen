@@ -8,9 +8,9 @@ using AOWorldEditor.Data;
 namespace AOWorldEditor.Editor;
 
 /// <summary>
-/// Walk mode: simulates the in-game AO view. Renders 17x13 visible tiles,
-/// a centered character with walk animation, roof/tree transparency, and
-/// blocked tile collision. Shows NPCs, objects, exits on the map.
+/// Walk mode: simulates the in-game AO view with selectable resolution.
+/// Renders a centered character with walk animation, roof/tree transparency,
+/// and blocked tile collision. Shows NPCs, objects, exits on the map.
 /// Supports map transitions via exit tiles.
 /// </summary>
 public partial class WalkModePanel : Control
@@ -36,24 +36,60 @@ public partial class WalkModePanel : Control
     // Track toggled doors: maps (mapNum, x, y) → toggled ObjIndex (so we don't persist changes)
     private readonly Dictionary<(int map, int x, int y), int> _toggledDoors = new();
 
+    // Particle engine (shared with MapViewport for live particle rendering in walk mode)
+    public ParticleEngine? Particles;
+
+    // Zone data for ambient override and weather in walk mode
+    public MapZoneData? Zones;
+
     // Map loading — for exit tile transitions
     public string MapDir = "";  // directory where Mapa{N}.map/.inf/.dat live
 
-    // ── Constants (matching AO client) ──────────────────────────────────────
+    // ── Resolution presets ───────────────────────────────────────────────────
+    public static readonly (string Label, int W, int H)[] Resolutions =
+    {
+        ("800x600 (AO Clásico)", 800, 600),
+        ("1024x768",             1024, 768),
+        ("1152x864",             1152, 864),
+        ("1280x720 (HD)",        1280, 720),
+        ("1280x960",             1280, 960),
+        ("1366x768",             1366, 768),
+        ("1600x900",             1600, 900),
+        ("1920x1080 (Full HD)",  1920, 1080),
+    };
+
+    // ── Viewport metrics (recalculated on resolution change) ───────────────
     private const int TileSize = 32;
     private const int HalfTileSize = TileSize / 2; // 16
-    private const int HalfTilesX = 8;
-    private const int HalfTilesY = 6;
-    private const int ViewTilesX = HalfTilesX * 2 + 1; // 17
-    private const int ViewTilesY = HalfTilesY * 2 + 1; // 13
-    private const int ViewWidth = ViewTilesX * TileSize;  // 544
-    private const int ViewHeight = ViewTilesY * TileSize; // 416
-    private const int ExtraTiles = 3;       // extra tiles beyond viewport for L1 scroll coverage
-    private const int ExtraTilesLarge = 12; // extra tiles for L2/L3/L4 (large multi-tile GRHs like roofs)
+    private int _halfTilesX = 12; // default for 800x600
+    private int _halfTilesY = 9;
+    private int _viewTilesX = 25;
+    private int _viewTilesY = 19;
+    private int _viewWidth = 800;
+    private int _viewHeight = 608;
+    private const int ExtraTiles = 3;
+    private const int ExtraTilesLarge = 12;
+    private int _extraTilesX, _extraTilesY;
+    private ImageTexture? _fogTexture;
+    public int ViewWidth => _viewWidth;
+    public int ViewHeight => _viewHeight;
 
-    // Movement: AO uses ScrollPixels=8 per 40ms tick → 200 pixels/sec
-    private const float PixelsPerSecond = 200f;
-    private const float ScrollPixels = 8f; // VB6: each scroll step is 8px
+    /// <summary>Force CPU lighting recalculation (call after editing lights/zones in the main editor).</summary>
+    public void InvalidateLighting()
+    {
+        _cpuLightsDirty = true;
+        // Forward the GRH resources to the shader light renderer so it
+        // can build its occlusion mask from L3 sprite alphas — required
+        // for shadows in walk mode to match what the WE editor canvas
+        // shows.
+        _lightRenderer.SetGraphicsResources(Grhs, Textures);
+        _lightRenderer.MarkDirty();
+        _zoneFog.MarkDirty();
+    }
+
+    // Movement
+    private const float PixelsPerSecond = 200f; // VB6 exact: ScrollPixels=8 per 40ms tick = 200px/s
+    private const float ScrollPixels = 8f;
 
     // ── Character state ─────────────────────────────────────────────────────
     public int CharX = 50, CharY = 50; // current tile position (1-indexed)
@@ -73,18 +109,177 @@ public partial class WalkModePanel : Control
     private const float RoofFadeRate = 8f; // alpha change per frame
     private bool _diagPrinted;
 
+    private int _lastMapNumber = -1;
+
+    // ── CPU per-tile lighting (LEGACY-only fallback) ──
+    // When the map has no advanced lights (`MapData.LightData.Lights`)
+    // we still want legacy per-tile ambient + tile.HasLight to render.
+    // When it DOES have advanced lights, _cpuLights returns Color.White
+    // (no modulate) and the shader-based _lightRenderer handles all
+    // ambient + lights + shadows + flicker, identical to MapViewport.
+    private readonly WalkModeLightSystem _cpuLights = new();
+    private bool _cpuLightsDirty = true;
+
+    // ── Weather FX ──
+    private readonly WeatherFx _weather = new();
+    private readonly ZoneFogRenderer _zoneFog = new();
+    private readonly LightRenderer _lightRenderer = new();
+
+    // ── Particle overlay (additive-blend child CanvasItem for correct particle glow) ──
+    private WalkParticleOverlay? _particleOverlay;
+    internal float _particleDrawOfsX, _particleDrawOfsY; // set in _Draw, read by overlay
+
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(ViewWidth, ViewHeight);
-        Size = new Vector2(ViewWidth, ViewHeight);
-        ClipContents = true; // clip rendering to viewport rect
+        SetResolution(800, 600);
+        ClipContents = true;
         FocusMode = FocusModeEnum.All;
         GrabFocus();
+
+        // Additive particle layer — separate CanvasItem so particles glow correctly
+        var particleOverlay = new WalkParticleOverlay { Owner = this, Name = "ParticleOverlay" };
+        particleOverlay.Material = MapViewport.AdditiveBlendMaterial();
+        particleOverlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        particleOverlay.MouseFilter = MouseFilterEnum.Ignore;
+        AddChild(particleOverlay);
+        _particleOverlay = particleOverlay;
+
+        _zoneFog.AttachTo(this);
+        _lightRenderer.AttachTo(this);
+    }
+
+    /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
+    public void SetResolution(int windowW, int windowH)
+    {
+        float uiScale = windowH / 600f;
+        int leftMargin = (int)(13 * uiScale);
+        int topMargin = (int)(149 * uiScale);
+        int sidebarW = (int)(240 * uiScale);
+        int bottomBar = (int)(35 * uiScale);
+        int sidebarGap = (int)(3 * uiScale);
+
+        int availW = windowW - sidebarW - leftMargin - sidebarGap;
+        int availH = windowH - topMargin - bottomBar;
+        int tilesX = availW / TileSize;
+        int tilesY = availH / TileSize;
+        if (tilesX % 2 == 0) tilesX--;
+        if (tilesY % 2 == 0) tilesY--;
+
+        // Margin-shrink expansion (same as client)
+        int leftoverH = availH - tilesY * TileSize;
+        int extraNeededH = 2 * TileSize - leftoverH;
+        int minTopMargin = (int)(128 * uiScale);
+        if (extraNeededH > 0 && topMargin - extraNeededH >= minTopMargin)
+            tilesY += 2;
+
+        int leftoverW = availW - tilesX * TileSize;
+        int extraNeededW = 2 * TileSize - leftoverW;
+        int minLeftMargin = Math.Max(4, (int)(4 * uiScale));
+        if (extraNeededW > 0 && leftMargin - extraNeededW >= minLeftMargin)
+            tilesX += 2;
+
+        tilesX = Math.Max(17, tilesX);
+        tilesY = Math.Max(13, tilesY);
+
+        _halfTilesX = tilesX / 2;
+        _halfTilesY = tilesY / 2;
+        _viewTilesX = tilesX;
+        _viewTilesY = tilesY;
+        _viewWidth = tilesX * TileSize;
+        _viewHeight = tilesY * TileSize;
+        _extraTilesX = (tilesX - 17) / 2;
+        _extraTilesY = (tilesY - 13) / 2;
+
+        CustomMinimumSize = new Vector2(_viewWidth, _viewHeight);
+        Size = new Vector2(_viewWidth, _viewHeight);
+
+        BuildFogTexture();
+        _cpuLightsDirty = true;
+        QueueRedraw();
+    }
+
+    private void BuildFogTexture()
+    {
+        if (_extraTilesX <= 0 && _extraTilesY <= 0)
+        {
+            _fogTexture = null;
+            return;
+        }
+
+        const float MaxAlpha = 0.12f;
+        const float TransitionPx = 32f;
+
+        int texW = _viewWidth / 4;
+        int texH = _viewHeight / 4;
+        int coreW = 544 / 4;  // 17*32 / 4
+        int coreH = 416 / 4;  // 13*32 / 4
+        float centerX = texW / 2f;
+        float centerY = texH / 2f;
+        float halfCoreW = coreW / 2f;
+        float halfCoreH = coreH / 2f;
+        float transition = TransitionPx / 4f;
+
+        var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
+
+        for (int py = 0; py < texH; py++)
+            for (int px = 0; px < texW; px++)
+            {
+                float dx = Math.Max(0, Math.Abs(px - centerX) - halfCoreW);
+                float dy = Math.Max(0, Math.Abs(py - centerY) - halfCoreH);
+                float dist = Math.Max(dx, dy);
+
+                float alpha;
+                if (dist <= 0f)
+                    alpha = 0f;
+                else if (dist < transition)
+                {
+                    float t = dist / transition;
+                    t = t * t * (3f - 2f * t);
+                    alpha = t * MaxAlpha;
+                }
+                else
+                    alpha = MaxAlpha;
+
+                img.SetPixel(px, py, new Color(0, 0, 0, alpha));
+            }
+
+        _fogTexture = ImageTexture.CreateFromImage(img);
     }
 
     public override void _Process(double delta)
     {
         _globalTime += delta * 1000.0;
+
+        // Step the shared particle simulation so streams animate in walk mode too
+        Particles?.Update((float)delta);
+
+        // Update weather from current zone (rain/snow only — fog is world-space)
+        var currentZone = Zones?.GetZoneAt(CharX, CharY);
+        _weather.Lluvia = currentZone?.Lluvia ?? false;
+        _weather.Nieve  = currentZone?.Nieve  ?? false;
+        _weather.Update((float)delta, Size);
+
+        // World-space fog: the walk panel's (0,0) shows the world pixel at
+        // ((CharX - _halfTilesX - 1) * 32 - _moveOffsetX, same for Y) —
+        // this is the formula invariant with the tile draw loop. Zoom is 1.
+        {
+            var zoneList = Zones != null
+                ? (System.Collections.Generic.IReadOnlyList<ZoneInfo>)Zones.Zones
+                : System.Array.Empty<ZoneInfo>();
+            var playerWorldPx = new Vector2(
+                (CharX - 0.5f) * 32f - _moveOffsetX,
+                (CharY - 0.5f) * 32f - _moveOffsetY);
+            var worldOrigin = new Vector2(
+                (CharX - _halfTilesX - 1) * 32f - _moveOffsetX,
+                (CharY - _halfTilesY - 1) * 32f - _moveOffsetY);
+            _zoneFog.Update(Size, worldOrigin, Size, zoneList, Map, playerWorldPx);
+            // Character occluder at feet (bottom-center of tile) in
+            // DrawTileGrh coords — matches the light positions exactly.
+            var playerFeetPx = new Vector2(
+                (CharX + 0.5f) * 32f - _moveOffsetX,
+                (CharY + 1f) * 32f - _moveOffsetY);
+            _lightRenderer.Update(Size, worldOrigin, Size, Map, (float)delta, playerFeetPx);
+        }
 
         if (_isMoving)
         {
@@ -208,6 +403,14 @@ public partial class WalkModePanel : Control
 
         _diagPrinted = false; // print diagnostics for new map
 
+        // Reload zone data for new map
+        if (MapDir.Length > 0)
+            Zones = MapZoneData.Load(MapDir, destMap);
+
+        // Rebuild particles and lights for new map
+        Particles?.BuildStreamsFromMap(newMap);
+        _cpuLightsDirty = true;
+
         // Update window title
         var parentWindow = GetParent<Window>();
         if (parentWindow != null)
@@ -228,6 +431,7 @@ public partial class WalkModePanel : Control
         if (@event is InputEventKey key)
         {
             bool pressed = key.Pressed;
+            bool handled = true;
             switch (key.Keycode)
             {
                 case Key.W: case Key.Up: _keyUp = pressed; break;
@@ -237,8 +441,9 @@ public partial class WalkModePanel : Control
                 case Key.Escape:
                     if (pressed) GetParent<Window>()?.Hide();
                     break;
+                default: handled = false; break;
             }
-            AcceptEvent();
+            if (handled) AcceptEvent();
         }
         else if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
         {
@@ -247,8 +452,8 @@ public partial class WalkModePanel : Control
                 // Double-click: try to toggle a door
                 float worldX = mb.Position.X - _moveOffsetX;
                 float worldY = mb.Position.Y - _moveOffsetY;
-                int tx = (int)Math.Floor(worldX / TileSize) - HalfTilesX + CharX;
-                int ty = (int)Math.Floor(worldY / TileSize) - HalfTilesY + CharY;
+                int tx = (int)Math.Floor(worldX / TileSize) - _halfTilesX + CharX;
+                int ty = (int)Math.Floor(worldY / TileSize) - _halfTilesY + CharY;
                 TryToggleDoor(tx, ty);
                 AcceptEvent();
                 return;
@@ -257,8 +462,8 @@ public partial class WalkModePanel : Control
             {
                 float worldX = mb.Position.X - _moveOffsetX;
                 float worldY = mb.Position.Y - _moveOffsetY;
-                int tx = (int)Math.Floor(worldX / TileSize) - HalfTilesX + CharX;
-                int ty = (int)Math.Floor(worldY / TileSize) - HalfTilesY + CharY;
+                int tx = (int)Math.Floor(worldX / TileSize) - _halfTilesX + CharX;
+                int ty = (int)Math.Floor(worldY / TileSize) - _halfTilesY + CharY;
                 if (Map.InBounds(tx, ty))
                 {
                     CharX = tx;
@@ -328,29 +533,43 @@ public partial class WalkModePanel : Control
 
         DrawRect(new Rect2(Vector2.Zero, Size), Colors.Black);
 
+        // Detect map change → rebuild lights
+        if (Map.MapNumber != _lastMapNumber)
+        {
+            _lastMapNumber = Map.MapNumber;
+            _cpuLightsDirty = true;
+        }
+
+        // CPU per-tile lighting (always works, independent of Godot GPU pipeline)
+        if (_cpuLightsDirty)
+        {
+            _cpuLights.Recalculate(Map, Zones);
+            _cpuLightsDirty = false;
+        }
+
         float ofsX = (float)Math.Round(_moveOffsetX);
         float ofsY = (float)Math.Round(_moveOffsetY);
 
         // L1 uses smaller buffer; L2/L3/L4 need large buffer for multi-tile GRHs
-        int minDY_L1 = -HalfTilesY - ExtraTiles;
-        int maxDY_L1 = HalfTilesY + ExtraTiles;
-        int minDX_L1 = -HalfTilesX - ExtraTiles;
-        int maxDX_L1 = HalfTilesX + ExtraTiles;
+        int minDY_L1 = -_halfTilesY - ExtraTiles;
+        int maxDY_L1 = _halfTilesY + ExtraTiles;
+        int minDX_L1 = -_halfTilesX - ExtraTiles;
+        int maxDX_L1 = _halfTilesX + ExtraTiles;
 
-        int minDY = -HalfTilesY - ExtraTilesLarge;
-        int maxDY = HalfTilesY + ExtraTilesLarge;
-        int minDX = -HalfTilesX - ExtraTilesLarge;
-        int maxDX = HalfTilesX + ExtraTilesLarge;
+        int minDY = -_halfTilesY - ExtraTilesLarge;
+        int maxDY = _halfTilesY + ExtraTilesLarge;
+        int minDX = -_halfTilesX - ExtraTilesLarge;
+        int maxDX = _halfTilesX + ExtraTilesLarge;
 
-        // ── Pass 1: Ground (L1) ── top-left aligned
+        // ── Pass 1: Ground (L1) ── top-left aligned, with per-tile lighting
         for (int dy = minDY_L1; dy <= maxDY_L1; dy++)
             for (int dx = minDX_L1; dx <= maxDX_L1; dx++)
             {
                 int tx = CharX + dx, ty = CharY + dy;
                 if (!Map.InBounds(tx, ty)) continue;
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
-                DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy, Colors.White);
+                float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                float sy = (dy + _halfTilesY) * TileSize + ofsY;
+                DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy, _cpuLights.GetTileLight(tx, ty));
             }
 
         // ── Pass 2: Mask/Alpha (L2) ── centered, large buffer
@@ -361,9 +580,9 @@ public partial class WalkModePanel : Control
                 if (!Map.InBounds(tx, ty)) continue;
                 int l2 = Map.Tiles[tx, ty].Layer2;
                 if (l2 <= 0) continue;
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
-                DrawGrhCentered(l2, sx, sy, Colors.White);
+                float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                float sy = (dy + _halfTilesY) * TileSize + ofsY;
+                DrawGrhCentered(l2, sx, sy, _cpuLights.GetTileLight(tx, ty));
             }
 
         // ── Pass 3: Objects + NPCs + L3 + Character — Y-sorted ──
@@ -371,36 +590,40 @@ public partial class WalkModePanel : Control
         {
             int ty = CharY + dy;
 
-            // Draw character at its Y row
+            // Draw character at its Y row with per-tile lighting
             if (dy == 0)
-                DrawCharacter(ofsX, ofsY);
+            {
+                Color charLight = _cpuLights.GetTileLight(CharX, CharY);
+                DrawCharacter(ofsX, ofsY, charLight);
+            }
 
             for (int dx = minDX; dx <= maxDX; dx++)
             {
                 int tx = CharX + dx;
                 if (!Map.InBounds(tx, ty)) continue;
 
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                float sy = (dy + _halfTilesY) * TileSize + ofsY;
+                Color tileLight = _cpuLights.GetTileLight(tx, ty);
 
                 // Ground objects from .inf data (includes doors)
-                DrawTileObject(tx, ty, sx, sy);
+                DrawTileObject(tx, ty, sx, sy, tileLight);
 
                 // NPCs from .inf data
-                DrawTileNpc(tx, ty, sx, sy);
+                DrawTileNpc(tx, ty, sx, sy, tileLight);
 
                 // L3 graphic layer
                 int l3 = Map.Tiles[tx, ty].Layer3;
                 if (l3 > 0)
                 {
                     bool onCharTile = (tx == CharX && ty == CharY);
-                    Color mod = onCharTile ? new Color(1, 1, 1, 0.5f) : Colors.White;
+                    Color mod = onCharTile ? new Color(tileLight.R, tileLight.G, tileLight.B, 0.5f) : tileLight;
                     DrawGrhCentered(l3, sx, sy, mod);
                 }
             }
         }
 
-        // ── Pass 4: Roof (L4) — centered, large buffer, smooth alpha fade ──
+        // ── Pass 4: Roof (L4) — centered, large buffer, smooth alpha fade + lighting
         if (_roofAlpha > 0)
         {
             float roofA = _roofAlpha / 255f;
@@ -411,14 +634,27 @@ public partial class WalkModePanel : Control
                     if (!Map.InBounds(tx, ty)) continue;
                     int l4 = Map.Tiles[tx, ty].Layer4;
                     if (l4 <= 0) continue;
-                    float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                    float sy = (dy + HalfTilesY) * TileSize + ofsY;
-                    DrawGrhCentered(l4, sx, sy, new Color(1, 1, 1, roofA));
+                    float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                    float sy = (dy + _halfTilesY) * TileSize + ofsY;
+                    Color rl = _cpuLights.GetTileLight(tx, ty);
+                    DrawGrhCentered(l4, sx, sy, new Color(rl.R, rl.G, rl.B, roofA));
                 }
         }
 
+        // ── Fog overlay (dark vignette on extra tiles beyond core 17×13) ──
+        if (_fogTexture != null && (_extraTilesX > 0 || _extraTilesY > 0))
+            DrawTextureRect(_fogTexture, new Rect2(0, 0, _viewWidth, _viewHeight), false);
+
         // ── Exit markers ──
         DrawExitMarkers(minDX_L1, maxDX_L1, minDY_L1, maxDY_L1, ofsX, ofsY);
+
+        // ── Particles (rain, fire, fountain, etc.) — drawn on additive overlay ──
+        _particleDrawOfsX = ofsX;
+        _particleDrawOfsY = ofsY;
+        _particleOverlay?.QueueRedraw();
+
+        // ── Weather FX ──
+        _weather.Draw(this, Size);
 
         // ── HUD ──
         var font = ThemeDB.Singleton.FallbackFont;
@@ -433,17 +669,17 @@ public partial class WalkModePanel : Control
 
     // ── NPC / Object / Exit rendering ───────────────────────────────────────
 
-    private void DrawTileObject(int tx, int ty, float sx, float sy)
+    private void DrawTileObject(int tx, int ty, float sx, float sy, Color light)
     {
         if (ObjGrhs == null) return;
         int objIdx = Map!.Tiles[tx, ty].ObjIndex;
         if (objIdx <= 0 || objIdx >= ObjGrhs.Length) return;
         int objGrh = ObjGrhs[objIdx];
         if (objGrh <= 0) return;
-        DrawGrhCentered(objGrh, sx, sy, Colors.White);
+        DrawGrhCentered(objGrh, sx, sy, light);
     }
 
-    private void DrawTileNpc(int tx, int ty, float sx, float sy)
+    private void DrawTileNpc(int tx, int ty, float sx, float sy, Color light)
     {
         if (NpcBodies == null || NpcBodyGrhs == null || Grhs == null) return;
         int npcIdx = Map!.Tiles[tx, ty].NpcIndex;
@@ -452,12 +688,10 @@ public partial class WalkModePanel : Control
         int bodyIdx = NpcBodies[npcIdx];
         if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) return;
 
-        // Draw NPC body (south-facing static frame)
         int bodyGrh = NpcBodyGrhs[bodyIdx];
         if (bodyGrh > 0)
-            DrawAnimGrhCentered(bodyGrh, 0, sx, sy, Colors.White);
+            DrawAnimGrhCentered(bodyGrh, 0, sx, sy, light);
 
-        // Draw NPC head
         if (NpcHeads == null || HeadGrhs == null) return;
         if (npcIdx >= NpcHeads.Length) return;
         int headIdx = NpcHeads[npcIdx];
@@ -467,7 +701,7 @@ public partial class WalkModePanel : Control
 
         int hofX = (NpcHeadOfsX != null && bodyIdx < NpcHeadOfsX.Length) ? NpcHeadOfsX[bodyIdx] : 0;
         int hofY = (NpcHeadOfsY != null && bodyIdx < NpcHeadOfsY.Length) ? NpcHeadOfsY[bodyIdx] : 0;
-        DrawAnimGrhCentered(headGrh, 0, sx + hofX, sy + hofY, Colors.White);
+        DrawAnimGrhCentered(headGrh, 0, sx + hofX, sy + hofY, light);
     }
 
     private void DrawExitMarkers(int minDX, int maxDX, int minDY, int maxDY, float ofsX, float ofsY)
@@ -480,8 +714,8 @@ public partial class WalkModePanel : Control
                 if (!Map.InBounds(tx, ty)) continue;
                 if (!Map.Tiles[tx, ty].HasExit) continue;
 
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                float sy = (dy + _halfTilesY) * TileSize + ofsY;
 
                 DrawRect(new Rect2(sx + 2, sy + 2, TileSize - 4, TileSize - 4),
                     new Color(0.2f, 1f, 0.2f, 0.25f));
@@ -490,8 +724,9 @@ public partial class WalkModePanel : Control
             }
     }
 
-    private void DrawCharacter(float ofsX, float ofsY)
+    private void DrawCharacter(float ofsX, float ofsY, Color light = default)
     {
+        if (light == default) light = Colors.White;
         if (Bodies == null || Heads == null) return;
         if (BodyIndex <= 0 || BodyIndex >= Bodies.Length) return;
 
@@ -500,8 +735,8 @@ public partial class WalkModePanel : Control
         if (bodyGrh <= 0) return;
 
         // Character is ALWAYS at viewport center
-        float cx = HalfTilesX * TileSize;
-        float cy = HalfTilesY * TileSize;
+        float cx = _halfTilesX * TileSize;
+        float cy = _halfTilesY * TileSize;
 
         // VB6-style walk animation: frame synced to pixel displacement, one frame per 8px step
         int frameCount = GetGrhFrameCount(bodyGrh);
@@ -513,7 +748,7 @@ public partial class WalkModePanel : Control
             int steps = (int)(pixelsTraveled / ScrollPixels);
             bodyFrame = steps % frameCount;
         }
-        DrawAnimGrhCentered(bodyGrh, bodyFrame, cx, cy, Colors.White);
+        DrawAnimGrhCentered(bodyGrh, bodyFrame, cx, cy, light);
 
         // Head
         if (HeadIndex > 0 && HeadIndex < Heads.Length)
@@ -523,7 +758,7 @@ public partial class WalkModePanel : Control
             {
                 float hx = cx + body.HeadOffsetX;
                 float hy = cy + body.HeadOffsetY;
-                DrawAnimGrhCentered(headGrh, 0, hx, hy, Colors.White);
+                DrawAnimGrhCentered(headGrh, 0, hx, hy, light);
             }
         }
     }
@@ -612,6 +847,9 @@ public partial class WalkModePanel : Control
         }
 
         GD.Print($"[WalkMode] Door toggle at ({doorX},{doorY}): obj {curObjIdx} -> {newObjIdx} (closing={closing})");
+
+        // Doors changed Blocked tiles → recalculate lighting
+        _cpuLightsDirty = true;
     }
 
     private DoorInfo? FindDoorAt(int x, int y)
@@ -640,7 +878,13 @@ public partial class WalkModePanel : Control
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
         if (grhIndex >= Grhs.Length) return;
 
-        var grh = ResolveStaticFrame(grhIndex);
+        // Animate L1 tiles (water, lava, etc.) using _globalTime
+        var baseGrh = Grhs[grhIndex];
+        int frameIdx = 0;
+        if (baseGrh.NumFrames > 1 && baseGrh.Speed > 0)
+            frameIdx = (int)(_globalTime * baseGrh.NumFrames / baseGrh.Speed) % baseGrh.NumFrames;
+
+        var grh = ResolveFrame(grhIndex, frameIdx);
         if (grh.FileNum <= 0 || grh.PixelWidth <= 0) return;
 
         var texture = Textures.GetTexture(grh.FileNum);
@@ -705,6 +949,61 @@ public partial class WalkModePanel : Control
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
+    /// <summary>Draw all active particles from the shared ParticleEngine in walk-mode space.
+    /// Walk mode draws tile (tx, ty) at panel pixel ((tx - CharX + _halfTilesX) * TS + ofs).
+    /// We use the same transform for particles so they line up.
+    /// Called from WalkParticleOverlay._Draw to draw on an additive-blend CanvasItem.</summary>
+    internal void DrawWalkModeParticlesOn(CanvasItem canvas)
+    {
+        if (Particles == null || Grhs == null || Textures == null || Map == null) return;
+
+        foreach (var stream in Particles.Streams)
+        {
+            if (!stream.Active) continue;
+            // Tile center in panel pixels (stream.MapX/Y are 1-based world tiles)
+            int dx = stream.MapX - CharX;
+            int dy = stream.MapY - CharY;
+            // Quick cull: skip streams far from the visible area
+            if (Math.Abs(dx) > _halfTilesX + ExtraTilesLarge ||
+                Math.Abs(dy) > _halfTilesY + ExtraTilesLarge) continue;
+
+            float streamX = (dx + _halfTilesX) * TileSize + TileSize / 2f + _particleDrawOfsX;
+            float streamY = (dy + _halfTilesY) * TileSize + TileSize / 2f + _particleDrawOfsY;
+
+            foreach (var p in stream.Particles)
+            {
+                if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
+                var grh = Grhs[p.GrhIndex];
+                if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+                {
+                    int frame = grh.Speed > 0 ? (int)(_globalTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
+                    int frameIdx = grh.Frames[frame];
+                    if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
+                    grh = Grhs[frameIdx];
+                }
+                if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
+                var texture = Textures.GetTexture(grh.FileNum);
+                if (texture == null) continue;
+
+                var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+                float drawX = streamX + p.X - grh.PixelWidth / 2f;
+                float drawY = streamY + p.Y - grh.PixelHeight / 2f;
+                var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+            }
+        }
+    }
+
+    private static bool HasAnyLight(MapData map)
+    {
+        if (map == null) return false;
+        for (int y = 1; y <= map.Height; y++)
+            for (int x = 1; x <= map.Width; x++)
+                if (map.Tiles[x, y].HasLight) return true;
+        return false;
+    }
+
     private GrhData ResolveStaticFrame(int grhIndex)
     {
         var grh = Grhs![grhIndex];
@@ -741,4 +1040,21 @@ public partial class WalkModePanel : Control
     {
         1 => "Norte", 2 => "Este", 3 => "Sur", 4 => "Oeste", _ => "?"
     };
+
+    // ── Inner class: additive-blend particle overlay ──────────────────────────
+
+    /// <summary>
+    /// Transparent overlay drawn on top of the walk-mode panel with additive
+    /// blending, so particles emit light correctly (same as ParticleOverlay in
+    /// MapViewport). Delegates actual drawing to WalkModePanel.DrawWalkModeParticlesOn.
+    /// </summary>
+    private sealed partial class WalkParticleOverlay : Control
+    {
+        public new WalkModePanel? Owner;
+
+        public override void _Draw()
+        {
+            Owner?.DrawWalkModeParticlesOn(this);
+        }
+    }
 }

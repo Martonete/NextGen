@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -23,39 +24,40 @@ public static class MapLoader
     private static readonly byte[] AoMapMagic = Encoding.ASCII.GetBytes("AOMAP\0");
     private static readonly byte[] AoInfMagic = Encoding.ASCII.GetBytes("AOINF\0");
 
-    public static MapData Load(string mapDir, int mapNumber)
+    public static MapData Load(IResourceProvider resources, int mapNumber)
     {
         // Check for new format first (.aomap)
-        string aomapFile = Path.Combine(mapDir, $"Mapa{mapNumber}.aomap");
-        if (File.Exists(aomapFile))
+        string aomapRelPath = $"Maps/Mapa{mapNumber}.aomap";
+        if (resources.Exists(aomapRelPath))
         {
-            var mapData = LoadAoMapFile(aomapFile);
-            string aoinfFile = Path.Combine(mapDir, $"Mapa{mapNumber}.aoinf");
-            if (File.Exists(aoinfFile))
-                LoadAoInfFile(aoinfFile, mapData);
+            var mapData = LoadAoMapFile(resources, aomapRelPath);
+            string aoinfRelPath = $"Maps/Mapa{mapNumber}.aoinf";
+            if (resources.Exists(aoinfRelPath))
+                LoadAoInfFile(resources, aoinfRelPath, mapData);
             return mapData;
         }
 
         // Legacy fallback (100x100)
         var legacy = new MapData(100, 100);
 
-        string mapFile = Path.Combine(mapDir, $"Mapa{mapNumber}.map");
-        string infFile = Path.Combine(mapDir, $"Mapa{mapNumber}.inf");
+        string mapRelPath = $"Maps/Mapa{mapNumber}.map";
+        string infRelPath = $"Maps/Mapa{mapNumber}.inf";
 
-        if (File.Exists(mapFile))
-            LoadMapFile(mapFile, legacy);
+        if (resources.Exists(mapRelPath))
+            LoadMapFile(resources, mapRelPath, legacy);
 
-        if (File.Exists(infFile))
-            LoadInfFile(infFile, legacy);
+        if (resources.Exists(infRelPath))
+            LoadInfFile(resources, infRelPath, legacy);
 
         return legacy;
     }
 
     // ── New format loaders ─────────────────────────────────────────
 
-    private static MapData LoadAoMapFile(string path)
+    private static MapData LoadAoMapFile(IResourceProvider resources, string relativePath)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        byte[] fileData = resources.ReadBytes(relativePath);
+        string path = relativePath;
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         // Validate magic "AOMAP\0" (6 bytes)
@@ -130,9 +132,10 @@ public static class MapLoader
         return mapData;
     }
 
-    private static void LoadAoInfFile(string path, MapData mapData)
+    private static void LoadAoInfFile(IResourceProvider resources, string relativePath, MapData mapData)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        byte[] fileData = resources.ReadBytes(relativePath);
+        string path = relativePath;
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         // Validate magic "AOINF\0" (6 bytes)
@@ -191,9 +194,9 @@ public static class MapLoader
 
     // ── Legacy format loaders ──────────────────────────────────────
 
-    private static void LoadMapFile(string path, MapData mapData)
+    private static void LoadMapFile(IResourceProvider resources, string relativePath, MapData mapData)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        byte[] fileData = resources.ReadBytes(relativePath);
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         // Skip header: version(2) + MiCabecera(263) + 4 reserved Integers(2 each = 8) = 273
@@ -258,9 +261,9 @@ public static class MapLoader
         }
     }
 
-    private static void LoadInfFile(string path, MapData mapData)
+    private static void LoadInfFile(IResourceProvider resources, string relativePath, MapData mapData)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        byte[] fileData = resources.ReadBytes(relativePath);
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         // Skip header: 5 × Int16 = 10 bytes

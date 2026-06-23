@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 /// Unique identifier for a client connection (maps to VB6 ConnID).
 pub type ConnectionId = u32;
@@ -11,6 +11,11 @@ pub type ConnectionId = u32;
 /// exceeds this, the connection is dropped. Prevents memory exhaustion
 /// from slow-parse or partial-packet flooding.
 pub const MAX_RECV_BUFFER: usize = 65_536;
+
+/// Maximum pending outgoing bytes per connection (256 KB).
+/// If a slow client causes the write buffer to grow beyond this limit,
+/// the connection is flagged for removal to prevent unbounded memory growth.
+const MAX_PENDING_BYTES: usize = 256 * 1024;
 
 /// Read timeout: if no data arrives within this duration, the connection
 /// is considered dead and dropped. Prevents slowloris attacks where
@@ -44,15 +49,19 @@ impl ConnectionReader {
         let read_result = tokio::time::timeout(READ_TIMEOUT, self.reader.read(&mut buf)).await;
 
         let n = match read_result {
-            Ok(Ok(0)) => return None,           // Clean disconnect
-            Ok(Ok(n)) => n,                      // Got data
+            Ok(Ok(0)) => return None, // Clean disconnect
+            Ok(Ok(n)) => n,           // Got data
             Ok(Err(e)) => {
                 tracing::debug!("Read error on connection {}: {}", self.id, e);
                 return None;
             }
             Err(_) => {
                 // Timeout — no data received within READ_TIMEOUT
-                tracing::debug!("Connection #{} idle timeout ({}s)", self.id, READ_TIMEOUT.as_secs());
+                tracing::debug!(
+                    "Connection #{} idle timeout ({}s)",
+                    self.id,
+                    READ_TIMEOUT.as_secs()
+                );
                 return None;
             }
         };
@@ -64,7 +73,9 @@ impl ConnectionReader {
         if self.buffer.len() > MAX_RECV_BUFFER {
             tracing::warn!(
                 "Connection #{} buffer overflow ({} bytes > {}), dropping",
-                self.id, self.buffer.len(), MAX_RECV_BUFFER
+                self.id,
+                self.buffer.len(),
+                MAX_RECV_BUFFER
             );
             return None;
         }
@@ -93,12 +104,28 @@ pub struct ConnectionWriter {
     /// Application-level write buffer. Packets accumulate here during a tick
     /// and are flushed to the socket in one write_all() call.
     buf: Vec<u8>,
+    /// Set to true when the output buffer exceeds MAX_PENDING_BYTES.
+    /// The game loop should remove this connection on the next tick.
+    pub closed: bool,
 }
 
 impl ConnectionWriter {
     /// Buffer raw binary bytes for sending. Data is not written to the socket
     /// until flush() is called (once per game tick).
+    ///
+    /// If the pending buffer exceeds MAX_PENDING_BYTES the connection is
+    /// flagged as closed and the data is discarded. The game loop must check
+    /// `self.closed` and remove the connection on the next tick.
     pub fn send_packet(&mut self, data: &[u8]) {
+        if self.buf.len() > MAX_PENDING_BYTES {
+            tracing::warn!(
+                conn_id = ?self.id,
+                pending = self.buf.len(),
+                "output buffer overflow — dropping connection"
+            );
+            self.closed = true;
+            return;
+        }
         self.buf.extend_from_slice(data);
     }
 
@@ -154,6 +181,7 @@ pub fn split_connection(
         addr,
         writer: write_half,
         buf: Vec::with_capacity(1024),
+        closed: false,
     };
 
     (reader, writer)

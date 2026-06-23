@@ -40,12 +40,22 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_desertar(state, conn_id).await;
     } else if cmd_upper.starts_with("/NUEVAPARTY") {
         handle_slash_nuevaparty(state, conn_id).await;
+    // VB6: /GRUPO <target> — invite to party (primary VB6 command)
+    } else if cmd_upper.starts_with("/GRUPO ") {
+        let target = cmd[7..].trim();
+        handle_slash_party_invite(state, conn_id, target).await;
+    } else if cmd_upper == "/GRUPO" {
+        // /GRUPO without args: show usage hint
+        state.send_console(conn_id, "Uso: /GRUPO <nombre> para invitar a un jugador. Usa /NUEVAPARTY para crear el grupo primero.", font_index::INFO);
     } else if cmd_upper.starts_with("/PARTY ") {
         let target = cmd[7..].trim();
         handle_slash_party_invite(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/ACEPTAR") {
         handle_slash_party_accept(state, conn_id).await;
     } else if cmd_upper.starts_with("/CANCELAR") {
+        handle_slash_party_cancel(state, conn_id).await;
+    // VB6: /SALIRGRUPO — leave party
+    } else if cmd_upper.starts_with("/SALIRGRUPO") {
         handle_slash_party_cancel(state, conn_id).await;
     } else if cmd_upper.starts_with("/FINPARTY") {
         handle_slash_finparty(state, conn_id).await;
@@ -55,6 +65,10 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let target = cmd[7..].trim();
         handle_slash_sacar(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/ECHARPARTY ") {
+        let target = cmd[12..].trim();
+        handle_slash_sacar(state, conn_id, target).await;
+    // VB6: /ECHARGRUPO <target> — kick member from party (leader only)
+    } else if cmd_upper.starts_with("/ECHARGRUPO ") {
         let target = cmd[12..].trim();
         handle_slash_sacar(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/DARPARTIDO ") {
@@ -487,9 +501,14 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_talkas(state, conn_id, args).await;
     } else if cmd_upper == "/GUARDARMAPA" {
         // VB6: Admin only. Saves current map to disk (GrabarMapa).
+        // VB6-PARITY: VB6 serialises the in-memory map tile array back to the .map/.inf binary
+        // format and writes MapaN.map + MapaN.inf to disk. This allows GMs to persist tile edits
+        // (blocked states, trigger changes, placed objects) made during a live session.
+        // Currently not implemented: maps are loaded read-only and there is no in-memory mutation
+        // layer for tile edits, so saving would produce an identical file. Needs a tile-edit
+        // subsystem before this can be meaningfully wired up.
         let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
         if !is_admin { return; }
-        // Map saving not implemented (maps are loaded read-only from binary files)
         state.send_console(conn_id, "Mapa guardado.", font_index::INFO);
     } else if cmd_upper.starts_with("/SETDESC ") {
         let args = &cmd[9..];
@@ -687,8 +706,49 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_encuesta_crear(state, conn_id, args).await;
     } else if cmd_upper == "/CERRARENCUESTA" {
         handle_slash_cerrar_encuesta(state, conn_id).await;
+    } else if cmd_upper.starts_with("/CHATCOLOR ") {
+        let args = &cmd["/CHATCOLOR ".len()..];
+        handle_slash_chatcolor(state, conn_id, args).await;
+    // M30: Missing GM commands
+    } else if cmd_upper.starts_with("/CONDEN ") {
+        let target = cmd[8..].trim();
+        handle_slash_conden(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/RAJAR ") {
+        let target = cmd[7..].trim();
+        handle_slash_rajar(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/FORCEMIDIMAP ") {
+        let args = cmd[14..].trim();
+        handle_slash_forcemidimap(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/ANAME ") {
+        let args = cmd[7..].trim();
+        handle_slash_aname(state, conn_id, args).await;
     } else {
         // Unknown command — send feedback
         state.send_msg_id(conn_id, 714, ""); // TEXTO714: Comando no reconocido
     }
+}
+
+/// VB6 13.3: /CHATCOLOR <r> <g> <b> — GM sets custom chat color for the session.
+async fn handle_slash_chatcolor(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let privs = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
+    if privs < privilege_level::DIOS {
+        return;
+    }
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() != 3 {
+        state.send_console(conn_id, "Uso: /CHATCOLOR <r> <g> <b>", font_index::INFO);
+        return;
+    }
+
+    let r: i32 = parts[0].parse().unwrap_or(255).clamp(0, 255);
+    let g: i32 = parts[1].parse().unwrap_or(255).clamp(0, 255);
+    let b: i32 = parts[2].parse().unwrap_or(255).clamp(0, 255);
+    // VB6 RGB() macro: R | (G << 8) | (B << 16)
+    let color = r | (g << 8) | (b << 16);
+
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.chat_color = color;
+    }
+    state.send_console(conn_id, &format!("Color de chat cambiado a ({}, {}, {}).", r, g, b), font_index::INFO);
 }

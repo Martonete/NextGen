@@ -8,9 +8,9 @@
 // Future: sub-zones within a large map (e.g., a 1000x1000 world map split
 // into named regions with different rules).
 
+use crate::config::IniFile;
 use std::collections::HashMap;
 use std::path::Path;
-use crate::config::IniFile;
 
 /// Zone type — determines core PvP/safety rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,7 +228,10 @@ pub fn load_zone_overrides(base_path: &Path) -> ZoneRegistry {
 
         let ambient = {
             let raw = get_str("Ambient");
-            let parts: Vec<i32> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+            let parts: Vec<i32> = raw
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
             if parts.len() >= 3 {
                 (parts[0], parts[1], parts[2])
             } else {
@@ -278,7 +281,14 @@ pub fn load_zone_overrides(base_path: &Path) -> ZoneRegistry {
             npc_wander_radius: get_int("NpcWanderRadius", 0),
         };
 
-        tracing::info!("Zone {} ({}) loaded: type={:?}, {}x{}", zone_id, props.name, props.zone_type, props.grid_width, props.grid_height);
+        tracing::info!(
+            "Zone {} ({}) loaded: type={:?}, {}x{}",
+            zone_id,
+            props.name,
+            props.zone_type,
+            props.grid_width,
+            props.grid_height
+        );
         zones.insert(zone_id, props);
     }
 

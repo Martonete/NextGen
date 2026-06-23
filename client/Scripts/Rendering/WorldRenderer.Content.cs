@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -13,6 +12,8 @@ namespace ArgentumNextgen.Rendering;
 /// </summary>
 public partial class WorldRenderer
 {
+    private static readonly List<int> _charSortBuffer = new(16);
+
     /// <summary>
     /// Draw PASS 3 content: ground objects, characters, layer 3, status overlay.
     /// Called by ContentLayer._Draw().
@@ -22,21 +23,30 @@ public partial class WorldRenderer
         if (_state == null || _data == null || _animator == null) return;
         if (_state.MapData == null) return;
 
+        // Opt 5: Pre-compute reusable colors for ground objects and fully-opaque trees.
+        // These constants avoid per-tile Color allocations in the common case.
+        const float objBright = 220f / 255f;
+        const float treeBright = 220f / 255f;
+        var objColor = new Color(objBright, objBright, objBright, 1f);
+        var treeFullColor = new Color(treeBright, treeBright, treeBright, 1f);
+
         // Terrain layers (L2 objects, L3 trees) + ground objects — large buffer for big sprites
         for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
+            // Opt 4: use pre-computed screen Y for this row
+            float tileScreenY = _screenYCache[y - _frameMinY];
             for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
-                Vector2 tilePos = TileToScreen(x, y, _frameUserX, _frameUserY,
-                                                _framePixelOffsetX, _framePixelOffsetY);
+                // Opt 4: use pre-computed screen X for this column
+                Vector2 tilePos = new Vector2(_screenXCache[x - _frameMinX], tileScreenY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
                 // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
                     && objGrh != tile.Layer3)
                 {
-                    const float objBright = 220f / 255f;
-                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, 1f));
+                    // Opt 5: use pre-computed color constant
+                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: objColor);
                 }
 
                 // Characters/NPCs — only within viewport bounds (no large buffer)
@@ -44,9 +54,23 @@ public partial class WorldRenderer
                 {
                     var charsHere = GetCharsAt(x, y);
                     // Sort by effective Y for correct isometric z-order (higher Y = drawn on top)
-                    var sortedChars = charsHere.Count > 1
-                        ? charsHere.OrderBy(cid => _state.Characters.TryGetValue(cid, out var c) ? c.MoveOffsetY : 0f).ToList()
-                        : (IEnumerable<int>)charsHere;
+                    IEnumerable<int> sortedChars;
+                    if (charsHere.Count > 1)
+                    {
+                        _charSortBuffer.Clear();
+                        _charSortBuffer.AddRange(charsHere);
+                        _charSortBuffer.Sort((a, b) =>
+                        {
+                            float ay = _state.Characters.TryGetValue(a, out var ca) ? ca.MoveOffsetY : 0f;
+                            float by = _state.Characters.TryGetValue(b, out var cb) ? cb.MoveOffsetY : 0f;
+                            return ay.CompareTo(by);
+                        });
+                        sortedChars = _charSortBuffer;
+                    }
+                    else
+                    {
+                        sortedChars = charsHere;
+                    }
                     foreach (var cid in sortedChars)
                     {
                         if (!_state.Characters.TryGetValue(cid, out var ch)) continue;
@@ -64,7 +88,6 @@ public partial class WorldRenderer
                 // Layer 3 (trees/objects) — dimmed slightly, with proximity transparency for trees
                 if (tile.Layer3 > 0)
                 {
-                    const float treeBright = 220f / 255f;
                     float l3Alpha = 1f;
                     if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(tile.Layer3))
                     {
@@ -80,7 +103,9 @@ public partial class WorldRenderer
                         float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
                         l3Alpha = treeAlpha + (1f - treeAlpha) * t;
                     }
-                    DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, l3Alpha));
+                    // Opt 5: use pre-computed full-alpha color when tree is fully opaque
+                    Color l3Color = l3Alpha < 1f ? new Color(treeBright, treeBright, treeBright, l3Alpha) : treeFullColor;
+                    DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: l3Color);
                 }
             }
         }
@@ -128,6 +153,13 @@ public partial class WorldRenderer
         DrawStatusOverlayTo(canvas);
     }
 
+    // Pre-computed status overlay colors
+    private static readonly Color StatusColorParalyzed = new Color(1f, 0.2f, 0.2f);
+    private static readonly Color StatusColorInvisible = new Color(0.6f, 0.6f, 1f);
+    private static readonly Color StatusColorMeditating = new Color(0.4f, 0.8f, 1f);
+    private static readonly Color StatusColorResting = new Color(0.4f, 1f, 0.4f);
+    private static readonly Color StatusColorNavigating = new Color(0.3f, 0.7f, 1f);
+
     private void DrawStatusOverlayTo(CanvasItem canvas)
     {
         if (_state == null || _data == null) return;
@@ -137,39 +169,37 @@ public partial class WorldRenderer
         if (_state.UserParalyzed)
         {
             DrawStatusIconTo(canvas, slot, 23610, _state.ParalysisTimer, _state.ParalysisMaxTimer, "PARALIZADO",
-                           new Color(1f, 0.2f, 0.2f));
+                           StatusColorParalyzed);
             slot++;
         }
 
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
         {
             float inviCurrent = selfCh.InvisibleCountdown;
-            // Spell invisibility has countdown (label "INVISIBLE"), hide skill has no countdown (label "OCULTO")
             bool isSpellInvi = selfCh.InvisibleMaxCountdown > 0;
             string inviLabel = isSpellInvi ? "INVISIBLE" : "OCULTO";
             DrawStatusIconTo(canvas, slot, 23611, inviCurrent, selfCh.InvisibleMaxCountdown, inviLabel,
-                           new Color(0.6f, 0.6f, 1f));
+                           StatusColorInvisible);
             slot++;
         }
 
         if (_state.Meditating)
         {
             DrawStatusIconTo(canvas, slot, 0, -1, -1, "MEDITANDO",
-                           new Color(0.4f, 0.8f, 1f));
+                           StatusColorMeditating);
             slot++;
         }
 
         if (_state.Resting)
         {
             DrawStatusIconTo(canvas, slot, 0, -1, -1, "DESCANSANDO",
-                           new Color(0.4f, 1f, 0.4f));
+                           StatusColorResting);
             slot++;
         }
 
         if (_state.UserNavigating)
         {
-            // Draw on the right side to avoid overlapping countdown bars
-            DrawStatusLabelRight(canvas, "NAVEGANDO", new Color(0.3f, 0.7f, 1f));
+            DrawStatusLabelRight(canvas, "NAVEGANDO", StatusColorNavigating);
         }
     }
 
@@ -303,14 +333,15 @@ public partial class WorldRenderer
         // Must cover same range as L2/L3 terrain buffer to prevent flash at edges
         for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
+            float sy = _screenYCache[y - _frameMinY];
             for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
                 if (IsWaterGrh(tile.Layer1)) continue; // skip water
 
-                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
-                                            _framePixelOffsetX, _framePixelOffsetY);
+                // Opt 4: use pre-computed screen coords
+                Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
                 DrawTileGrhTo(canvas, tile.Layer1, pos, center: false);
             }
         }
@@ -326,12 +357,14 @@ public partial class WorldRenderer
 
         for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
+            float sy = _screenYCache[y - _frameMinY];
             for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer2 <= 0) continue;
 
-                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+                // Opt 4: use pre-computed screen coords
+                Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
                 DrawTileGrhTo(canvas, tile.Layer2, pos, center: true);
             }
         }

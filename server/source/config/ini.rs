@@ -6,7 +6,6 @@
 /// - Case-insensitive section and key lookup (VB6 behavior)
 /// - Comments starting with ; or '
 /// - Preserves original formatting for write-back
-
 use std::collections::HashMap;
 use std::path::Path;
 

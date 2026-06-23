@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using ArgentumNextgen.Data;
+using ArgentumNextgen.Data.Resources;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
 using ArgentumNextgen.Rendering;
@@ -306,6 +307,7 @@ public partial class Main : Control
 	private Label? _macroStatusLabel; // Shows "MACRO" when work/spell macro is active
 
 	private string _dataPath = ""; // cached for macro file I/O
+	private IResourceProvider? _resources;
 
 	// Custom stat bar overlay (draws colored fill rects at VB6 positions)
 	private StatBarOverlay? _statBarOverlay;
@@ -425,6 +427,9 @@ public partial class Main : Control
 	// Tutorial panel
 	private TutorialPanel? _tutorialPanel;
 
+	// Signal/cartel overlay (VB6: frmCartel)
+	private SignalPanel? _signalPanel;
+
 	// Dialog manager (extracted to DialogManager.cs)
 	private UI.DialogManager? _dialogManager;
 
@@ -457,6 +462,7 @@ public partial class Main : Control
 			_packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
 			_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
 		}
+		_packetHandler.OnInventoryChanged = () => _inventoryPanel?.MarkDirty();
 		_packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
 		{
 			var floatingLayer = _worldRenderer?.FloatingText;
@@ -473,7 +479,7 @@ public partial class Main : Control
 		string dataPath;
 		if (OS.HasFeature("editor"))
 		{
-			dataPath = ProjectSettings.GlobalizePath("res://Data");
+			dataPath = ResolveEditorDataPath();
 		}
 		else
 		{
@@ -487,12 +493,13 @@ public partial class Main : Control
 
 		GD.Print($"[MAIN] Data path: {dataPath}");
 		_dataPath = dataPath;
-		_gameData.LoadAll(dataPath);
+		_resources = ResourceProviderFactory.Create(dataPath);
+		RpgTheme.ResourceProvider = _resources;
+		_gameData.LoadAll(_resources);
 		_state.TextMessages = _gameData.TextMessages;
 
 		// Load particle definitions
-		string particlesPath = System.IO.Path.Combine(dataPath, "INIT", "Particles.ini");
-		_particleSystem.LoadDefinitions(particlesPath, _state);
+		_particleSystem.LoadDefinitions(_resources, "INIT/Particles.ini", _state);
 
 		// Load user configuration (Options.ao)
 		_state.Config = GameConfig.Load(dataPath);
@@ -545,14 +552,14 @@ public partial class Main : Control
 		// Setup sound manager
 		_soundManager = new SoundManager();
 		AddChild(_soundManager);
-		_soundManager.Init(dataPath);
+		_soundManager.Init(dataPath, _resources);
 		_soundManager.MusicEnabled = _state.Config.MusicEnabled;
 		_soundManager.SoundEnabled = _state.Config.SfxEnabled;
 		_soundManager.SetMusicVolume(_state.Config.MusicVolume);
 		_soundManager.SetSfxVolume(_state.Config.SfxVolume);
 
 		// Initialize weather renderer with sound manager (rain sound)
-		_worldRenderer?.InitWeather(_soundManager);
+		_worldRenderer?.InitWeather(_soundManager, _resources);
 
 		// Set Linear texture filtering on UI layers so fonts/text scale smoothly.
 		// Game viewport keeps Nearest (pixel art) via project default_texture_filter=0.
@@ -793,6 +800,7 @@ public partial class Main : Control
 		// Custom stat bar overlay — draws colored fill rects at VB6 positions
 		_statBarOverlay = new StatBarOverlay();
 		_statBarOverlay.DataPath = dataPath;
+		_statBarOverlay.Resources = _resources;
 		_statBarOverlay.Position = Vector2.Zero;
 		_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 		_statBarOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
@@ -886,12 +894,7 @@ public partial class Main : Control
 			else
 				ExitFullscreen();
 		}
-		else
-		{
-			// First launch — show window mode dialog (will be behind startup loading screen)
-			_dialogManager?.ShowWindowModeDialog();
-			CallDeferred(MethodName.CenterWindowModeDialog);
-		}
+		// Window mode dialog will be shown AFTER loading screen completes (first launch)
 
 		// Create startup loading screen on UILayer (above everything, blocks all input)
 		_startupLoadingScreen = new LoadingScreen();
@@ -957,72 +960,119 @@ public partial class Main : Control
 
 	public override void _Process(double delta)
 	{
-		// Startup texture preload (blocks everything until done)
-		if (!_startupPreloadDone && _texturePreloadIter != null)
-		{
-			var texMgr = _gameData.Textures;
-			if (texMgr != null)
-			{
-				bool done = texMgr.TickPreload(_texturePreloadIter, 12.0);
-				float progress = texMgr.PreloadTotal > 0
-					? (float)texMgr.PreloadDone / texMgr.PreloadTotal
-					: 1f;
-				_startupLoadingScreen?.SetProgress(progress);
-				_startupLoadingScreen?.SetLabel(
-					$"Cargando gráficos... ({texMgr.PreloadDone}/{texMgr.PreloadTotal})");
-
-				if (done)
-				{
-					_startupPreloadDone = true;
-					_texturePreloadIter = null;
-					_startupLoadingScreen?.Complete();
-					GD.Print("[MAIN] Texture preload complete");
-
-					// Now show login (or window mode dialog if first launch)
-					if (_state.Config.LoadedFromFile)
-					{
-						if (_loginForm != null) _loginForm.ShowForm();
-						CallDeferred(MethodName.FocusAccountInput);
-					}
-				}
-			}
-			return; // Block all other processing
-		}
-
+		if (ProcessPreload()) return;
 		if (_tcp == null || _packetHandler == null) return;
+		if (ProcessConnection()) return;
+		ProcessPackets();
+		ProcessScreenTransitions();
+		ProcessErrors(delta);
+		ProcessGameLoop(delta);
+		// Flush all queued TCP writes in one batch (reduces syscalls)
+		_tcp?.FlushOutbound();
+	}
 
-		// VB6: Socket1_Disconnect — detect lost connection and return to login
-		if (!_connecting && !_tcp.IsConnected)
+	// Startup texture preload (blocks everything until done).
+	// Returns true if preload is still in progress (caller should return).
+	private bool ProcessPreload()
+	{
+		if (_startupPreloadDone || _texturePreloadIter == null) return false;
+
+		var texMgr = _gameData.Textures;
+		if (texMgr != null)
 		{
-			if (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.AccountCreate)
+			bool done = texMgr.TickPreload(_texturePreloadIter, 12.0);
+			float progress = texMgr.PreloadTotal > 0
+				? (float)texMgr.PreloadDone / texMgr.PreloadTotal
+				: 1f;
+			_startupLoadingScreen?.SetProgress(progress);
+			_startupLoadingScreen?.SetLabel(
+				$"Cargando gráficos... ({texMgr.PreloadDone}/{texMgr.PreloadTotal})");
+
+			if (done)
 			{
-				// Drain packets buffered before disconnect (e.g. success message sent just before server closed)
-				if (_tcp != null)
+				_startupPreloadDone = true;
+				_texturePreloadIter = null;
+				_startupLoadingScreen?.Complete();
+				GD.Print("[MAIN] Texture preload complete");
+
+				// Now show login or window mode dialog
+				if (_state.Config.LoadedFromFile)
 				{
-					foreach (var chunk in _tcp.PollPackets())
-						_packetHandler?.HandleBinaryData(chunk);
+					if (_loginForm != null) _loginForm.ShowForm();
+					CallDeferred(MethodName.FocusAccountInput);
 				}
-
-				// Server dropped connection during login/account creation — reset UI
-				_tcp?.Dispose();
-				_tcp = null;
-				_packetHandler = null;
-				_inputHandler = null;
-				// Only show generic disconnect if no specific error is pending
-				if (string.IsNullOrEmpty(_state.LoginError))
-					_dialogManager?.ShowMensaje("El servidor cerró la conexión.", GetViewportRect().Size);
-				if (_loginForm?.ConnectButton != null) _loginForm!.ConnectButton.Disabled = false;
-				return;
+				else
+				{
+					// First launch — show window mode dialog (loading screen is gone)
+					_dialogManager?.ShowWindowModeDialog();
+					CallDeferred(MethodName.CenterWindowModeDialog);
+				}
 			}
-			HandleDisconnect("Conexión perdida con el servidor.");
-			return;
 		}
+		return true; // Block all other processing
+	}
 
-		// Poll and process inbound binary data
-		var dataChunks = _tcp.PollPackets();
+	// VB6: Socket1_Disconnect — detect lost connection and return to login.
+	// Returns true if the connection was lost and the caller should return.
+	private bool ProcessConnection()
+	{
+		if (_connecting || _tcp!.IsConnected) return false;
+
+		if (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.AccountCreate)
+		{
+			// Drain packets buffered before disconnect (e.g. success message sent just before server closed)
+			if (_tcp != null)
+			{
+				foreach (var chunk in _tcp.PollPackets())
+					_packetHandler?.HandleBinaryData(chunk);
+			}
+
+			// Server dropped connection during login/account creation — reset UI
+			_tcp?.Dispose();
+			_tcp = null;
+			_packetHandler = null;
+			_inputHandler = null;
+
+			// After draining packets, show any error/success message from the server
+			if (!string.IsNullOrEmpty(_state.LoginError))
+			{
+				string msg = _state.LoginError;
+				_state.LoginError = "";
+
+				// Check for account creation success
+				if (_state.CurrentScreen == Screen.AccountCreate &&
+					msg.Contains("exito", StringComparison.OrdinalIgnoreCase))
+				{
+					_state.CurrentScreen = Screen.Login;
+					HandleScreenChange(Screen.Login);
+					_lastScreen = Screen.Login;
+					_dialogManager?.ShowMensaje("Cuenta creada exitosamente. Ingrese sus datos.", GetViewportRect().Size);
+				}
+				else
+				{
+					// Show the actual error message from the server
+					_dialogManager?.ShowMensaje(msg, GetViewportRect().Size);
+				}
+			}
+			else
+			{
+				_dialogManager?.ShowMensaje("El servidor cerró la conexión.", GetViewportRect().Size);
+			}
+
+			if (_loginForm?.ConnectButton != null) _loginForm!.ConnectButton.Disabled = false;
+			return true;
+		}
+		HandleDisconnect("Conexión perdida con el servidor.");
+		return true;
+	}
+
+	// Poll and process inbound binary data.
+	private void ProcessPackets()
+	{
+		var dataChunks = _tcp!.PollPackets();
 		foreach (byte[] chunk in dataChunks)
 		{
-			_packetHandler.HandleBinaryData(chunk);
+			_packetHandler!.HandleBinaryData(chunk);
 			if (_packetHandler.StreamCorrupted)
 			{
 				HandleDisconnect("Stream corrupted (unknown opcode) — disconnected.");
@@ -1032,14 +1082,21 @@ public partial class Main : Control
 
 		// Update spatial audio listener position each frame
 		_soundManager?.UpdateListenerPosition(_state.UserPosX, _state.UserPosY);
+	}
 
-		// React to screen transitions driven by PacketHandler
+	// React to screen transitions driven by PacketHandler.
+	private void ProcessScreenTransitions()
+	{
 		if (_state.CurrentScreen != _lastScreen)
 		{
 			HandleScreenChange(_state.CurrentScreen);
 			_lastScreen = _state.CurrentScreen;
 		}
+	}
 
+	// Show login/server errors and Mensaje dialogs; handle account creation timer.
+	private void ProcessErrors(double delta)
+	{
 		// Show login/server errors via Mensaje dialog (not inline labels)
 		if (!string.IsNullOrEmpty(_state.LoginError))
 		{
@@ -1100,7 +1157,11 @@ public partial class Main : Control
 				_dialogManager?.ShowMensaje("Cuenta creada exitosamente. Ingrese sus datos.", GetViewportRect().Size);
 			}
 		}
+	}
 
+	// Animations, particles, lighting, input, macros, UI, and movement updates.
+	private void ProcessGameLoop(double delta)
+	{
 		// Map loading is now handled immediately in HandleChangeMap via OnMapLoad callback.
 		// This ensures BQ/HO packets apply to the correct MapData.
 
@@ -1272,6 +1333,32 @@ public partial class Main : Control
 
 		// Delegate game-screen input to InputRouter
 		_inputRouter?.HandleGameInput(@event, GetViewport(), GetTree());
+	}
+
+	/// <summary>
+	/// Resolve data path when running inside the Godot editor.
+	/// Priority:
+	/// 1. ARGENTUM_DATA_PATH env var (explicit override)
+	/// 2. res://Data/ if it contains .aopak files
+	/// 3. res://Data/ as fallback
+	/// </summary>
+	private static string ResolveEditorDataPath()
+	{
+		// Explicit override via environment variable
+		string? envPath = System.Environment.GetEnvironmentVariable("ARGENTUM_DATA_PATH");
+		if (!string.IsNullOrEmpty(envPath) && System.IO.Directory.Exists(envPath))
+			return envPath;
+
+		string editorData = ProjectSettings.GlobalizePath("res://Data");
+
+		// Check for .aopak files already present in editor Data/
+		if (System.IO.Directory.Exists(editorData) &&
+		    System.IO.Directory.GetFiles(editorData, "*.aopak").Length > 0)
+		{
+			return editorData;
+		}
+
+		return editorData;
 	}
 
 	public override void _ExitTree()

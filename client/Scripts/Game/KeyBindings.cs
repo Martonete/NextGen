@@ -30,9 +30,7 @@ public enum GameAction
     MoveRight = 16,   // VB6 idx 17: Derecha (→ / D)
     Rest = 17,        // Descansar (F8)
     ToggleMusic = 18, // VB6 idx 19: Música (M → P in WASD)
-    ShowMap = 19,     // VB6 idx 20: Mapa (currently unused)
-    ItemSafety = 20,  // Unused — item drop safety removed
-    Meditate = 21,    // VB6 idx 22: Meditar (F6)
+    Meditate = 19,    // VB6 idx 22: Meditar (F6)
 }
 
 /// <summary>
@@ -56,7 +54,7 @@ public struct KeyBind
 /// </summary>
 public class KeyBindings
 {
-    public const int ActionCount = 22;
+    public const int ActionCount = 20;
 
     /// <summary>Current bindings (indexed by GameAction).</summary>
     public KeyBind[] Binds = new KeyBind[ActionCount];
@@ -83,9 +81,7 @@ public class KeyBindings
         "Mover derecha",                  // 16
         "Descansar",                      // 17 — Rest toggle
         "Música on/off",                  // 18
-        "Mostrar mapa",                   // 19
-        "(Libre)",                        // 20 — was Seguro de items, removed
-        "Meditar",                        // 21
+        "Meditar",                        // 19
     };
 
     /// <summary>
@@ -130,8 +126,6 @@ public class KeyBindings
         Binds[(int)GameAction.MoveRight]   = new KeyBind(Key.Right, "Derecha");     // VB6: mKeyRight = vbKeyRight
         Binds[(int)GameAction.Rest]        = new KeyBind(Key.F8, "F8");              // Descansar toggle
         Binds[(int)GameAction.ToggleMusic] = new KeyBind(Key.M, "M");               // VB6: mKeyToggleMusic = vbKeyM
-        Binds[(int)GameAction.ShowMap]     = new KeyBind(Key.F7, "F7");              // VB6: mKeyCastSpellMacro = vbKeyF7
-        Binds[(int)GameAction.ItemSafety]  = new KeyBind(Key.None, "");               // Unused — item safety removed
         Binds[(int)GameAction.Meditate]    = new KeyBind(Key.F6, "F6");              // VB6: mKeyMeditate = vbKeyF6
     }
 

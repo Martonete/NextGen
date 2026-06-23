@@ -3,20 +3,20 @@
 // INI format with [INIT] NumeroHechizos and [HECHIZO1]..[HECHIZOn] sections.
 // 65 spells in the current database.
 
-use std::path::Path;
 use crate::config::IniFile;
+use std::path::Path;
 
 /// Spell type matching VB6 TipoHechizo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SpellType {
-    Properties = 1,     // HP/Mana/Sta modifications
-    Status = 2,         // Status effects (poison, paralyze, etc.)
-    Materialize = 3,    // Create items
-    Invocation = 4,     // Summon creatures
-    Teleport = 5,       // Teleportation
-    Bubble = 6,         // Bubble shield
-    SummonPet = 7,      // Summon pet
+    Properties = 1,  // HP/Mana/Sta modifications
+    Status = 2,      // Status effects (poison, paralyze, etc.)
+    Materialize = 3, // Create items
+    Invocation = 4,  // Summon creatures
+    Teleport = 5,    // Teleportation
+    Bubble = 6,      // Bubble shield
+    SummonPet = 7,   // Summon pet
     Unknown = 0,
 }
 
@@ -79,7 +79,7 @@ pub struct SpellData {
     pub sta_requerido: i32,
 
     // Effects — HP/Mana/Sta modifications
-    pub sube_hp: i32,       // 1=heal, 2=damage
+    pub sube_hp: i32, // 1=heal, 2=damage
     pub min_hp: i32,
     pub max_hp: i32,
     pub sube_mana: i32,
@@ -114,18 +114,19 @@ pub struct SpellData {
     pub cura_veneno: bool,
     pub remover_paralisis: bool,
     pub revivir: bool,
-    pub estupidez: bool,    // VB6: Stun/dumb effect
-    pub ceguera: bool,      // VB6: Blindness effect
-    pub mimetiza: bool,     // VB6: Druid mimicry
-    pub remover_maldicion: bool, // VB6: Remove curse
-    pub remover_estupidez: bool, // VB6: Remove stun
+    pub estupidez: bool,                    // VB6: Stun/dumb effect
+    pub ceguera: bool,                      // VB6: Blindness effect
+    pub mimetiza: bool,                     // VB6: Druid mimicry
+    pub remover_maldicion: bool,            // VB6: Remove curse
+    pub remover_estupidez: bool,            // VB6: Remove stun
+    pub remuve_invisibilidad_parcial: bool, // VB6: RemueveInvisibilidadParcial — detect hidden (terrain spell)
     // Staff requirement (VB6: NeedStaff, StaffAffected)
     pub need_staff: i32,
     pub staff_affected: bool,
 
     // Invocation/summon
-    pub num_npc: i32,       // NPC index to summon
-    pub cant: i32,          // Number to summon
+    pub num_npc: i32, // NPC index to summon
+    pub cant: i32,    // Number to summon
 
     // Teleport
     pub portal_map: i32,
@@ -133,9 +134,9 @@ pub struct SpellData {
     pub portal_y: i32,
 
     // Visual/audio
-    pub wav: i32,           // Sound effect
-    pub fx_grh: i32,        // Visual effect graphic
-    pub loops: i32,         // Animation loops
+    pub wav: i32,    // Sound effect
+    pub fx_grh: i32, // Visual effect graphic
+    pub loops: i32,  // Animation loops
 }
 
 impl Default for SpellData {
@@ -153,23 +154,55 @@ impl Default for SpellData {
             min_skill: 0,
             mana_requerido: 0,
             sta_requerido: 0,
-            sube_hp: 0, min_hp: 0, max_hp: 0,
-            sube_mana: 0, min_mana: 0, max_mana: 0,
-            sube_sta: 0, min_sta: 0, max_sta: 0,
-            sube_agilidad: 0, min_agilidad: 0, max_agilidad: 0,
-            sube_fuerza: 0, min_fuerza: 0, max_fuerza: 0,
-            sube_carisma: 0, min_carisma: 0, max_carisma: 0,
-            sube_ham: 0, min_ham: 0, max_ham: 0,
-            sube_sed: 0, min_sed: 0, max_sed: 0,
-            invisibilidad: false, paraliza: false, inmoviliza: false,
-            envenena: false, maldicion: false, bendicion: false,
-            cura_veneno: false, remover_paralisis: false, revivir: false,
-            estupidez: false, ceguera: false, mimetiza: false,
-            remover_maldicion: false, remover_estupidez: false,
-            need_staff: 0, staff_affected: false,
-            num_npc: 0, cant: 0,
-            portal_map: 0, portal_x: 0, portal_y: 0,
-            wav: 0, fx_grh: 0, loops: 0,
+            sube_hp: 0,
+            min_hp: 0,
+            max_hp: 0,
+            sube_mana: 0,
+            min_mana: 0,
+            max_mana: 0,
+            sube_sta: 0,
+            min_sta: 0,
+            max_sta: 0,
+            sube_agilidad: 0,
+            min_agilidad: 0,
+            max_agilidad: 0,
+            sube_fuerza: 0,
+            min_fuerza: 0,
+            max_fuerza: 0,
+            sube_carisma: 0,
+            min_carisma: 0,
+            max_carisma: 0,
+            sube_ham: 0,
+            min_ham: 0,
+            max_ham: 0,
+            sube_sed: 0,
+            min_sed: 0,
+            max_sed: 0,
+            invisibilidad: false,
+            paraliza: false,
+            inmoviliza: false,
+            envenena: false,
+            maldicion: false,
+            bendicion: false,
+            cura_veneno: false,
+            remover_paralisis: false,
+            revivir: false,
+            estupidez: false,
+            ceguera: false,
+            mimetiza: false,
+            remover_maldicion: false,
+            remover_estupidez: false,
+            remuve_invisibilidad_parcial: false,
+            need_staff: 0,
+            staff_affected: false,
+            num_npc: 0,
+            cant: 0,
+            portal_map: 0,
+            portal_x: 0,
+            portal_y: 0,
+            wav: 0,
+            fx_grh: 0,
+            loops: 0,
         }
     }
 }
@@ -177,10 +210,10 @@ impl Default for SpellData {
 /// Load the complete spells database.
 pub fn load_spells(base: &Path) -> Result<Vec<SpellData>, String> {
     let path = base.join("dat").join("Hechizos.dat");
-    let ini = IniFile::load(&path)
-        .map_err(|e| format!("Failed to load Hechizos.dat: {}", e))?;
+    let ini = IniFile::load(&path).map_err(|e| format!("Failed to load Hechizos.dat: {}", e))?;
 
-    let num_spells: usize = ini.get("INIT", "NumeroHechizos")
+    let num_spells: usize = ini
+        .get("INIT", "NumeroHechizos")
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
@@ -193,15 +226,14 @@ pub fn load_spells(base: &Path) -> Result<Vec<SpellData>, String> {
     for i in 1..=num_spells {
         let section = format!("Hechizo{}", i);
 
-        let get_str = |key: &str| -> String {
-            ini.get(&section, key).unwrap_or_default()
-        };
+        let get_str = |key: &str| -> String { ini.get(&section, key).unwrap_or_default() };
         let get_int = |key: &str| -> i32 {
-            ini.get(&section, key).and_then(|s| s.parse().ok()).unwrap_or(0)
+            ini.get(&section, key)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0)
         };
-        let get_bool = |key: &str| -> bool {
-            ini.get(&section, key).map(|s| s == "1").unwrap_or(false)
-        };
+        let get_bool =
+            |key: &str| -> bool { ini.get(&section, key).map(|s| s == "1").unwrap_or(false) };
 
         let spell = SpellData {
             index: i,
@@ -254,6 +286,7 @@ pub fn load_spells(base: &Path) -> Result<Vec<SpellData>, String> {
             mimetiza: get_bool("Mimetiza"),
             remover_maldicion: get_bool("RemoverMaldicion"),
             remover_estupidez: get_bool("RemoverEstupidez"),
+            remuve_invisibilidad_parcial: get_bool("RemueveInvisibilidadParcial"),
             need_staff: get_int("NeedStaff"),
             staff_affected: get_bool("StaffAffected"),
             num_npc: get_int("numNPC"),

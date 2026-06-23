@@ -13,6 +13,7 @@ namespace AOWorldEditor.Editor;
 public partial class NpcPalette : VBoxContainer
 {
     [Signal] public delegate void NpcSelectedEventHandler(int npcNumber);
+    [Signal] public delegate void RequestServerPathEventHandler();
 
     public NpcDatabase? Database;
     public GrhData[]? Grhs;
@@ -30,6 +31,7 @@ public partial class NpcPalette : VBoxContainer
     private ScrollContainer? _scroll;
     private VBoxContainer? _listContainer;
     private Label? _infoLabel;
+    private VBoxContainer? _emptyState;
 
     private int _selectedNpc;
     private readonly List<NpcRecord> _filteredList = new();
@@ -86,6 +88,25 @@ public partial class NpcPalette : VBoxContainer
         _listContainer.AddThemeConstantOverride("separation", 1);
         _listContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _scroll.AddChild(_listContainer);
+
+        // Empty state (shown when no server data)
+        _emptyState = new VBoxContainer();
+        _emptyState.AddThemeConstantOverride("separation", 8);
+        _emptyState.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _emptyState.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _emptyState.Visible = false;
+
+        var emptyLabel = EditorTheme.MakeLabel("Selecciona la carpeta del servidor\npara cargar NPCs y objetos.",
+            EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+        emptyLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        emptyLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _emptyState.AddChild(emptyLabel);
+
+        var serverBtn = EditorTheme.PrimaryButton("Seleccionar Server...");
+        serverBtn.Pressed += () => EmitSignal(SignalName.RequestServerPath);
+        _emptyState.AddChild(serverBtn);
+
+        AddChild(_emptyState);
     }
 
     /// <summary>Rebuild the NPC list after data is loaded or filter changes.</summary>
@@ -106,9 +127,13 @@ public partial class NpcPalette : VBoxContainer
 
         if (Database == null || Database.All.Count == 0)
         {
-            _infoLabel!.Text = "Sin datos de NPCs — configura la ruta del server";
+            _infoLabel!.Text = "";
+            if (_emptyState != null) _emptyState.Visible = true;
+            if (_scroll != null) _scroll.Visible = false;
             return;
         }
+        if (_emptyState != null) _emptyState.Visible = false;
+        if (_scroll != null) _scroll.Visible = true;
 
         // Apply filter
         string search = _searchBox?.Text?.Trim().ToLowerInvariant() ?? "";

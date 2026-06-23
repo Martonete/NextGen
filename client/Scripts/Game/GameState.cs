@@ -106,6 +106,13 @@ public class GameState
 	public short CurrentZoneX1, CurrentZoneY1, CurrentZoneX2, CurrentZoneY2;
 	public bool ZoneChanged; // flag consumed by Main._Process to update HUD
 	public bool ZoneLluvia, ZoneNieve, ZoneNiebla;
+	public byte ZoneAmbientR, ZoneAmbientG, ZoneAmbientB; // 0,0,0 = use map ambient
+	public byte ZoneFogDensity;   // 0 = off / fallback to flat niebla rect
+	public byte ZoneFogR = 128;
+	public byte ZoneFogG = 140;
+	public byte ZoneFogB = 160;
+	public sbyte ZoneFogSpeedX = 5;
+	public sbyte ZoneFogSpeedY = 2;
 
 	// User status flags
 	public bool Raining;
@@ -208,6 +215,8 @@ public class GameState
 
 	// Skills (22 skill values, indices 0-21 map to skill IDs 1-22)
 	public int[] Skills = new int[22];
+	// PorcentajeSkills: XP progress toward next level (0-99). Sent alongside Skills by server.
+	public int[] SkillPct = new int[22];
 	public int FreeSkillPoints;
 
 	// Character info strings (from server)
@@ -244,8 +253,9 @@ public class GameState
 	public string HelmLabel = "0/0";
 
 
-	// Inventory (25 slots)
-	public InventorySlot[] Inventory = new InventorySlot[25];
+	// Inventory (36 slots max, visible count driven by MaxInventorySlots / AddSlots packet)
+	public InventorySlot[] Inventory = new InventorySlot[36];
+	public int MaxInventorySlots = 25;
 	public int SelectedInvSlot = -1; // Currently selected inventory slot (0-based, -1 = none)
 
 	// Spells (20 slots)
@@ -307,6 +317,11 @@ public class GameState
 	public string GuildInfoType = ""; // "Leader", "Member", "Details" — which panel to show
 	public string GuildListData = ""; // raw guild list from server
 	public bool ShowGuildPanel;       // Trigger to open guild panel
+	// Signal display (map signs/signals)
+	public bool ShowSignal;
+	public string SignalText = "";
+	public int SignalGrh;
+
 	public bool ShowGuildFoundation;  // Trigger to open guild creation form
 	public bool SeguroClan = true;    // Clan safe toggle (local mirror)
 	public string UserGuildName = ""; // Current user's guild name (from CC tag)
@@ -327,6 +342,7 @@ public class GameState
 	public bool ShowQuestPanel;         // Trigger to open quest panel
 	public string QuestDataTag = "";    // Tag for pending quest data ("QuestList"/"QuestCurrent"/"QuestSelected")
 	public string QuestDataPayload = ""; // Payload for pending quest data
+	public string QuestNpcListData = ""; // NPC quest list data from QuestNpcList packet (ID 203)
 
 	// Pet / Trainer system (VB6: frmEntrenador)
 	public List<PetInfo> PetList = new();          // Current player's pets
@@ -376,10 +392,18 @@ public class GameState
 	// GM Panel
 	public bool GmPanelOpen;
 
+	// Spawn list (GM)
+	public bool ShowSpawnList;
+	public string SpawnListData = "";
+
+	// User name list for GM panel
+	public string UserNameListData = "";
+
 	// SOS / Help system
 	public bool ShowSosPanel;
 	public string SosPlayerName = "";
 	public string SosMessage = "";
+	public string SosListData = "";
 
 	// Peace proposal
 	public bool ShowPeaceProposal;
@@ -391,6 +415,7 @@ public class GameState
 
 	// MOTD editor
 	public bool ShowMotdEditor;
+	public string MotdEditorContent = "";
 
 	// Guild member detail
 	public bool ShowGuildMember;
@@ -409,6 +434,36 @@ public class GameState
 	// Tutorial
 	public bool ShowTutorial;
 	public bool TutorialCompleted;
+
+	// Context menu (MenuData ID 221)
+	public bool ShowContextMenu;
+	public string MenuTargetName = "";
+	public byte MenuTargetPriv;
+
+	// Selection list (SelectData ID 222)
+	public bool ShowSelectList;
+	public string SelectListData = "";
+
+	// Mini ranking (MiniTopData ID 223)
+	public bool ShowMiniTop;
+	public string MiniTopData = "";
+
+	// Navigation (NavigationData ID 162)
+	public string NavigationData = "";
+
+	// Work mode (WorkMode ID 155)
+	public byte CurrentWorkMode;
+
+	// Timer info (TimerInfo ID 246)
+	public byte TimerInfoId;
+	public int TimerInfoTime1;
+	public int TimerInfoTime2;
+
+	// Battle team scores (BattleTeamScores ID 163)
+	public int BattleScoreT1;
+	public int BattleScoreT2;
+	public int BattleScoreT3;
+	public int BattleScoreT4;
 
 	public GameState()
 	{

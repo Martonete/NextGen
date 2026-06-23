@@ -8,6 +8,7 @@ namespace AOWorldEditor.Data;
 /// <summary>
 /// Parses Graficos.ind binary file (same format as client).
 /// Auto-detects header variants (with/without MiCabecera).
+/// Loads from a loose file on disk.
 /// </summary>
 public static class GrhLoader
 {
@@ -16,6 +17,11 @@ public static class GrhLoader
     public static GrhData[] Load(string path)
     {
         byte[] fileData = File.ReadAllBytes(path);
+        return ParseGrhData(fileData);
+    }
+
+    private static GrhData[] ParseGrhData(byte[] fileData)
+    {
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         int version = reader.ReadInt32();

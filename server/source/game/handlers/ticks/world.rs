@@ -1,32 +1,94 @@
 //! World-level tick handlers: anti-cheat intervals, world cleanup, security, utilities.
 
-use tracing::info;
-use crate::net::ConnectionId;
-use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, SendTarget, CleanWorldEntry};
-use crate::protocol::{binary_packets, font_index};
-use crate::game::handlers::common::*;
-use crate::game::handlers::world;
-use crate::game::handlers::{warp_user};
 use super::remove_pet_from_owner;
+use crate::game::class_race::PlayerClass;
+use crate::game::handlers::common::*;
+use crate::game::handlers::warp_user;
+use crate::game::types::{CleanWorldEntry, GameState, SendTarget};
+use crate::game::world;
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
 
 pub async fn tick_intervals(state: &mut GameState) {
     // Collect IDs of users whose paralysis expired this tick (need to send PARADOK)
     let mut unparalyze: Vec<ConnectionId> = Vec::new();
 
+    // VB6 parity #16: collect paralyzed non-magic users whose caster may be out of range.
+    // We need two immutable borrows (victim + caster) so we gather data in a first pass,
+    // then apply the reduction in a second pass before the mutable countdown loop.
+    // Tuple: (victim_conn_id, caster_conn_id, victim_map, victim_x, victim_y)
+    let mut para_range_check: Vec<(ConnectionId, ConnectionId, i32, i32, i32)> = Vec::new();
+    for (&conn_id, user) in state.users.iter() {
+        if !user.logged || !user.paralyzed || user.counter_paralisis <= 2 {
+            continue;
+        }
+        if user.max_mana > 0 {
+            continue;
+        } // magic class — no reduction
+        if let Some(caster_id) = user.paralyzed_by {
+            para_range_check.push((conn_id, caster_id, user.pos_map, user.pos_x, user.pos_y));
+        }
+    }
+
+    // Apply range-based reduction: if caster is on a different map or outside the vision
+    // rectangle, cap the victim's remaining paralysis at 2 ticks (~0.08s, near-instant).
+    // This fires every tick while caster is out of range (capped at 2, so harmless repeat).
+    // VB6 13.3: reduces to 37 ticks; at 25 Hz Rust tick rate 2 ticks ≈ 0.08s is the
+    // closest "nearly expired" value that avoids a one-frame flash of movement.
+    for (victim_id, caster_id, v_map, v_x, v_y) in para_range_check {
+        let caster_out_of_range = state
+            .users
+            .get(&caster_id)
+            .map(|c| {
+                c.pos_map != v_map
+                    || (c.pos_x - v_x).abs() > world::MIN_X_BORDER
+                    || (c.pos_y - v_y).abs() > world::MIN_Y_BORDER
+            })
+            .unwrap_or(true); // caster offline = out of range
+
+        if caster_out_of_range {
+            if let Some(victim) = state.users.get_mut(&victim_id) {
+                // VB6 13.3: reduce to 37 VB6 ticks ≈ 3.7s. At Rust 25Hz ≈ 50 ticks.
+                if victim.counter_paralisis > 50 {
+                    victim.counter_paralisis = 50;
+                }
+            }
+        }
+    }
+
     for (&conn_id, user) in state.users.iter_mut() {
-        if !user.logged { continue; }
-        if user.interval_golpe > 0 { user.interval_golpe -= 1; }
-        if user.interval_flechas > 0 { user.interval_flechas -= 1; }
-        if user.interval_casteo > 0 { user.interval_casteo -= 1; }
-        if user.interval_poteo > 0 { user.interval_poteo -= 1; }
-        if user.interval_click > 0 { user.interval_click -= 1; }
-        if user.interval_trabajar > 0 { user.interval_trabajar -= 1; }
-        if user.interval_pu > 0 { user.interval_pu -= 1; }
-        if user.warp_immunity_ticks > 0 { user.warp_immunity_ticks -= 1; }
+        if !user.logged {
+            continue;
+        }
+        if user.interval_golpe > 0 {
+            user.interval_golpe -= 1;
+        }
+        if user.interval_flechas > 0 {
+            user.interval_flechas -= 1;
+        }
+        if user.interval_casteo > 0 {
+            user.interval_casteo -= 1;
+        }
+        if user.interval_poteo > 0 {
+            user.interval_poteo -= 1;
+        }
+        if user.interval_click > 0 {
+            user.interval_click -= 1;
+        }
+        if user.interval_trabajar > 0 {
+            user.interval_trabajar -= 1;
+        }
+        if user.interval_pu > 0 {
+            user.interval_pu -= 1;
+        }
+        if user.warp_immunity_ticks > 0 {
+            user.warp_immunity_ticks -= 1;
+        }
 
         // VB6: Meditation concentration delay — 2-second warmup before regen starts
-        if user.meditation_start_tick > 0 { user.meditation_start_tick -= 1; }
+        if user.meditation_start_tick > 0 {
+            user.meditation_start_tick -= 1;
+        }
 
         // VB6: EfectoParalisisUser — count down paralysis timer each tick
         if user.paralyzed {
@@ -36,6 +98,7 @@ pub async fn tick_intervals(state: &mut GameState) {
                 // Timer expired — remove paralysis
                 user.paralyzed = false;
                 user.immobilized = false;
+                user.paralyzed_by = None;
                 unparalyze.push(conn_id);
             }
         }
@@ -59,9 +122,17 @@ pub async fn tick_intervals(state: &mut GameState) {
                 // Timer expired — remove invisibility
                 // VB6: .Counters.Invisibilidad = RandomNumber(-100, 100) — variable next duration
                 user.invisible = false;
-                user.counter_invisible = rand_range(-10, 10); // Scaled: VB6 -100..100 ticks → -10..10 seconds
+                user.counter_invisible = rand_range(-100, 100); // VB6: RandomNumber(-100,100)
                 // VB6: only send SetInvisible(false) if Oculto=0 (still hidden → no visibility change)
-                uninvis.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating, user.hidden));
+                uninvis.push((
+                    conn_id,
+                    user.char_index.0 as i16,
+                    user.pos_map,
+                    user.pos_x,
+                    user.pos_y,
+                    user.navigating,
+                    user.hidden,
+                ));
             }
         }
     }
@@ -92,8 +163,13 @@ pub async fn tick_intervals(state: &mut GameState) {
             let skill = user.skills.get(7).copied().unwrap_or(0);
             let armor_obj = if user.equip.armor >= 1 && user.equip.armor <= user.inventory.len() {
                 user.inventory[user.equip.armor - 1].obj_index
-            } else { 0 };
-            if user.class == PlayerClass::Cazador && skill > 90 && (armor_obj == 648 || armor_obj == 360) {
+            } else {
+                0
+            };
+            if user.class == PlayerClass::Cazador
+                && skill > 90
+                && (armor_obj == 648 || armor_obj == 360)
+            {
                 continue;
             }
 
@@ -101,7 +177,15 @@ pub async fn tick_intervals(state: &mut GameState) {
             if user.counter_oculto <= 0 {
                 user.counter_oculto = 0;
                 user.hidden = false;
-                unhide.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating, user.invisible));
+                unhide.push((
+                    conn_id,
+                    user.char_index.0 as i16,
+                    user.pos_map,
+                    user.pos_x,
+                    user.pos_y,
+                    user.navigating,
+                    user.invisible,
+                ));
             }
         }
     }
@@ -144,7 +228,13 @@ pub async fn tick_intervals(state: &mut GameState) {
                 user.mimetizado = false;
                 user.ignorado = false;
                 user.counter_mimetismo = 0;
-                unmime.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y));
+                unmime.push((
+                    conn_id,
+                    user.char_index.0 as i16,
+                    user.pos_map,
+                    user.pos_x,
+                    user.pos_y,
+                ));
             }
         }
     }
@@ -152,8 +242,15 @@ pub async fn tick_intervals(state: &mut GameState) {
         state.send_console(conn_id, "Recuperas tu apariencia normal.", font_index::INFO);
         if let Some(u) = state.users.get(&conn_id) {
             let cp = binary_packets::write_character_change(
-                ci, u.body as i16, u.head as i16, u.heading as u8,
-                u.equip.weapon as i16, u.equip.shield as i16, u.equip.helmet as i16, 0, 0,
+                ci,
+                u.body as i16,
+                u.head as i16,
+                u.heading as u8,
+                u.equip.weapon as i16,
+                u.equip.shield as i16,
+                u.equip.helmet as i16,
+                0,
+                0,
             );
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
         }
@@ -196,14 +293,19 @@ pub async fn tick_intervals(state: &mut GameState) {
     for (&conn_id, user) in state.users.iter_mut() {
         if user.logged && user.traveling {
             user.counter_go_home += 1;
-            if user.counter_go_home >= 250 { // 250 ticks * 40ms = 10 seconds
+            if user.counter_go_home >= 250 {
+                // 250 ticks * 40ms = 10 seconds
                 teleport_home.push(conn_id);
             }
         }
     }
     for conn_id in teleport_home {
         // Get home city and resolve coordinates
-        let hogar = state.users.get(&conn_id).map(|u| u.hogar.clone()).unwrap_or_default();
+        let hogar = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.hogar.clone())
+            .unwrap_or_default();
         // Clear traveling state
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.traveling = false;
@@ -219,10 +321,14 @@ pub async fn tick_intervals(state: &mut GameState) {
 
     // --- NPC pet ownership expiry (VB6: TiemPerdique — 18s inactivity timer) ---
     // Pets with an owner: if owner is too far or offline, increment counter. At 450 ticks (18s), despawn.
-    let pet_indices: Vec<usize> = state.active_npc_indices.iter()
+    let pet_indices: Vec<usize> = state
+        .active_npc_indices
+        .iter()
         .copied()
         .filter(|&i| {
-            state.npcs.get(i)
+            state
+                .npcs
+                .get(i)
                 .and_then(|slot| slot.as_ref())
                 .map(|n| n.maestro_user.is_some())
                 .unwrap_or(false)
@@ -230,11 +336,21 @@ pub async fn tick_intervals(state: &mut GameState) {
         .collect();
     for npc_idx in pet_indices {
         let (owner_conn, npc_map, npc_x, npc_y) = match state.get_npc(npc_idx) {
-            Some(n) => (n.maestro_user.unwrap(), n.map, n.x, n.y),
+            Some(n) => match n.maestro_user {
+                Some(owner) => (owner, n.map, n.x, n.y),
+                None => continue, // filtered to is_some above — shouldn't happen
+            },
             None => continue,
         };
-        let owner_nearby = state.users.get(&owner_conn)
-            .map(|u| u.logged && u.pos_map == npc_map && (u.pos_x - npc_x).abs() <= 15 && (u.pos_y - npc_y).abs() <= 15)
+        let owner_nearby = state
+            .users
+            .get(&owner_conn)
+            .map(|u| {
+                u.logged
+                    && u.pos_map == npc_map
+                    && (u.pos_x - npc_x).abs() <= 15
+                    && (u.pos_y - npc_y).abs() <= 15
+            })
             .unwrap_or(false);
 
         if owner_nearby {
@@ -244,8 +360,12 @@ pub async fn tick_intervals(state: &mut GameState) {
             }
         } else {
             // Owner is far or offline — increment counter
-            let counter = state.get_npc(npc_idx).map(|n| n.counter_perdio_npc).unwrap_or(0);
-            if counter >= 450 { // 450 ticks * 40ms = 18 seconds
+            let counter = state
+                .get_npc(npc_idx)
+                .map(|n| n.counter_perdio_npc)
+                .unwrap_or(0);
+            if counter >= 450 {
+                // 450 ticks * 40ms = 18 seconds
                 // Despawn pet
                 let (map, x, y, char_index) = match state.get_npc(npc_idx) {
                     Some(n) => (n.map, n.x, n.y, n.char_index),
@@ -266,15 +386,25 @@ pub async fn tick_intervals(state: &mut GameState) {
     // --- Rain STA drain (VB6: EfectoLluvia — 3% MaxSTA drain on exterior maps) ---
     if state.raining {
         state.rain_counter += 1;
-        if state.rain_counter >= 100 { // 100 ticks * 40ms = 4 seconds
+        if state.rain_counter >= 100 {
+            // 100 ticks * 40ms = 4 seconds
             state.rain_counter = 0;
             let user_ids: Vec<ConnectionId> = state.users.keys().copied().collect();
             for conn_id in user_ids {
-                let should_drain = state.users.get(&conn_id).map(|u| {
-                    u.logged && !u.dead && u.privileges == 0 && is_exterior_map(state, u.pos_map)
-                }).unwrap_or(false);
+                let should_drain = state
+                    .users
+                    .get(&conn_id)
+                    .map(|u| {
+                        u.logged
+                            && !u.dead
+                            && u.privileges == 0
+                            && is_exterior_map(state, u.pos_map)
+                    })
+                    .unwrap_or(false);
                 if should_drain {
-                    let sta_drain = state.users.get(&conn_id)
+                    let sta_drain = state
+                        .users
+                        .get(&conn_id)
                         .map(|u| ((u.max_sta as f64 * 3.0) / 100.0) as i32)
                         .unwrap_or(0);
                     if sta_drain > 0 {
@@ -293,12 +423,16 @@ pub async fn tick_intervals(state: &mut GameState) {
 /// VB6: Maps are "intemperie" if they are outdoor maps (not dungeons/interiors).
 /// We check: pk=true (PvP/exterior maps), or if the terrain is not explicitly a dungeon.
 fn is_exterior_map(state: &GameState, map_num: i32) -> bool {
-    state.game_data.maps.get(map_num as usize)
+    state
+        .game_data
+        .maps
+        .get(map_num as usize)
         .and_then(|m| m.as_ref())
         .map(|m| {
             // Maps with pk=true are exterior (PvP-enabled outdoor maps).
             // Also check terreno — dungeons/caves are explicitly marked.
-            m.info.pk || m.info.terreno.eq_ignore_ascii_case("CAMPO")
+            m.info.pk
+                || m.info.terreno.eq_ignore_ascii_case("CAMPO")
                 || m.info.terreno.eq_ignore_ascii_case("BOSQUE")
                 || m.info.terreno.eq_ignore_ascii_case("NIEVE")
                 || m.info.terreno.eq_ignore_ascii_case("DESIERTO")
@@ -318,7 +452,11 @@ fn resolve_home_city(hogar: &str) -> (i32, i32, i32) {
         "ARGHAL" => (35, 50, 50),
         _ => {
             // Default: Ullathorpe if home not recognized
-            if hogar.is_empty() { (0, 0, 0) } else { (1, 50, 50) }
+            if hogar.is_empty() {
+                (0, 0, 0)
+            } else {
+                (1, 50, 50)
+            }
         }
     }
 }
@@ -398,13 +536,18 @@ pub fn tick_security(state: &mut GameState) {
             if *strikes >= strike_limit {
                 tracing::warn!(
                     "[SEC] Connection #{} flood: {} strikes ({}+ pkt/s), disconnecting",
-                    conn_id, strikes, count
+                    conn_id,
+                    strikes,
+                    count
                 );
                 state.security_kick_queue.push(*conn_id);
             } else {
                 tracing::debug!(
                     "[SEC] Connection #{} flood strike {}/{} ({} pkt/s)",
-                    conn_id, strikes, strike_limit, count
+                    conn_id,
+                    strikes,
+                    strike_limit,
+                    count
                 );
             }
         } else {
@@ -417,6 +560,7 @@ pub fn tick_security(state: &mut GameState) {
     state.packet_counts.clear();
 
     // Clean up flood_strikes for connections that no longer exist
-    state.flood_strikes.retain(|conn_id, _| state.users.contains_key(conn_id));
+    state
+        .flood_strikes
+        .retain(|conn_id, _| state.users.contains_key(conn_id));
 }
-

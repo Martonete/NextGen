@@ -85,6 +85,8 @@ public partial class PacketHandler
             if (slot == _state.ShieldEqpSlot) { _state.ShieldEqpSlot = 0; _state.ShieldLabel = "0/0"; }
             if (slot == _state.HelmEqpSlot) { _state.HelmEqpSlot = 0; _state.HelmLabel = "0/0"; }
         }
+
+        OnInventoryChanged?.Invoke();
     }
 
 

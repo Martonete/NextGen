@@ -7,9 +7,18 @@ use crate::protocol::packets::ServerPacketID;
 
 /// ID 46: Change inventory slot.
 pub fn write_change_inventory_slot(
-    slot: u8, obj_index: i16, name: &str, amount: i16,
-    equipped: bool, grh_index: i16, obj_type: u8,
-    max_hit: i16, min_hit: i16, max_def: i16, min_def: i16, value: f32,
+    slot: u8,
+    obj_index: i16,
+    name: &str,
+    amount: i16,
+    equipped: bool,
+    grh_index: i16,
+    obj_type: u8,
+    max_hit: i16,
+    min_hit: i16,
+    max_def: i16,
+    min_def: i16,
+    value: f32,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChangeInventorySlot.to_byte());
@@ -30,9 +39,18 @@ pub fn write_change_inventory_slot(
 
 /// ID 47: Change bank slot.
 pub fn write_change_bank_slot(
-    slot: u8, obj_index: i16, name: &str, amount: i16,
-    equipped: bool, grh_index: i16, obj_type: u8,
-    max_hit: i16, min_hit: i16, max_def: i16, min_def: i16, value: f32,
+    slot: u8,
+    obj_index: i16,
+    name: &str,
+    amount: i16,
+    equipped: bool,
+    grh_index: i16,
+    obj_type: u8,
+    max_hit: i16,
+    min_hit: i16,
+    max_def: i16,
+    min_def: i16,
+    value: f32,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChangeBankSlot.to_byte());
@@ -63,9 +81,17 @@ pub fn write_change_spell_slot(slot: u8, spell_index: i16, name: &str) -> Vec<u8
 
 /// ID 51: Change NPC inventory slot.
 pub fn write_change_npc_inv_slot(
-    slot: u8, name: &str, amount: i16, value: f32,
-    grh_index: i16, obj_index: i16, obj_type: u8,
-    max_hit: i16, min_hit: i16, max_def: i16, min_def: i16,
+    slot: u8,
+    name: &str,
+    amount: i16,
+    value: f32,
+    grh_index: i16,
+    obj_index: i16,
+    obj_type: u8,
+    max_hit: i16,
+    min_hit: i16,
+    max_def: i16,
+    min_def: i16,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChangeNPCInventorySlot.to_byte());
@@ -255,6 +281,34 @@ pub fn write_paralize_ok(duration_secs: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
+/// ID 56: Blind — notify player that they are now blinded (VB6: WriteBlind).
+pub fn write_blind() -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::Blind.to_byte());
+    pkt.into_bytes()
+}
+
+/// ID 57: Silence (Dumb/Estupidez) — notify player that they are stunned (VB6: WriteDumb).
+pub fn write_silence() -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::Silence.to_byte());
+    pkt.into_bytes()
+}
+
+/// ID 70: BlindNoMore — notify player that blindness has ended (VB6: WriteBlindNoMore).
+pub fn write_blind_no_more() -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::BlindNoMore.to_byte());
+    pkt.into_bytes()
+}
+
+/// ID 71: SilenceEnd (DumbNoMore) — notify player that stun has ended (VB6: WriteDumbNoMore).
+pub fn write_silence_end() -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::SilenceEnd.to_byte());
+    pkt.into_bytes()
+}
+
 /// ID 88: Pong.
 pub fn write_pong() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -320,5 +374,3 @@ pub fn write_trainer_creature_list(creatures: &str) -> Vec<u8> {
     pkt.write_ascii_string(creatures);
     pkt.into_bytes()
 }
-
-

@@ -1,5 +1,7 @@
 // Centralized game constants — item IDs, object IDs, sound IDs, and other magic
 // numbers that were previously duplicated across handler files.
+// VB6-parity stubs: not all constants are consumed yet.
+#![allow(dead_code)]
 
 // =====================================================================
 // Tool object indices (VB6 constants)
@@ -44,6 +46,10 @@ pub const GUANTE_HURTO: i32 = 873;
 // =====================================================================
 
 pub const LENA_OBJ: i32 = 58;
+/// Elven wood (VB6: LeñaElfica = 1006 — carpentry secondary material)
+pub const LENA_ELFICA: i32 = 1006;
+/// Fishing net (VB6: RED_PESCA = 543 — triggers net fishing on fish school tiles)
+pub const RED_PESCA: i32 = 543;
 pub const PESCADO_OBJ: i32 = 139;
 pub const HIERRO_CRUDO: i32 = 192;
 pub const PLATA_CRUDA: i32 = 193;

@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Threading.Tasks;
 using ArgentumNextgen.Data;
+using ArgentumNextgen.Data.Resources;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
 using ArgentumNextgen.Rendering;
@@ -86,8 +87,8 @@ public partial class Main
                     _vaultPanel!.Init(_state, _gameData, _tcp);
                     _guildBankPanel!.Init(_state, _gameData, _tcp);
                     _craftPanel!.Init(_state, _gameData, _tcp);
-                    _travelPanel!.Init(_state, _tcp, _dataPath);
-                    _deathPanel!.Init(_state, _tcp, _dataPath);
+                    _travelPanel!.Init(_state, _tcp, _dataPath, _resources);
+                    _deathPanel!.Init(_state, _tcp, _dataPath, _resources);
                     _guildPanel!.Init(_state, _tcp);
                     _guildFoundationPanel!.Init(_state, _tcp);
                     _forumPanel!.Init(_state, _tcp);
@@ -237,8 +238,9 @@ public partial class Main
     {
         GD.Print($"[MAIN] Disconnect: {message}");
 
-        // Save server error before reset clears it
+        // Save server error and current screen before reset clears them
         string serverError = _state.LoginError;
+        Screen previousScreen = _state.CurrentScreen;
 
         // Clean up TCP resources (VB6: Socket1.Disconnect + Socket1.Cleanup)
         _tcp?.Dispose();
@@ -249,6 +251,10 @@ public partial class Main
 
         // Reset all game state (VB6: clear logged, skills, attributes, etc.)
         ResetGameState();
+
+        // Stop map music and sound effects
+        _soundManager?.StopMusic();
+        _soundManager?.StopAllSfx();
 
         // Hide chat input and clear console
         _chatSystem?.HideChat();
@@ -276,14 +282,26 @@ public partial class Main
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();
 
-        // Switch to login screen with error message
-        _state.CurrentScreen = Screen.Login;
-        HandleScreenChange(Screen.Login);
-        _lastScreen = Screen.Login;
-        // Prefer server error message (e.g. "Password incorrecto") over generic disconnect
-        string displayMsg = !string.IsNullOrEmpty(serverError) ? serverError : message;
-        if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = displayMsg;
-        if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
+        // If disconnect from CharCreate or CharSelect, go back to CharSelect so user can retry without re-logging
+        if (previousScreen == Screen.CharCreate || previousScreen == Screen.CharSelect)
+        {
+            _state.CurrentScreen = Screen.CharSelect;
+            HandleScreenChange(Screen.CharSelect);
+            _lastScreen = Screen.CharSelect;
+            if (!string.IsNullOrEmpty(serverError))
+                _dialogManager?.ShowMensaje(serverError, GetViewportRect().Size);
+        }
+        else
+        {
+            // Switch to login screen with error message
+            _state.CurrentScreen = Screen.Login;
+            HandleScreenChange(Screen.Login);
+            _lastScreen = Screen.Login;
+            // Prefer server error message (e.g. "Password incorrecto") over generic disconnect
+            string displayMsg = !string.IsNullOrEmpty(serverError) ? serverError : message;
+            if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = displayMsg;
+            if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
+        }
 
         // VB6: frmConnect.MousePointer = 1 (normal cursor)
         Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
@@ -529,7 +547,7 @@ public partial class Main
 
         try
         {
-            _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
+            _state.MapData = MapLoader.Load(_resources, _state.CurrentMap);
             _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
             _gameData.Textures?.ResetPreload(); // Allow re-evaluation of preload state on map change
 
@@ -680,7 +698,7 @@ public partial class Main
         _dialogManager?.HideWindowModeDialog();
 
         if (_loginForm != null)
-            _loginForm.Visible = true;
+            _loginForm.ShowForm();
 
         CallDeferred(MethodName.FocusAccountInput);
     }

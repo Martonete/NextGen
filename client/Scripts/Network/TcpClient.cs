@@ -22,6 +22,8 @@ public class AoTcpClient : IDisposable
     private readonly ConcurrentQueue<byte[]> _inboundQueue = new();
     private readonly byte[] _readBuffer = new byte[8192];
     private volatile bool _connected;
+    private readonly List<byte[]> _outboundQueue = new();
+    private readonly object _writeLock = new();
 
     public bool IsConnected => _connected;
     public int PendingPackets => _inboundQueue.Count;
@@ -39,6 +41,10 @@ public class AoTcpClient : IDisposable
         _client.NoDelay = true;             // Disable Nagle — send packets immediately
         _client.SendBufferSize = 65536;     // 64KB send buffer
         _client.ReceiveBufferSize = 65536;  // 64KB receive buffer
+        _client.Client.SetSocketOption(
+            System.Net.Sockets.SocketOptionLevel.Socket,
+            System.Net.Sockets.SocketOptionName.KeepAlive,
+            true);
         _stream = _client.GetStream();
         _connected = true;
 
@@ -53,16 +59,48 @@ public class AoTcpClient : IDisposable
     public bool SendPacket(byte[] data)
     {
         if (!_connected || _stream == null || data.Length == 0) return false;
+        lock (_writeLock)
+        {
+            _outboundQueue.Add(data);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Flush all queued outbound packets in a single TCP write.
+    /// Call once per frame from _Process(), after all game logic.
+    /// </summary>
+    public void FlushOutbound()
+    {
+        if (!_connected || _stream == null) return;
+
+        byte[][] toSend;
+        lock (_writeLock)
+        {
+            if (_outboundQueue.Count == 0) return;
+            toSend = _outboundQueue.ToArray();
+            _outboundQueue.Clear();
+        }
 
         try
         {
-            _stream.Write(data, 0, data.Length);
-            return true;
+            int totalSize = 0;
+            foreach (var pkt in toSend) totalSize += pkt.Length;
+
+            byte[] batch = new byte[totalSize];
+            int offset = 0;
+            foreach (var pkt in toSend)
+            {
+                Buffer.BlockCopy(pkt, 0, batch, offset, pkt.Length);
+                offset += pkt.Length;
+            }
+
+            _stream.Write(batch, 0, batch.Length);
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[TCP] Send error: {ex.Message}");
-            return false;
+            GD.PrintErr($"[TCP] Flush error: {ex.Message}");
+            Disconnect();
         }
     }
 

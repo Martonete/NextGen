@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -12,7 +13,7 @@ namespace ArgentumNextgen.Data;
 /// </summary>
 public class TextureManager
 {
-    private readonly string _graficosPath;
+    private readonly IResourceProvider _resources;
     private readonly Dictionary<int, Texture2D> _cache = new();
     private readonly LinkedList<int> _lruOrder = new();
     private readonly Dictionary<int, LinkedListNode<int>> _lruNodes = new(); // O(1) LRU removal
@@ -26,9 +27,9 @@ public class TextureManager
     public int PreloadDone { get; private set; }
     public bool PreloadFinished { get; private set; }
 
-    public TextureManager(string graficosPath)
+    public TextureManager(IResourceProvider resources)
     {
-        _graficosPath = graficosPath;
+        _resources = resources;
     }
 
     /// <summary>
@@ -67,7 +68,7 @@ public class TextureManager
         }
 
         PreloadFinished = true;
-        GD.Print($"[TextureManager] Preloaded {PreloadDone} textures ({_cache.Count} cached)");
+        GD.Print($"[TextureManager] Preloaded {PreloadDone} textures ({_cache.Count} cached, base={_resources.BasePath})");
     }
 
     /// <summary>
@@ -92,18 +93,27 @@ public class TextureManager
     /// <summary>
     /// Get texture by file number. Returns cached texture or loads on demand.
     /// </summary>
+    private int _lruSkipCounter;
+    private const int LruBumpInterval = 60; // Only bump LRU every N accesses (reduces overhead 60x)
+
     public Texture2D? GetTexture(int fileNum)
     {
         if (fileNum <= 0) return null;
 
         if (_cache.TryGetValue(fileNum, out var cached))
         {
-            // Bump LRU — O(1)
-            if (_lruNodes.TryGetValue(fileNum, out var node))
+            // Lazy LRU: only bump position every N accesses to reduce overhead.
+            // Exact LRU ordering isn't critical — we only need recently-used textures
+            // to survive eviction, not perfect ordering.
+            if (++_lruSkipCounter >= LruBumpInterval)
             {
-                _lruOrder.Remove(node);
-                var newNode = _lruOrder.AddFirst(fileNum);
-                _lruNodes[fileNum] = newNode;
+                _lruSkipCounter = 0;
+                if (_lruNodes.TryGetValue(fileNum, out var node))
+                {
+                    _lruOrder.Remove(node);
+                    var newNode = _lruOrder.AddFirst(fileNum);
+                    _lruNodes[fileNum] = newNode;
+                }
             }
             return cached;
         }
@@ -124,11 +134,11 @@ public class TextureManager
         if (_cache.TryGetValue(fileNum, out var existing))
             return existing;
 
-        string filePath = System.IO.Path.Combine(_graficosPath, $"{fileNum}.png");
-        if (!System.IO.File.Exists(filePath))
+        string relativePath = $"Graficos/{fileNum}.png";
+        if (!_resources.Exists(relativePath))
             return null;
 
-        var image = Image.LoadFromFile(filePath);
+        var image = _resources.ReadImage(relativePath);
         if (image == null) return null;
 
         ApplyBlackColorKeyFast(image);

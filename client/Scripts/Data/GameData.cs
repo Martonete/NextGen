@@ -1,4 +1,5 @@
 using System;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -26,18 +27,15 @@ public class GameData
     public bool IsLoaded { get; private set; }
 
     /// <summary>
-    /// Load all game data files from the Data/ directory.
+    /// Load all game data files using the provided resource provider.
     /// </summary>
-    public void LoadAll(string dataPath)
+    public void LoadAll(IResourceProvider resources)
     {
-        string initPath = System.IO.Path.Combine(dataPath, "INIT");
-        string graficosPath = System.IO.Path.Combine(dataPath, "Graficos");
-
         GD.Print("[DATA] Loading game data...");
 
         try
         {
-            Grhs = GrhLoader.Load(System.IO.Path.Combine(initPath, "Graficos.ind"));
+            Grhs = GrhLoader.Load(resources);
         }
         catch (Exception ex)
         {
@@ -48,7 +46,7 @@ public class GameData
 
         try
         {
-            Bodies = BodyLoader.LoadBodies(System.IO.Path.Combine(initPath, "Personajes.ind"));
+            Bodies = BodyLoader.LoadBodies(resources);
         }
         catch (Exception ex)
         {
@@ -59,7 +57,7 @@ public class GameData
 
         try
         {
-            Heads = BodyLoader.LoadHeads(System.IO.Path.Combine(initPath, "Cabezas.ind"));
+            Heads = BodyLoader.LoadHeads(resources);
         }
         catch (Exception ex)
         {
@@ -70,7 +68,7 @@ public class GameData
 
         try
         {
-            Cascos = BodyLoader.LoadCascos(System.IO.Path.Combine(initPath, "Cascos.ind"));
+            Cascos = BodyLoader.LoadCascos(resources);
         }
         catch (Exception ex)
         {
@@ -81,7 +79,7 @@ public class GameData
 
         try
         {
-            Fxs = FxLoader.Load(System.IO.Path.Combine(initPath, "Fxs.ind"));
+            Fxs = FxLoader.Load(resources);
         }
         catch (Exception ex)
         {
@@ -92,8 +90,7 @@ public class GameData
 
         try
         {
-            var textosPath = System.IO.Path.Combine(initPath, "Textos.ao");
-            TextMessages = TextosLoader.Load(textosPath);
+            TextMessages = TextosLoader.Load(resources);
         }
         catch (Exception ex)
         {
@@ -101,24 +98,23 @@ public class GameData
             TextMessages = new TextMessage[1];
         }
 
-        Textures = new TextureManager(graficosPath);
+        Textures = new TextureManager(resources);
 
         // Load VB6 bitmap fonts (font1/2/3)
-        string fontDataPath = System.IO.Path.Combine(initPath, "Data");
         for (int fi = 1; fi <= 3; fi++)
         {
             // font1 uses .PNG (uppercase), font2/3 use .png (lowercase)
             // Try both casings for cross-platform compatibility
-            string datFile = System.IO.Path.Combine(fontDataPath, $"font{fi}.dat");
-            string pngFile = System.IO.Path.Combine(fontDataPath, $"font{fi}.png");
-            if (!System.IO.File.Exists(pngFile))
-                pngFile = System.IO.Path.Combine(fontDataPath, $"font{fi}.PNG");
-            Fonts[fi] = AoFont.Load(datFile, pngFile);
+            string datRelPath = $"INIT/Data/font{fi}.dat";
+            string pngRelPath = $"INIT/Data/font{fi}.png";
+            if (!resources.Exists(pngRelPath))
+                pngRelPath = $"INIT/Data/font{fi}.PNG";
+            Fonts[fi] = AoFont.Load(resources, datRelPath, pngRelPath);
         }
 
         try
         {
-            Weapons = WeaponShieldLoader.LoadWeapons(System.IO.Path.Combine(initPath, "Armas.dat"));
+            Weapons = WeaponShieldLoader.LoadWeapons(resources);
         }
         catch (Exception ex)
         {
@@ -128,7 +124,7 @@ public class GameData
 
         try
         {
-            Shields = WeaponShieldLoader.LoadShields(System.IO.Path.Combine(initPath, "Escudos.dat"));
+            Shields = WeaponShieldLoader.LoadShields(resources);
         }
         catch (Exception ex)
         {
@@ -138,7 +134,7 @@ public class GameData
 
         try
         {
-            Auras = AuraLoader.Load(System.IO.Path.Combine(initPath, "Auras.dat"));
+            Auras = AuraLoader.Load(resources);
         }
         catch (Exception ex)
         {

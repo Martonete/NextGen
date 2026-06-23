@@ -1,17 +1,23 @@
 //! GM teleport commands: /TELEP, /GO, /IRA, /SUM, /IRCERCA, /HOME.
 
-use crate::net::ConnectionId;
+use super::{send_warp_fx, warp_user, warp_user_exact};
 use crate::game::types::{GameState, privilege_level};
-use crate::protocol::{font_index};
-use super::world;
-use super::{warp_user, warp_user_exact, send_warp_fx};
+use crate::net::ConnectionId;
+use crate::protocol::font_index;
 
 /// After a GM warp, check if the destination tile has an exit and follow it.
 async fn follow_tile_exit_after_warp(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
         let (m, fx, fy) = (u.pos_map, u.pos_x, u.pos_y);
         if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(m, fx, fy) {
-            warp_user(state, conn_id, exit_map as i32, exit_x as i32, exit_y as i32).await;
+            warp_user(
+                state,
+                conn_id,
+                exit_map as i32,
+                exit_x as i32,
+                exit_y as i32,
+            )
+            .await;
             send_warp_fx(state, conn_id).await;
         }
     }
@@ -38,13 +44,26 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
     let x: i32 = parts[2].parse().unwrap_or(0);
     let y: i32 = parts[3].parse().unwrap_or(0);
 
-    if map < 1 || state.world.grid(map).map(|g| !crate::game::world::in_map_bounds_grid(g, x, y)).unwrap_or(true) {
+    if map < 1
+        || state
+            .world
+            .grid(map)
+            .map(|g| !crate::game::world::in_map_bounds_grid(g, x, y))
+            .unwrap_or(true)
+    {
         return;
     }
 
     // Check map exists
     let map_idx = map as usize;
-    if map_idx >= state.game_data.maps.len() || state.game_data.maps.get(map_idx).and_then(|m| m.as_ref()).is_none() {
+    if map_idx >= state.game_data.maps.len()
+        || state
+            .game_data
+            .maps
+            .get(map_idx)
+            .and_then(|m| m.as_ref())
+            .is_none()
+    {
         return;
     }
 
@@ -72,7 +91,11 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
     if target_id == conn_id {
         state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
     } else {
-        let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        let gm_name = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
         state.send_msg_id(target_id, 778, &gm_name.to_string()); // TEXTO778: %1 te ha transportado
         state.send_msg_id(conn_id, 651, &gm_name.to_string()); // TEXTO651: %1 transportado
     }
@@ -81,29 +104,49 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
 /// /TELEPLOC — Teleport self to last left-click target location.
 pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: ConnectionId) {
     // This uses the target coordinates set by left-click (LC packet).
-    // For now, we don't track target_x/target_y from LC, so fall back to a message.
-    // TODO: Track target_x/target_y from LC handler and warp there.
-    let priv_level = match state.users.get(&conn_id) {
+    // VB6-PARITY: VB6 stores the last left-click tile in Flags.TargetX/TargetY on the LC handler
+    // (server reads the MapNum, X, Y from the packet). Clicking a tile sets the target and the GM
+    // then uses /TELEPLOC to warp to that exact tile. Currently target_x/target_y default to 0
+    // until a player has clicked a tile, falling back to a console message below.
+    let _priv_level = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => u.privileges,
         _ => return,
     };
 
     // Get last click target from user state (VB6: flags.TargetX/Y)
     let (map, tx, ty) = match state.users.get(&conn_id) {
-        Some(u) => (if u.target_map > 0 { u.target_map } else { u.pos_map }, u.target_x, u.target_y),
+        Some(u) => (
+            if u.target_map > 0 {
+                u.target_map
+            } else {
+                u.pos_map
+            },
+            u.target_x,
+            u.target_y,
+        ),
         None => return,
     };
 
     if tx == 0 && ty == 0 {
-        state.send_console(conn_id, "Primero haz click en el destino.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Primero haz click en el destino.",
+            font_index::INFO,
+        );
         return;
     }
 
-    let bounds_ok = state.world.grid(map)
+    let bounds_ok = state
+        .world
+        .grid(map)
         .map(|g| crate::game::world::in_map_bounds_grid(g, tx, ty))
         .unwrap_or(false);
     if !bounds_ok {
-        state.send_console(conn_id, "Coordenadas fuera de los limites del mapa.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Coordenadas fuera de los limites del mapa.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -118,7 +161,11 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tenes permisos para usar este comando.",
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -131,18 +178,43 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
 
     let map: i32 = parts[0].parse().unwrap_or(0);
     // VB6 always warps to 50,50 (TCP.bas line 4686)
-    let x: i32 = if parts.len() >= 3 { parts[1].parse().unwrap_or(50) } else { 50 };
-    let y: i32 = if parts.len() >= 3 { parts[2].parse().unwrap_or(50) } else { 50 };
+    let x: i32 = if parts.len() >= 3 {
+        parts[1].parse().unwrap_or(50)
+    } else {
+        50
+    };
+    let y: i32 = if parts.len() >= 3 {
+        parts[2].parse().unwrap_or(50)
+    } else {
+        50
+    };
 
-    if map < 1 || state.world.grid(map).map(|g| !crate::game::world::in_map_bounds_grid(g, x, y)).unwrap_or(true) {
+    if map < 1
+        || state
+            .world
+            .grid(map)
+            .map(|g| !crate::game::world::in_map_bounds_grid(g, x, y))
+            .unwrap_or(true)
+    {
         state.send_console(conn_id, "Mapa o coordenadas invalidas.", font_index::INFO);
         return;
     }
 
     // Check map exists
     let map_idx = map as usize;
-    if map_idx >= state.game_data.maps.len() || state.game_data.maps.get(map_idx).and_then(|m| m.as_ref()).is_none() {
-        state.send_console(conn_id, &format!("Mapa {} no existe.", map), font_index::INFO);
+    if map_idx >= state.game_data.maps.len()
+        || state
+            .game_data
+            .maps
+            .get(map_idx)
+            .and_then(|m| m.as_ref())
+            .is_none()
+    {
+        state.send_console(
+            conn_id,
+            &format!("Mapa {} no existe.", map),
+            font_index::INFO,
+        );
         return;
     }
 
@@ -157,7 +229,11 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tenes permisos para usar este comando.",
+                font_index::INFO,
+            );
             return;
         }
     }
@@ -165,7 +241,11 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -173,7 +253,11 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     let (map, x, y) = match state.users.get(&target_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y),
         _ => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -187,9 +271,15 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
 /// /SUM name — Summon a player to your position (requires SEMIDIOS+).
 pub(super) async fn handle_slash_sum(state: &mut GameState, conn_id: ConnectionId, target: &str) {
     let (my_map, my_x, my_y) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => (u.pos_map, u.pos_x, u.pos_y),
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {
+            (u.pos_map, u.pos_x, u.pos_y)
+        }
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "No tenes permisos para usar este comando.",
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -197,14 +287,22 @@ pub(super) async fn handle_slash_sum(state: &mut GameState, conn_id: ConnectionI
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
             return;
         }
     };
 
     warp_user(state, target_id, my_map, my_x, my_y).await;
     send_warp_fx(state, target_id).await;
-    state.send_console(conn_id, &format!("Invocaste a '{}'.", target), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Invocaste a '{}'.", target),
+        font_index::INFO,
+    );
     state.send_console(target_id, "Has sido invocado por un GM.", font_index::INFO);
 }
 
@@ -216,7 +314,9 @@ pub(super) async fn handle_slash_home(state: &mut GameState, conn_id: Connection
     }
 
     let target_upper = target.to_uppercase();
-    let target_conn = state.users.values()
+    let target_conn = state
+        .users
+        .values()
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| (u.conn_id, u.hogar.clone(), u.armada_real, u.fuerzas_caos));
 
@@ -238,7 +338,11 @@ pub(super) async fn handle_slash_home(state: &mut GameState, conn_id: Connection
 
 /// /IRCERCA <name> — Teleport GM to an empty tile near a target player.
 /// VB6: TCP.bas line 2931. Searches outward from distance 2 to 5 for a legal free tile.
-pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
+pub(super) async fn handle_slash_ircerca(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target_name: &str,
+) {
     let priv_level = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => u.privileges,
         _ => return,
@@ -253,7 +357,11 @@ pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: Connect
     };
 
     // Can't teleport to higher-ranked GMs unless you're DIOS+
-    let target_priv = state.users.get(&target_id).map(|u| u.privileges).unwrap_or(0);
+    let target_priv = state
+        .users
+        .get(&target_id)
+        .map(|u| u.privileges)
+        .unwrap_or(0);
     if target_priv >= privilege_level::DIOS && priv_level < privilege_level::DIOS {
         return;
     }
@@ -285,6 +393,9 @@ pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: Connect
         }
     }
 
-    state.send_console(conn_id, "No se encontró posición libre cerca del jugador.", font_index::INFO);
+    state.send_console(
+        conn_id,
+        "No se encontró posición libre cerca del jugador.",
+        font_index::INFO,
+    );
 }
-

@@ -41,11 +41,29 @@ public partial class SpellPanel : Control
         _tcp = tcp;
 
         // Load TTF font for crisp text at any resolution (bitmap fonts pixelate when scaled)
-        string fontPath = System.IO.Path.Combine("Data", "Fonts", "LiberationSans-Bold.ttf");
-        if (System.IO.File.Exists(fontPath))
-            _ttfFont = ResourceLoader.Load<Font>($"res://{fontPath}");
+        // Try IResourceProvider first (reads from fonts.aopak), fallback to loose file
+        var rp = RpgTheme.ResourceProvider;
+        if (rp != null && rp.Exists("Fonts/LiberationSans-Bold.ttf"))
+        {
+            try
+            {
+                byte[] fontBytes = rp.ReadBytes("Fonts/LiberationSans-Bold.ttf");
+                var fontFile = new FontFile();
+                fontFile.Data = fontBytes;
+                _ttfFont = fontFile;
+            }
+            catch { /* fallback below */ }
+        }
+        if (_ttfFont == null)
+        {
+            string fontPath = System.IO.Path.Combine("Data", "Fonts", "LiberationSans-Bold.ttf");
+            if (System.IO.File.Exists(fontPath))
+                _ttfFont = ResourceLoader.Load<Font>($"res://{fontPath}");
+        }
         _ttfFontSize = 12;
     }
+
+    private bool _dirty = true;
 
     // Accumulated time for auto-scroll while dragging outside bounds
     private float _dragOutTimer;
@@ -100,8 +118,14 @@ public partial class SpellPanel : Control
             }
         }
 
-        QueueRedraw();
+        if (_dragging || _dirty || _hoveredSlot >= 0)
+        {
+            _dirty = false;
+            QueueRedraw();
+        }
     }
+
+    public void MarkDirty() => _dirty = true;
 
     public override void _Draw()
     {
@@ -128,11 +152,6 @@ public partial class SpellPanel : Control
             {
                 DrawRect(new Rect2(2, lineY, Size.X - 4, LineHeight),
                     new Color(0.3f, 0.3f, 0.8f, 0.6f));
-            }
-            else if (slot == _hoveredSlot)
-            {
-                DrawRect(new Rect2(2, lineY, Size.X - 4, LineHeight),
-                    new Color(1f, 1f, 1f, 0.1f));
             }
 
             // Spell name
@@ -182,7 +201,6 @@ public partial class SpellPanel : Control
         if (@event is InputEventMouseMotion motion)
         {
             int slot = HitTestSlot(motion.Position);
-            _hoveredSlot = slot;
 
             // VB6 ListBox behavior: drag with left button held changes selection
             if (_dragging && slot >= 0 && slot < MaxSpells)
@@ -284,6 +302,7 @@ public partial class SpellPanel : Control
                 else if (_selectedSlot >= _scrollOffset + VisibleLines)
                     _scrollOffset = _selectedSlot - VisibleLines + 1;
             }
+            QueueRedraw();
         }
     }
 

@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Text;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -18,15 +20,16 @@ public class AuraData
 
 public static class AuraLoader
 {
-    public static AuraData[] Load(string path)
+    public static AuraData[] Load(IResourceProvider resources)
     {
-        if (!File.Exists(path))
+        const string relativePath = "INIT/Auras.dat";
+        if (!resources.Exists(relativePath))
         {
-            GD.PrintErr($"[AURA] File not found: {path}");
+            GD.PrintErr($"[AURA] File not found: {relativePath}");
             return new AuraData[] { new() };
         }
 
-        var ini = SimpleIni.Parse(File.ReadAllText(path));
+        var ini = SimpleIni.Parse(Encoding.UTF8.GetString(resources.ReadBytes(relativePath)));
         int count = ini.GetInt("INIT", "NumAuras", 0);
         GD.Print($"[AURA] Loading {count} auras from Auras.dat");
 

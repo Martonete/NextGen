@@ -101,8 +101,11 @@ public static class GameDataLoader
     {
         if (!File.Exists(personajesPath))
             return (Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>());
+        return ParseBodyData(File.ReadAllBytes(personajesPath));
+    }
 
-        var data = File.ReadAllBytes(personajesPath);
+    private static (int[] grhs, int[] headOfsX, int[] headOfsY) ParseBodyData(byte[] data)
+    {
         using var reader = new BinaryReader(new MemoryStream(data));
 
         reader.BaseStream.Seek(263, SeekOrigin.Begin); // MiCabecera
@@ -134,8 +137,11 @@ public static class GameDataLoader
     public static int[] LoadHeadGrhs(string cabezasPath)
     {
         if (!File.Exists(cabezasPath)) return Array.Empty<int>();
+        return ParseHeadGrhs(File.ReadAllBytes(cabezasPath));
+    }
 
-        var data = File.ReadAllBytes(cabezasPath);
+    private static int[] ParseHeadGrhs(byte[] data)
+    {
         using var reader = new BinaryReader(new MemoryStream(data));
 
         reader.BaseStream.Seek(263, SeekOrigin.Begin);

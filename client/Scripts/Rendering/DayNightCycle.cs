@@ -123,16 +123,17 @@ public partial class DayNightCycle : ColorRect
         }
 
         // Smooth transition toward target
+        float prevAlpha = _currentAlpha;
         _currentAlpha = Mathf.MoveToward(_currentAlpha, _targetAlpha, TransitionSpeed * (float)delta);
 
-        // Interpolate between day (transparent) and night (blue tint) based on alpha
-        float nightFactor = _currentAlpha / 0.55f; // 0 = day, 1 = full night
-        nightFactor = Mathf.Clamp(nightFactor, 0f, 1f);
-
-        float r = Mathf.Lerp(DayTint.R, NightTint.R, nightFactor);
-        float g = Mathf.Lerp(DayTint.G, NightTint.G, nightFactor);
-        float b = Mathf.Lerp(DayTint.B, NightTint.B, nightFactor);
-
-        Color = new Color(r, g, b, _currentAlpha);
+        // Only recompute color when alpha actually changed
+        if (Math.Abs(_currentAlpha - prevAlpha) > 0.0001f)
+        {
+            float nightFactor = Mathf.Clamp(_currentAlpha / 0.55f, 0f, 1f);
+            float r = Mathf.Lerp(DayTint.R, NightTint.R, nightFactor);
+            float g = Mathf.Lerp(DayTint.G, NightTint.G, nightFactor);
+            float b = Mathf.Lerp(DayTint.B, NightTint.B, nightFactor);
+            Color = new Color(r, g, b, _currentAlpha);
+        }
     }
 }

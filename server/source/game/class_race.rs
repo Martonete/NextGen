@@ -80,7 +80,10 @@ impl PlayerClass {
 
     /// True for Mago, Clerigo, Druida, Bardo (classes with significant mana).
     pub fn is_mage(self) -> bool {
-        matches!(self, Self::Mago | Self::Clerigo | Self::Druida | Self::Bardo)
+        matches!(
+            self,
+            Self::Mago | Self::Clerigo | Self::Druida | Self::Bardo
+        )
     }
 
     /// True for Trabajador (resource-gathering class).
@@ -95,7 +98,10 @@ impl PlayerClass {
 
     /// True for Asesino, Bandido, Pirata, Ladron (outlaw classes).
     pub fn is_criminal_class(self) -> bool {
-        matches!(self, Self::Asesino | Self::Bandido | Self::Pirata | Self::Ladron)
+        matches!(
+            self,
+            Self::Asesino | Self::Bandido | Self::Pirata | Self::Ladron
+        )
     }
 
     /// True for Ladron or Bandido (stealth-capable classes for hiding).
@@ -192,18 +198,33 @@ mod tests {
 
     #[test]
     fn class_from_str() {
-        assert_eq!(PlayerClass::from_str_opt("guerrero"), Some(PlayerClass::Guerrero));
+        assert_eq!(
+            PlayerClass::from_str_opt("guerrero"),
+            Some(PlayerClass::Guerrero)
+        );
         assert_eq!(PlayerClass::from_str_opt("MAGO"), Some(PlayerClass::Mago));
-        assert_eq!(PlayerClass::from_str_opt("Clérigo"), Some(PlayerClass::Clerigo));
-        assert_eq!(PlayerClass::from_str_opt("Ladrón"), Some(PlayerClass::Ladron));
+        assert_eq!(
+            PlayerClass::from_str_opt("Clérigo"),
+            Some(PlayerClass::Clerigo)
+        );
+        assert_eq!(
+            PlayerClass::from_str_opt("Ladrón"),
+            Some(PlayerClass::Ladron)
+        );
         assert_eq!(PlayerClass::from_str_opt("unknown"), None);
     }
 
     #[test]
     fn race_from_str() {
         assert_eq!(PlayerRace::from_str_opt("humano"), Some(PlayerRace::Humano));
-        assert_eq!(PlayerRace::from_str_opt("Elfo Oscuro"), Some(PlayerRace::ElfoOscuro));
-        assert_eq!(PlayerRace::from_str_opt("DROW"), Some(PlayerRace::ElfoOscuro));
+        assert_eq!(
+            PlayerRace::from_str_opt("Elfo Oscuro"),
+            Some(PlayerRace::ElfoOscuro)
+        );
+        assert_eq!(
+            PlayerRace::from_str_opt("DROW"),
+            Some(PlayerRace::ElfoOscuro)
+        );
         assert_eq!(PlayerRace::from_str_opt("unknown"), None);
     }
 

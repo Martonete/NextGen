@@ -59,7 +59,7 @@ public class InventoryUI
     /// <summary>Bind references to inventory/spell UI nodes.</summary>
     public void BindPanels(
         InventoryPanel inventoryPanel, SpellPanel spellPanel,
-        Label? itemNameLabel, TextureButton dydToggle,
+        TextureButton dydToggle,
         Texture2D? dydOffTex, Texture2D? dydOnTex,
         TextureButton lanzarButton, TextureButton infoButton,
         TextureButton spellUpButton, TextureButton spellDownButton,
@@ -68,7 +68,6 @@ public class InventoryUI
     {
         _inventoryPanel = inventoryPanel;
         _spellPanel = spellPanel;
-        // itemNameLabel is unused — tooltip replaces the old label
         _dydToggle = dydToggle;
         _dydOffTex = dydOffTex;
         _dydOnTex = dydOnTex;

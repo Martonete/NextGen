@@ -1,5 +1,5 @@
-pub mod listener;
 pub mod connection;
+pub mod listener;
 
-pub use listener::TcpServer;
 pub use connection::ConnectionId;
+pub use listener::TcpServer;

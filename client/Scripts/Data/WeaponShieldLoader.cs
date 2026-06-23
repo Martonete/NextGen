@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Text;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -21,15 +23,16 @@ public static class WeaponShieldLoader
     /// Load Armas.dat — weapon animation GRHs per direction.
     /// Format: [INIT] NumArmas=N, then [Arma1]..[ArmaN] with Dir1..Dir4.
     /// </summary>
-    public static WeaponAnimDirs[] LoadWeapons(string path)
+    public static WeaponAnimDirs[] LoadWeapons(IResourceProvider resources)
     {
-        if (!File.Exists(path))
+        const string relativePath = "INIT/Armas.dat";
+        if (!resources.Exists(relativePath))
         {
-            GD.PrintErr($"[WEAPON] File not found: {path}");
+            GD.PrintErr($"[WEAPON] File not found: {relativePath}");
             return new WeaponAnimDirs[] { new() };
         }
 
-        var ini = SimpleIni.Parse(File.ReadAllText(path));
+        var ini = SimpleIni.Parse(Encoding.UTF8.GetString(resources.ReadBytes(relativePath)));
 
         int count = ini.GetInt("INIT", "NumArmas", 0);
         GD.Print($"[WEAPON] Loading {count} weapons from Armas.dat");
@@ -55,15 +58,16 @@ public static class WeaponShieldLoader
     /// Load Escudos.dat — shield animation GRHs per direction.
     /// Format: [INIT] NumEscudos=N, then [ESC1]..[ESCN] with Dir1..Dir4.
     /// </summary>
-    public static WeaponAnimDirs[] LoadShields(string path)
+    public static WeaponAnimDirs[] LoadShields(IResourceProvider resources)
     {
-        if (!File.Exists(path))
+        const string relativePath = "INIT/Escudos.dat";
+        if (!resources.Exists(relativePath))
         {
-            GD.PrintErr($"[SHIELD] File not found: {path}");
+            GD.PrintErr($"[SHIELD] File not found: {relativePath}");
             return new WeaponAnimDirs[] { new() };
         }
 
-        var ini = SimpleIni.Parse(File.ReadAllText(path));
+        var ini = SimpleIni.Parse(Encoding.UTF8.GetString(resources.ReadBytes(relativePath)));
 
         int count = ini.GetInt("INIT", "NumEscudos", 0);
         GD.Print($"[SHIELD] Loading {count} shields from Escudos.dat");

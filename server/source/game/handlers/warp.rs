@@ -2,12 +2,12 @@
 //! mover_casper, warp_mascotas, send_warp_fx.
 //! Extracted from mod.rs to reduce file size.
 
-use crate::net::ConnectionId;
-use crate::protocol::binary_packets;
+use super::build_cd_binary;
+use super::common::*;
 use crate::game::types::{GameState, SendTarget};
 use crate::game::world;
-use super::common::*;
-use super::build_cd_binary;
+use crate::net::ConnectionId;
+use crate::protocol::binary_packets;
 
 // =====================================================================
 // World/visibility helpers
@@ -37,7 +37,14 @@ pub(crate) async fn check_update_needed_user(
     heading: i32,
 ) {
     let (pos_x, pos_y, map, old_area_id, old_min_x, old_min_y) = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_x, u.pos_y, u.pos_map, u.area_id, u.area_min_x, u.area_min_y),
+        Some(u) => (
+            u.pos_x,
+            u.pos_y,
+            u.pos_map,
+            u.area_id,
+            u.area_min_x,
+            u.area_min_y,
+        ),
         None => return,
     };
 
@@ -63,7 +70,14 @@ pub(crate) async fn check_update_needed_user(
         let nmin_x = old_min_x;
         let nmin_y = old_min_y + 27;
         let new_area_min_y = old_min_y + 9; // VB6: MinY - 18 but MinY was old+27, so net = old+9
-        (nmin_x, nmin_x + 26, nmin_y, nmin_y + 8, nmin_x, new_area_min_y)
+        (
+            nmin_x,
+            nmin_x + 26,
+            nmin_y,
+            nmin_y + 8,
+            nmin_x,
+            new_area_min_y,
+        )
     } else if heading == world::HEADING_WEST {
         let nmin_x = old_min_x - 9;
         let nmin_y = old_min_y;
@@ -72,7 +86,14 @@ pub(crate) async fn check_update_needed_user(
         let nmin_x = old_min_x + 27;
         let nmin_y = old_min_y;
         let new_area_min_x = old_min_x + 9;
-        (nmin_x, nmin_x + 8, nmin_y, nmin_y + 26, new_area_min_x, nmin_y)
+        (
+            nmin_x,
+            nmin_x + 8,
+            nmin_y,
+            nmin_y + 26,
+            new_area_min_x,
+            nmin_y,
+        )
     } else {
         return;
     };
@@ -103,7 +124,10 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Send AreaChanged packet — tells client to erase out-of-range entities
-    state.send_bytes(conn_id, &binary_packets::write_area_changed(pos_x as i16, pos_y as i16));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_area_changed(pos_x as i16, pos_y as i16),
+    );
 
     // Build our CC (binary) for sending to newly visible users
     let my_cc = match state.users.get(&conn_id) {
@@ -166,7 +190,14 @@ pub(crate) async fn check_update_needed_user(
                         new_particles.push((tile.particle_group_index, sx, sy));
                     }
                     if tile.range_light > 0 {
-                        new_lights.push((sx, sy, tile.range_light, tile.rgb_light[0], tile.rgb_light[1], tile.rgb_light[2]));
+                        new_lights.push((
+                            sx,
+                            sy,
+                            tile.range_light,
+                            tile.rgb_light[0],
+                            tile.rgb_light[1],
+                            tile.rgb_light[2],
+                        ));
                     }
                     // VB6: Send HO for static .inf objects (doors, furniture, etc.)
                     // The client can't resolve ObjIndex→GRH, so server must send HO.
@@ -181,7 +212,9 @@ pub(crate) async fn check_update_needed_user(
                             // This ensures correct blocked state regardless of what .map file says
                             if obj.obj_type == crate::data::objects::ObjType::Door {
                                 let blocked_at = |ty: i32, tx: i32| -> bool {
-                                    game_map.tiles.get((tx - 1) as usize, (ty - 1) as usize)
+                                    game_map
+                                        .tiles
+                                        .get((tx - 1) as usize, (ty - 1) as usize)
                                         .map(|t| t.blocked)
                                         .unwrap_or(false)
                                 };
@@ -198,7 +231,6 @@ pub(crate) async fn check_update_needed_user(
                                         new_door_bqs.push((sx + dx, sy, blocked_at(sy, sx + dx)));
                                     }
                                 }
-
                             }
                         }
                     }
@@ -208,8 +240,12 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Get self char_index and invisible/hidden flags for [CD and NOVER
-    let (my_char_idx, my_invisible, my_privileges) = match state.users.get(&conn_id) {
-        Some(u) => (u.char_index.0, u.admin_invisible || u.invisible || u.hidden, u.privileges),
+    let (my_char_idx, my_invisible, _my_privileges) = match state.users.get(&conn_id) {
+        Some(u) => (
+            u.char_index.0,
+            u.admin_invisible || u.invisible || u.hidden,
+            u.privileges,
+        ),
         None => return,
     };
 
@@ -227,7 +263,10 @@ pub(crate) async fn check_update_needed_user(
                 state.send_bytes(conn_id, &other_cd);
                 // If the other player is invisible, tell us not to render them (unless clanmates)
                 if other_invisible && !are_clanmates {
-                    state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true, 0));
+                    state.send_bytes(
+                        conn_id,
+                        &binary_packets::write_set_invisible(other_char_idx as i16, true, 0),
+                    );
                 }
                 // Send our CC + [CD to them
                 state.send_bytes(other_id, &my_cc);
@@ -238,7 +277,10 @@ pub(crate) async fn check_update_needed_user(
                 state.send_bytes(other_id, &my_cd);
                 // If we are invisible, tell them not to render us (unless clanmates)
                 if my_invisible && !are_clanmates {
-                    state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true, 0));
+                    state.send_bytes(
+                        other_id,
+                        &binary_packets::write_set_invisible(my_char_idx as i16, true, 0),
+                    );
                 }
             }
         } else {
@@ -257,22 +299,41 @@ pub(crate) async fn check_update_needed_user(
 
     // Send ground items (HO = ObjectCreate packet) — VB6 ModAreas.bas line 264
     for (grh, ix, iy) in new_items {
-        state.send_bytes(conn_id, &binary_packets::write_object_create(ix as i16, iy as i16, grh as i16));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_object_create(ix as i16, iy as i16, grh as i16),
+        );
     }
 
     // Send door BQ packets (BlockPosition) — VB6 ModAreas.bas lines 273-300
     for (bx, by, blocked) in new_door_bqs {
-        state.send_bytes(conn_id, &binary_packets::write_block_position(bx as i16, by as i16, blocked));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_block_position(bx as i16, by as i16, blocked),
+        );
     }
 
     // Send particle effects (PCF) — VB6 ModAreas.bas line 255
     for (pg, px, py) in new_particles {
-        state.send_bytes(conn_id, &binary_packets::write_particle_create(pg, px as i16, py as i16, 0));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_particle_create(pg, px as i16, py as i16, 0),
+        );
     }
 
     // Send lighting effects (PCL) — VB6 ModAreas.bas line 259
     for (lx, ly, range, r, g, b) in new_lights {
-        state.send_bytes(conn_id, &binary_packets::write_light_create(lx as i16, ly as i16, range as u8, r as u8, g as u8, b as u8));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_light_create(
+                lx as i16,
+                ly as i16,
+                range as u8,
+                r as u8,
+                g as u8,
+                b as u8,
+            ),
+        );
     }
 }
 
@@ -280,8 +341,14 @@ pub(crate) async fn check_update_needed_user(
 /// Matches VB6 WarpUserChar: BKW, QDL, EraseUserChar, CM/XM/N~, MakeUserChar, PU, BKW.
 /// VB6: WarpMascotas — teleport user's pets to the new map.
 /// Persistent pets are removed from old map and respawned at master's new position.
-pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
-    use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA, AI_FOLLOW_OWNER};
+pub(crate) async fn warp_mascotas(
+    state: &mut GameState,
+    owner_conn: ConnectionId,
+    new_map: i32,
+    new_x: i32,
+    new_y: i32,
+) {
+    use crate::game::npc::{AI_FOLLOW_OWNER, ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
 
     let pets = match state.users.get(&owner_conn) {
         Some(u) => (u.mascotas_index, u.mascotas_type, u.nro_mascotas),
@@ -293,12 +360,19 @@ pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionI
     let mut pets_to_move: Vec<(usize, i32)> = Vec::new(); // (slot_index, npc_type)
     for i in 0..3 {
         let idx = pet_indices[i];
-        if idx == 0 { continue; }
+        if idx == 0 {
+            continue;
+        }
         let npc_type = pet_types[i];
-        if npc_type <= 0 { continue; }
+        if npc_type <= 0 {
+            continue;
+        }
 
         // Check if pet is alive and on the OLD map (not already on the new map)
-        let pet_alive = state.get_npc(idx).map(|n| n.is_alive() && n.map != new_map).unwrap_or(false);
+        let pet_alive = state
+            .get_npc(idx)
+            .map(|n| n.is_alive() && n.map != new_map)
+            .unwrap_or(false);
         if pet_alive {
             pets_to_move.push((i, npc_type));
 
@@ -306,7 +380,11 @@ pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionI
             let old_data = state.get_npc(idx).map(|n| (n.char_index, n.map, n.x, n.y));
             if let Some((ci, omap, ox, oy)) = old_data {
                 state.send_data_bytes(
-                    SendTarget::ToArea { map: omap, x: ox, y: oy },
+                    SendTarget::ToArea {
+                        map: omap,
+                        x: ox,
+                        y: oy,
+                    },
                     &binary_packets::write_character_remove(ci.0 as i16),
                 );
             }
@@ -350,7 +428,14 @@ pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionI
             // Broadcast new NPC to area
             let cc_pkt = state.get_npc(new_idx).map(|n| n.build_cc_binary());
             if let Some(pkt) = cc_pkt {
-                state.send_data_bytes(SendTarget::ToArea { map: new_map, x: new_x, y: new_y }, &pkt);
+                state.send_data_bytes(
+                    SendTarget::ToArea {
+                        map: new_map,
+                        x: new_x,
+                        y: new_y,
+                    },
+                    &pkt,
+                );
             }
         }
     }
@@ -359,17 +444,30 @@ pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionI
 /// VB6 "Mover Casper": push a dead user off a tile so a living user/NPC can occupy it.
 /// Tries the mover's heading direction first, then S, N, E, W as fallback.
 /// If no free adjacent tile is found, the ghost stays (movement will be rejected by is_legal_pos).
-pub(crate) async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32, mover_heading: i32) {
+pub(crate) async fn mover_casper(
+    state: &mut GameState,
+    map: i32,
+    x: i32,
+    y: i32,
+    mover_heading: i32,
+) {
     // Check if there's a user on the target tile
-    let ghost_conn = match state.world.grid(map)
+    let ghost_conn = match state
+        .world
+        .grid(map)
         .and_then(|g| g.tile(x, y))
-        .and_then(|t| t.user_conn) {
+        .and_then(|t| t.user_conn)
+    {
         Some(c) => c,
         None => return, // no user on tile
     };
 
     // Only push if that user is dead
-    let is_ghost = state.users.get(&ghost_conn).map(|u| u.dead).unwrap_or(false);
+    let is_ghost = state
+        .users
+        .get(&ghost_conn)
+        .map(|u| u.dead)
+        .unwrap_or(false);
     if !is_ghost {
         return;
     }
@@ -389,9 +487,20 @@ pub(crate) async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32
         let (dx, dy) = world::heading_to_offset(dir);
         let nx = x + dx;
         let ny = y + dy;
-        if !state.world.grid(map).map(|g| world::in_map_bounds_grid(g, nx, ny)).unwrap_or(false) { continue; }
-        if state.is_tile_blocked(map, nx, ny) { continue; }
-        let tile_free = state.world.grid(map)
+        if !state
+            .world
+            .grid(map)
+            .map(|g| world::in_map_bounds_grid(g, nx, ny))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if state.is_tile_blocked(map, nx, ny) {
+            continue;
+        }
+        let tile_free = state
+            .world
+            .grid(map)
             .map(|g| g.is_tile_free(nx, ny))
             .unwrap_or(false);
         if tile_free {
@@ -417,32 +526,74 @@ pub(crate) async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32
     }
 
     // Send position update to ghost (PU) and movement broadcast to area
-    state.send_bytes(ghost_conn, &binary_packets::write_pos_update(push_x as i16, push_y as i16));
+    state.send_bytes(
+        ghost_conn,
+        &binary_packets::write_pos_update(push_x as i16, push_y as i16),
+    );
     state.send_data_bytes(
-        SendTarget::ToAreaButIndex { conn_id: ghost_conn, map, x: push_x, y: push_y },
-        &binary_packets::write_character_move(ghost_char_index.0 as i16, push_x as i16, push_y as i16),
+        SendTarget::ToAreaButIndex {
+            conn_id: ghost_conn,
+            map,
+            x: push_x,
+            y: push_y,
+        },
+        &binary_packets::write_character_move(
+            ghost_char_index.0 as i16,
+            push_x as i16,
+            push_y as i16,
+        ),
     );
 }
 
 /// Warp variant that skips find_free_pos — places the user exactly at (x,y)
 /// even if blocked/occupied. Used for GM teleport.
-pub(crate) async fn warp_user_exact(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
+pub(crate) async fn warp_user_exact(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    new_map: i32,
+    new_x: i32,
+    new_y: i32,
+) {
     warp_user_inner(state, conn_id, new_map, new_x, new_y, true).await;
 }
 
-pub(crate) async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
+pub(crate) async fn warp_user(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    new_map: i32,
+    new_x: i32,
+    new_y: i32,
+) {
     warp_user_inner(state, conn_id, new_map, new_x, new_y, false).await;
 }
 
-pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32, exact: bool) {
+pub(crate) async fn warp_user_inner(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    new_map: i32,
+    new_x: i32,
+    new_y: i32,
+    exact: bool,
+) {
     // Validate target map exists — if not, reject with error
     if state.world.grid(new_map).is_none() {
-        state.send_console(conn_id, &format!("Mapa {} no existe.", new_map), crate::protocol::font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("Mapa {} no existe.", new_map),
+            crate::protocol::font_index::INFO,
+        );
         return;
     }
 
     let old_data = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.area_min_x, u.area_min_y),
+        Some(u) => (
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+            u.char_index,
+            u.area_min_x,
+            u.area_min_y,
+        ),
         None => return,
     };
     let (old_map, old_x, old_y, char_index, area_min_x, area_min_y) = old_data;
@@ -470,7 +621,9 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
                 for sx in amx..=axx {
                     if let Some(tile) = grid.tile(sx, sy) {
                         if let Some(c) = tile.user_conn {
-                            if c != conn_id { targets.push(c); }
+                            if c != conn_id {
+                                targets.push(c);
+                            }
                         }
                     }
                 }
@@ -485,18 +638,66 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     } else {
         // Fallback: area not initialized yet — send to entire map (safe catch-all)
         state.send_data_bytes(
-            SendTarget::ToMapButIndex { conn_id, map: old_map },
+            SendTarget::ToMapButIndex {
+                conn_id,
+                map: old_map,
+            },
             &qdl_pkt,
         );
         state.send_data_bytes(
-            SendTarget::ToMapButIndex { conn_id, map: old_map },
+            SendTarget::ToMapButIndex {
+                conn_id,
+                map: old_map,
+            },
             &bp_pkt,
         );
     }
     state.world.remove_user(old_map, old_x, old_y);
 
+    // VB6 I8: On map change, clear NPC combat state targeting this player.
+    // Clear the player's target flags, and clear any NPCs that were attacking this player.
+    let char_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    {
+        // Find all NPC indices that target this user or were attacked by them
+        let npc_count = state.npcs.len();
+        let mut npcs_to_clear: Vec<usize> = Vec::new();
+        for i in 0..npc_count {
+            if let Some(Some(npc)) = state.npcs.get(i) {
+                let targets_player = npc.target == Some(conn_id);
+                let attacked_by_player = npc.attacked_by == char_name && !char_name.is_empty();
+                if targets_player || attacked_by_player {
+                    npcs_to_clear.push(i);
+                }
+            }
+        }
+        for i in npcs_to_clear {
+            if let Some(Some(npc)) = state.npcs.get_mut(i) {
+                if npc.target == Some(conn_id) {
+                    npc.target = None;
+                }
+                if npc.attacked_by == char_name && !char_name.is_empty() {
+                    npc.attacked_by = String::new();
+                    // Restore original movement/hostile if in defense mode
+                    if npc.old_movement != 0 {
+                        npc.movement = npc.old_movement;
+                        npc.old_movement = 0;
+                    }
+                    npc.hostile = npc.old_hostile;
+                }
+            }
+        }
+    }
+
     // Cancel resting and meditating on map change (VB6: WarpUserChar)
-    let was_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
+    let was_meditating = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.meditating)
+        .unwrap_or(false);
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.resting = false;
         if user.meditating {
@@ -509,12 +710,17 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     }
 
     // VB6: Remove invisibility when entering InviSinEfecto map
-    let invi_blocked = state.game_data.maps.get(new_map as usize)
+    let invi_blocked = state
+        .game_data
+        .maps
+        .get(new_map as usize)
         .and_then(|m| m.as_ref())
         .map(|m| m.info.invi_sin_efecto)
         .unwrap_or(false);
     if invi_blocked {
-        let was_invis = state.users.get(&conn_id)
+        let was_invis = state
+            .users
+            .get(&conn_id)
             .map(|u| u.invisible && !u.admin_invisible)
             .unwrap_or(false);
         if was_invis {
@@ -528,7 +734,11 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     }
 
     // VB6: Remove mimetizado on map change (revert appearance)
-    let was_mimetizado = state.users.get(&conn_id).map(|u| u.mimetizado).unwrap_or(false);
+    let was_mimetizado = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.mimetizado)
+        .unwrap_or(false);
     if was_mimetizado {
         if let Some(user) = state.users.get_mut(&conn_id) {
             let b = user.char_mimetizado_body;
@@ -544,7 +754,11 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // 4. Find a free tile if destination is occupied (VB6 DamePos)
     // GMs with exact=true skip this — they can stand on blocked tiles.
-    let (mut final_x, mut final_y) = if exact { (new_x, new_y) } else { find_free_pos(state, new_map, new_x, new_y) };
+    let (mut final_x, mut final_y) = if exact {
+        (new_x, new_y)
+    } else {
+        find_free_pos(state, new_map, new_x, new_y)
+    };
 
     // Bounds-check: clamp coordinates to valid map range regardless of exact flag.
     // GM teleports (exact=true) bypass find_free_pos but still need bounds validation.
@@ -574,19 +788,23 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     let map_changed = old_map != new_map;
     if map_changed {
         let map_idx = new_map as usize;
-        let (r, g, b, music, map_name) = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-            (
-                game_map.info.r,
-                game_map.info.g,
-                game_map.info.b,
-                game_map.info.music,
-                game_map.info.name.clone(),
-            )
-        } else {
-            (200, 200, 200, 0, format!("Mapa {}", new_map))
-        };
+        let (r, g, b, music, map_name) =
+            if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+                (
+                    game_map.info.r,
+                    game_map.info.g,
+                    game_map.info.b,
+                    game_map.info.music,
+                    game_map.info.name.clone(),
+                )
+            } else {
+                (200, 200, 200, 0, format!("Mapa {}", new_map))
+            };
 
-        state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8),
+        );
         state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
         state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
     }
@@ -602,8 +820,16 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // 8b. Re-send mount state — CC creates a fresh Character with Mounted=false,
     // so the client loses the mount flag. Send USM to restore it.
-    if state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false) {
-        state.send_bytes(conn_id, &binary_packets::write_user_mount(ci.0 as i16, true));
+    if state
+        .users
+        .get(&conn_id)
+        .map(|u| u.montado)
+        .unwrap_or(false)
+    {
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_user_mount(ci.0 as i16, true),
+        );
     }
 
     // 8c. Re-send invisible state — CC creates a fresh Character with Invisible=false,
@@ -611,15 +837,23 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     // Covers both GM /invisible and spell invisibility.
     if let Some(u) = state.users.get(&conn_id) {
         if u.invisible {
-            let remaining = if u.admin_invisible { 0 } else {
+            let remaining = if u.admin_invisible {
+                0
+            } else {
                 ((state.intervals.invisible - u.counter_invisible) as f32 * 0.04) as i16
             };
-            state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true, remaining));
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_set_invisible(ci.0 as i16, true, remaining),
+            );
         }
     }
 
     // 9. PU (position update — tells client where to center camera)
-    state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as i16, final_y as i16));
+    state.send_bytes(
+        conn_id,
+        &binary_packets::write_pos_update(final_x as i16, final_y as i16),
+    );
 
     // 10. Send area visibility (CA + strip CCs/NPCs/items)
     make_user_visible(state, conn_id).await;
@@ -632,14 +866,28 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // 11. Send CC + [CD to other players in new area so they see us
     //     Skip if invisible (GM or spell) — others must NOT see us (except clanmates).
-    let is_invis = state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false);
+    let is_invis = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.invisible)
+        .unwrap_or(false);
     if !is_invis {
         state.send_data_bytes(
-            SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
+            SendTarget::ToAreaButIndex {
+                conn_id,
+                map: new_map,
+                x: final_x,
+                y: final_y,
+            },
             &own_cc,
         );
         state.send_data_bytes(
-            SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
+            SendTarget::ToAreaButIndex {
+                conn_id,
+                map: new_map,
+                x: final_x,
+                y: final_y,
+            },
             &own_cd,
         );
     } else {
@@ -654,7 +902,10 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
                 };
                 state.send_bytes(other_id, &cd);
                 // Tell clanmate we're invisible (semi-transparent rendering)
-                state.send_bytes(other_id, &binary_packets::write_set_invisible(ci.0 as i16, true, 0));
+                state.send_bytes(
+                    other_id,
+                    &binary_packets::write_set_invisible(ci.0 as i16, true, 0),
+                );
             }
         }
     }
@@ -668,21 +919,31 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // 14. Warp pets to new map (VB6: WarpMascotas)
     warp_mascotas(state, conn_id, new_map, final_x, final_y).await;
-
 }
 
 /// Send warp FX (sound + visual) at user's current position.
 /// VB6: Only called when tile has otTeleport object (FX=True param).
 pub(crate) async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
     let (invisible, ci, map, x, y) = match state.users.get(&conn_id) {
-        Some(u) => (u.admin_invisible, u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
+        Some(u) => (
+            u.admin_invisible,
+            u.char_index.0,
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+        ),
         None => return,
     };
     if !invisible {
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as i16, y as i16));
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_create_fx(ci as i16, 1, 0));
+        state.send_data_bytes(
+            SendTarget::ToArea { map, x, y },
+            &binary_packets::write_play_wave(3, x as i16, y as i16),
+        );
+        state.send_data_bytes(
+            SendTarget::ToArea { map, x, y },
+            &binary_packets::write_create_fx(ci as i16, 1, 0),
+        );
     }
 }
 
 // find_free_pos — moved to common.rs
-

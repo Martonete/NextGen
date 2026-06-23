@@ -59,9 +59,23 @@ public class EditorState
     // Selected Object from palette (for quick-place with Object tool)
     public int SelectedObjectNumber;
 
+    // Selected Particle group (for quick-place with Particle tool)
+    public int SelectedParticleGroup = 1;
+
     // Light tool config
     public int LightR = 255, LightG = 220, LightB = 180;
     public int LightRange = 6;
+
+    // Trigger tool: selected trigger type to paint (0 = erase)
+    public short SelectedTriggerType = 1;
+
+    // Fog paint tool: density 0..255 to stamp on tiles (0 = erase)
+    public int SelectedFogDensity = 90;
+    public bool ShowFog = true;
+    /// <summary>Brush radius for the Fog tool — tiles within this many
+    /// tiles of the click (Chebyshev distance) are stamped in one click.
+    /// 0 = single tile. Set from HumoConfigPanel brushSpin.</summary>
+    public int FogBrushRadius = 0;
 
     // Zone system (editor metadata for sub-regions)
     public List<MapZone> Zones { get; } = new();
@@ -190,6 +204,7 @@ public class PickState
 public enum PickTarget
 {
     None,
+    Layer2,    // mask/alpha transition
     Layer3,    // tree/object graphic
     Layer4,    // roof
     Npc,
@@ -261,9 +276,13 @@ public enum EditorTool
     Fill,     // Flood fill with texture
     Eyedrop,  // Sample GRH from tile
     Block,    // Toggle blocked flag
-    Light,    // Place/edit light source (opens properties)
+    Light,    // Legacy per-tile light: writes to MapTile.LightRange/R/G/B
+    LightAdvanced, // New Godot-node based light: MapLight in MapData.LightData
+
     Exit,     // Place/edit tile exit (opens properties)
     Npc,      // Place NPC (opens properties)
     Object,   // Place Object (opens properties)
     Trigger,  // Set trigger type (opens properties)
+    Particle, // Paint particle group on tiles
+    Fog,      // Paint per-tile fog blobs (soft world-space fog)
 }

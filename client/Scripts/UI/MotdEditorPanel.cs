@@ -88,6 +88,19 @@ public partial class MotdEditorPanel : RpgBaseForm
         ShowForm();
     }
 
+    /// <summary>
+    /// Open the MOTD editor with server-provided content (VB6 ShowMOTDEditionForm flow).
+    /// </summary>
+    public void OpenWithContent(string content)
+    {
+        if (_motdEdit != null)
+        {
+            _motdEdit.Text = content;
+        }
+        if (_statusLabel != null) _statusLabel.Text = "";
+        ShowForm();
+    }
+
     public void Close()
     {
         HideForm();

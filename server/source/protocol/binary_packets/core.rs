@@ -78,10 +78,20 @@ pub fn write_area_changed(x: i16, y: i16) -> Vec<u8> {
 
 /// ID 29: Character create (appears in view).
 pub fn write_character_create(
-    char_index: i16, body: i16, head: i16, heading: u8,
-    x: i16, y: i16, weapon: i16, shield: i16, helmet: i16,
-    fx_index: i16, fx_loops: i16, name: &str,
-    nick_color: u8, privileges: u8,
+    char_index: i16,
+    body: i16,
+    head: i16,
+    heading: u8,
+    x: i16,
+    y: i16,
+    weapon: i16,
+    shield: i16,
+    helmet: i16,
+    fx_index: i16,
+    fx_loops: i16,
+    name: &str,
+    nick_color: u8,
+    privileges: u8,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CharacterCreate.to_byte());
@@ -122,9 +132,15 @@ pub fn write_character_move(char_index: i16, x: i16, y: i16) -> Vec<u8> {
 
 /// ID 33: Character change (appearance update).
 pub fn write_character_change(
-    char_index: i16, body: i16, head: i16, heading: u8,
-    weapon: i16, shield: i16, helmet: i16,
-    fx_index: i16, fx_loops: i16,
+    char_index: i16,
+    body: i16,
+    head: i16,
+    heading: u8,
+    weapon: i16,
+    shield: i16,
+    helmet: i16,
+    fx_index: i16,
+    fx_loops: i16,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CharacterChange.to_byte());
@@ -320,9 +336,16 @@ pub fn write_update_exp(exp: i32) -> Vec<u8> {
 
 /// ID 44: Update full user stats (login bulk).
 pub fn write_update_user_stats(
-    max_hp: i16, min_hp: i16, max_mana: i16, min_mana: i16,
-    max_sta: i16, min_sta: i16, gold: i32, level: u8,
-    exp_to_next: i32, current_exp: i32,
+    max_hp: i16,
+    min_hp: i16,
+    max_mana: i16,
+    min_mana: i16,
+    max_sta: i16,
+    min_sta: i16,
+    gold: i32,
+    level: u8,
+    exp_to_next: i32,
+    current_exp: i32,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateUserStats.to_byte());
@@ -336,6 +359,39 @@ pub fn write_update_user_stats(
     pkt.write_byte(level);
     pkt.write_long(exp_to_next);
     pkt.write_long(current_exp);
+    pkt.into_bytes()
+}
+
+/// ID 49: Send player attributes (STR, AGI, INT, CON, CHA).
+pub fn write_attributes(str_: u8, agi: u8, int: u8, con: u8, cha: u8) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::Attributes.to_byte());
+    pkt.write_byte(str_);
+    pkt.write_byte(agi);
+    pkt.write_byte(int);
+    pkt.write_byte(con);
+    pkt.write_byte(cha);
+    pkt.into_bytes()
+}
+
+/// ID 50: Send all 22 skills (level + XP percentage per skill).
+pub fn write_send_skills(skills: &[i32], exp_skills: &[i32], elu_skills: &[i32]) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::SendSkills.to_byte());
+    for i in 0..22 {
+        let level = if i < skills.len() {
+            skills[i].clamp(0, 100) as u8
+        } else {
+            0
+        };
+        let pct = if i < exp_skills.len() && i < elu_skills.len() && elu_skills[i] > 0 {
+            ((exp_skills[i] as f64 / elu_skills[i] as f64) * 100.0).clamp(0.0, 99.0) as u8
+        } else {
+            0
+        };
+        pkt.write_byte(level);
+        pkt.write_byte(pct);
+    }
     pkt.into_bytes()
 }
 
@@ -358,17 +414,35 @@ pub fn write_level_up(skill_points: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-
-
 /// ID 252: Zone change notification.
 /// Sent when player enters a new zone or on login/map change.
 /// Wire: string zone_name, byte zone_type, byte is_safe, i16 music,
 ///       byte lluvia, byte nieve, byte niebla,
-///       i16 x1, i16 y1, i16 x2, i16 y2 (zone bounds for client fog rendering)
+///       i16 x1, i16 y1, i16 x2, i16 y2 (zone bounds for client fog rendering),
+///       byte ambient_r, byte ambient_g, byte ambient_b (ambient light override; 0,0,0 = map default),
+///       u8 fog_density, u8 fog_r, u8 fog_g, u8 fog_b,
+///       i8 fog_speed_x, i8 fog_speed_y  (signed speeds sent as bytes; client casts back to sbyte)
 pub fn write_zone_change(
-    zone_name: &str, zone_type: u8, is_safe: bool, music: i16,
-    lluvia: bool, nieve: bool, niebla: bool,
-    x1: i16, y1: i16, x2: i16, y2: i16,
+    zone_name: &str,
+    zone_type: u8,
+    is_safe: bool,
+    music: i16,
+    lluvia: bool,
+    nieve: bool,
+    niebla: bool,
+    x1: i16,
+    y1: i16,
+    x2: i16,
+    y2: i16,
+    ambient_r: u8,
+    ambient_g: u8,
+    ambient_b: u8,
+    fog_density: u8,
+    fog_r: u8,
+    fog_g: u8,
+    fog_b: u8,
+    fog_speed_x: i8,
+    fog_speed_y: i8,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ZoneChange.to_byte());
@@ -383,10 +457,21 @@ pub fn write_zone_change(
     pkt.write_integer(y1);
     pkt.write_integer(x2);
     pkt.write_integer(y2);
+    pkt.write_byte(ambient_r);
+    pkt.write_byte(ambient_g);
+    pkt.write_byte(ambient_b);
+    pkt.write_byte(fog_density);
+    pkt.write_byte(fog_r);
+    pkt.write_byte(fog_g);
+    pkt.write_byte(fog_b);
+    pkt.write_byte(fog_speed_x as u8);
+    pkt.write_byte(fog_speed_y as u8);
     pkt.into_bytes()
 }
 
 /// ID 252: Zone change to "wilderness" (no zone — map defaults).
 pub fn write_zone_change_wilderness(map_name: &str, is_safe: bool, music: i16) -> Vec<u8> {
-    write_zone_change(map_name, 0, is_safe, music, false, false, false, 0, 0, 0, 0)
+    write_zone_change(
+        map_name, 0, is_safe, music, false, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    )
 }

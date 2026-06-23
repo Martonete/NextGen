@@ -1,14 +1,20 @@
 /target/
-/server/ao-server
-/server/logs/*.log
-/server/charfile/*.chr
-/server/Accounts/*.act
-/server/guilds/Bancos/
 *.log
 **/.godot/
-client/build/
 dist/
 *.import
+remembered.dat
+
+# Server runtime data
+server/logs/*.log
+server/charfile/*.chr
+server/Accounts/*.act
+server/guilds/Bancos/
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
 
 # .NET / C# build artifacts
 **/bin/
@@ -16,6 +22,9 @@ dist/
 *.dll
 *.pdb
 *.cache
+
+# AoPak build output directory
+resources/output/
 
 # Claude Code local settings
 .claude/
@@ -29,3 +38,4 @@ QUEST_SYSTEM_RESEARCH.md
 skills-lock.json
 tools/swap_water_textures.py
 *.sln
+13.3 vb6/

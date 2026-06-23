@@ -7,14 +7,14 @@
 //! - `click` — left click (look at), right click (interact)
 //! - `doors` — door interaction, forum system, safe toggle
 
-mod equip;
-mod use_item;
-mod ground;
 mod click;
 mod doors;
+mod equip;
+mod ground;
+mod use_item;
 
-pub(super) use equip::*;
-pub(super) use use_item::*;
-pub(super) use ground::*;
 pub(super) use click::*;
 pub(super) use doors::*;
+pub(super) use equip::*;
+pub(super) use ground::*;
+pub(super) use use_item::*;

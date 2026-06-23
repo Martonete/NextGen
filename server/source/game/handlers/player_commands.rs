@@ -2,19 +2,13 @@
 //! /depositar, /retirar, /fmsg, /hora, /curar, /pmsg, etc.
 //! Extracted from mod.rs to reduce file size.
 
-use tracing::info;
-use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, privilege_level};
-use crate::protocol::{font_index, fields::read_field, binary_packets};
-use crate::db::charfile;
-use crate::data::objects::ObjType;
 use super::common::*;
-use crate::game::types::InventorySlot;
-use super::{
-    warp_user, revive_user, send_inventory_slot, send_full_inventory,
-    iniciar_comercio_npc, iniciar_comercio_usuario, iniciar_banco, enviar_banco_inv,
-    send_to_party,
-};
+use super::{enviar_banco_inv, iniciar_comercio_usuario};
+use crate::db::charfile;
+use crate::game::types::{GameState, SendTarget, privilege_level};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, fields::read_field, font_index};
+use tracing::info;
 
 // GM / Admin command handlers (TCP_HandleData3.bas — GM section)
 // =====================================================================
@@ -24,13 +18,17 @@ use super::{
 
 /// /DESC <text> — Set character description. Saved to charfile.
 pub(super) async fn handle_slash_desc(state: &mut GameState, conn_id: ConnectionId, desc: &str) {
-    let name = match state.users.get(&conn_id) {
+    let _name = match state.users.get(&conn_id) {
         Some(u) if u.logged => u.char_name.clone(),
         _ => return,
     };
 
     if desc.len() > 128 {
-        state.send_console(conn_id, "Descripcion muy larga (max 128 caracteres).", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Descripcion muy larga (max 128 caracteres).",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -63,9 +61,17 @@ pub(super) async fn handle_slash_veraspec(state: &mut GameState, conn_id: Connec
     };
 
     if target_desc.is_empty() {
-        state.send_console(conn_id, &format!("{} no tiene descripcion.", target_name), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("{} no tiene descripcion.", target_name),
+            font_index::INFO,
+        );
     } else {
-        state.send_console(conn_id, &format!("[{}] {}", target_name, target_desc), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("[{}] {}", target_name, target_desc),
+            font_index::INFO,
+        );
     }
 }
 
@@ -89,19 +95,56 @@ pub(super) async fn handle_slash_comerciar(state: &mut GameState, conn_id: Conne
         return;
     }
     if target_user == conn_id {
-        state.send_console(conn_id, "No puedes comerciar contigo mismo.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No puedes comerciar contigo mismo.",
+            font_index::INFO,
+        );
         return;
     }
 
     // Check target is valid
-    let target_ok = state.users.get(&target_user).map(|u| u.logged && !u.dead && !u.trading).unwrap_or(false);
+    let target_ok = state
+        .users
+        .get(&target_user)
+        .map(|u| u.logged && !u.dead && !u.trading)
+        .unwrap_or(false);
     if !target_ok {
         state.send_console(conn_id, "El jugador no esta disponible.", font_index::INFO);
         return;
     }
 
+    // VB6 13.3 parity: both players must be on the same map and within 3 tiles (Chebyshev)
+    let (user_map, user_x, user_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    let (target_map, target_x, target_y) = match state.users.get(&target_user) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if user_map != target_map {
+        state.send_console(
+            conn_id,
+            "El jugador no esta en el mismo mapa.",
+            font_index::INFO,
+        );
+        return;
+    }
+    let dist = (user_x - target_x).abs().max((user_y - target_y).abs());
+    if dist > 3 {
+        state.send_console(
+            conn_id,
+            "Estás demasiado lejos para comerciar.",
+            font_index::INFO,
+        );
+        return;
+    }
+
     // VB6 mutual confirmation: check if target already requested trade with us
-    let target_wants_us = state.users.get(&target_user)
+    let target_wants_us = state
+        .users
+        .get(&target_user)
         .map(|u| u.trade_partner == Some(conn_id) && !u.trading)
         .unwrap_or(false);
 
@@ -113,9 +156,24 @@ pub(super) async fn handle_slash_comerciar(state: &mut GameState, conn_id: Conne
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.trade_partner = Some(target_user);
         }
-        let target_name = state.users.get(&target_user).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(target_user, &format!("{} quiere comerciar contigo. Usa /COMERCIAR para aceptar.", char_name), font_index::INFO);
-        state.send_console(conn_id, &format!("Le has propuesto comerciar a {}.", target_name), font_index::INFO);
+        let target_name = state
+            .users
+            .get(&target_user)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
+        state.send_console(
+            target_user,
+            &format!(
+                "{} quiere comerciar contigo. Usa /COMERCIAR para aceptar.",
+                char_name
+            ),
+            font_index::INFO,
+        );
+        state.send_console(
+            conn_id,
+            &format!("Le has propuesto comerciar a {}.", target_name),
+            font_index::INFO,
+        );
     }
 }
 
@@ -141,7 +199,10 @@ pub(super) async fn handle_slash_boveda(state: &mut GameState, conn_id: Connecti
     // VB6: distance > 5 → ||13
     let (npc_map, npc_x, npc_y, npc_type) = match state.get_npc(target_npc) {
         Some(npc) => (npc.map, npc.x, npc.y, npc.npc_type),
-        None => { state.send_msg_id(conn_id, 9, ""); return; }
+        None => {
+            state.send_msg_id(conn_id, 9, "");
+            return;
+        }
     };
     let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y),
@@ -211,16 +272,34 @@ pub(super) async fn handle_slash_daroro(state: &mut GameState, conn_id: Connecti
     send_stats_gold(state, conn_id).await;
     send_stats_gold(state, target_conn).await;
 
-    let target_real = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("Le diste {} de oro a {}.", amount, target_real), font_index::INFO);
-    state.send_console(target_conn, &format!("{} te dio {} de oro.", my_name, amount), font_index::INFO);
+    let target_real = state
+        .users
+        .get(&target_conn)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    state.send_console(
+        conn_id,
+        &format!("Le diste {} de oro a {}.", amount, target_real),
+        font_index::INFO,
+    );
+    state.send_console(
+        target_conn,
+        &format!("{} te dio {} de oro.", my_name, amount),
+        font_index::INFO,
+    );
 
     info!("[GOLD] {} gave {} gold to {}", my_name, amount, target_real);
 }
 
 /// /DEPOSITAR <amount> — Deposit gold at bank (slash command shortcut).
-pub(super) async fn handle_slash_depositar(state: &mut GameState, conn_id: ConnectionId, amount: i64) {
-    if amount <= 0 { return; }
+pub(super) async fn handle_slash_depositar(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    amount: i64,
+) {
+    if amount <= 0 {
+        return;
+    }
 
     let gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
     if gold < amount {
@@ -237,16 +316,30 @@ pub(super) async fn handle_slash_depositar(state: &mut GameState, conn_id: Conne
     let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
     let bg_pkt = binary_packets::write_update_bank_gold(bank_gold as i32);
     state.send_bytes(conn_id, &bg_pkt);
-    state.send_console(conn_id, &format!("Depositaste {} de oro.", amount), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Depositaste {} de oro.", amount),
+        font_index::INFO,
+    );
 }
 
 /// /RETIRAR <amount> — Withdraw gold from bank (slash command shortcut).
-pub(super) async fn handle_slash_retirar_oro(state: &mut GameState, conn_id: ConnectionId, amount: i64) {
-    if amount <= 0 { return; }
+pub(super) async fn handle_slash_retirar_oro(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    amount: i64,
+) {
+    if amount <= 0 {
+        return;
+    }
 
     let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
     if bank_gold < amount {
-        state.send_console(conn_id, "No tenes suficiente oro en la boveda.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No tenes suficiente oro en la boveda.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -259,7 +352,11 @@ pub(super) async fn handle_slash_retirar_oro(state: &mut GameState, conn_id: Con
     let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
     let bg_pkt = binary_packets::write_update_bank_gold(bank_gold as i32);
     state.send_bytes(conn_id, &bg_pkt);
-    state.send_console(conn_id, &format!("Retiraste {} de oro.", amount), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Retiraste {} de oro.", amount),
+        font_index::INFO,
+    );
 }
 
 /// /FMSG <msg> — Faction message (to all same-faction members).
@@ -270,14 +367,20 @@ pub(super) async fn handle_slash_fmsg(state: &mut GameState, conn_id: Connection
     };
 
     if !armada && !caos {
-        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No perteneces a ninguna faccion.",
+            font_index::INFO,
+        );
         return;
     }
 
     let msg = format!("[Faccion] {}> {}", name, text);
 
     // Send to all users in the same faction
-    let targets: Vec<ConnectionId> = state.users.values()
+    let targets: Vec<ConnectionId> = state
+        .users
+        .values()
         .filter(|u| u.logged && ((armada && u.armada_real) || (caos && u.fuerzas_caos)))
         .map(|u| u.conn_id)
         .collect();
@@ -301,20 +404,36 @@ pub(super) async fn handle_slash_hora(state: &mut GameState, conn_id: Connection
 
     if privileges > privilege_level::USER {
         // GMs broadcast to all
-        state.send_console_to(SendTarget::ToAll, &format!("Hora del servidor: {}", time_str), font_index::INFO);
+        state.send_console_to(
+            SendTarget::ToAll,
+            &format!("Hora del servidor: {}", time_str),
+            font_index::INFO,
+        );
     } else {
-        state.send_console(conn_id, &format!("Hora del servidor: {}", time_str), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("Hora del servidor: {}", time_str),
+            font_index::INFO,
+        );
     }
 }
 
 /// /NICK <name> — Check if a character exists online/offline (player command, NOT GM /CHANGENICK).
-pub(super) async fn handle_slash_nick_check(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+pub(super) async fn handle_slash_nick_check(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    name: &str,
+) {
     let target_upper = name.to_uppercase();
 
     if let Some(&_t_conn) = state.online_names.get(&target_upper) {
         state.send_console(conn_id, &format!("{} esta ONLINE.", name), font_index::INFO);
     } else if charfile::character_exists(&state.pool, name).await {
-        state.send_console(conn_id, &format!("{} existe pero esta OFFLINE.", name), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("{} existe pero esta OFFLINE.", name),
+            font_index::INFO,
+        );
     } else {
         state.send_console(conn_id, &format!("{} no existe.", name), font_index::INFO);
     }
@@ -334,7 +453,11 @@ pub(super) async fn handle_slash_advertencias(state: &mut GameState, conn_id: Co
         return;
     }
 
-    state.send_console(conn_id, &format!("Tenes {} advertencias:", penalties.len()), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Tenes {} advertencias:", penalties.len()),
+        font_index::INFO,
+    );
     for (i, p) in penalties.iter().enumerate() {
         state.send_console(conn_id, &format!("{}: {}", i + 1, p), font_index::INFO);
     }
@@ -384,7 +507,6 @@ pub(super) async fn handle_slash_curar(state: &mut GameState, conn_id: Connectio
     state.send_msg_id(conn_id, 398, "");
 }
 
-
 /// /PMSG <msg> — Party message to all party members.
 pub(super) async fn handle_slash_pmsg(state: &mut GameState, conn_id: ConnectionId, text: &str) {
     let (party_idx, name) = match state.users.get(&conn_id) {
@@ -395,7 +517,9 @@ pub(super) async fn handle_slash_pmsg(state: &mut GameState, conn_id: Connection
     };
 
     let msg = format!("[Party] {}> {}", name, text);
-    let members: Vec<ConnectionId> = state.parties.get(party_idx as usize)
+    let members: Vec<ConnectionId> = state
+        .parties
+        .get(party_idx as usize)
         .and_then(|p| p.as_ref())
         .map(|p| p.members.clone())
         .unwrap_or_default();
@@ -418,7 +542,9 @@ pub(super) async fn handle_slash_onlinegm(state: &mut GameState, conn_id: Connec
 
     let mut names = Vec::new();
     for u in state.users.values() {
-        if !u.logged || u.privileges <= privilege_level::USER { continue; }
+        if !u.logged || u.privileges <= privilege_level::USER {
+            continue;
+        }
         // VB6: Hide Dios+ from non-Dios users
         if u.privileges >= privilege_level::DIOS && my_priv < privilege_level::DIOS {
             continue;
@@ -430,7 +556,11 @@ pub(super) async fn handle_slash_onlinegm(state: &mut GameState, conn_id: Connec
         state.send_console(conn_id, "No hay GMs online.", font_index::INFO);
     } else {
         // VB6 sends via N| packet (green text, one name per line)
-        state.send_console(conn_id, &format!("GMs online: {}", names.join(", ")), font_index::SERVER);
+        state.send_console(
+            conn_id,
+            &format!("GMs online: {}", names.join(", ")),
+            font_index::SERVER,
+        );
     }
 }
 
@@ -444,7 +574,9 @@ pub(super) async fn handle_slash_onlinemap(state: &mut GameState, conn_id: Conne
 
     let mut names = Vec::new();
     for u in state.users.values() {
-        if !u.logged || u.pos_map != my_map { continue; }
+        if !u.logged || u.pos_map != my_map {
+            continue;
+        }
         // VB6: Hide Dios+ from non-Dios users
         if u.privileges >= privilege_level::DIOS && my_priv < privilege_level::DIOS {
             continue;
@@ -463,8 +595,12 @@ pub(super) async fn handle_slash_onlinemap(state: &mut GameState, conn_id: Conne
 /// /DESAFIO <name> — Challenge another player to a duel.
 /// VB6: Sets AtacablePor on both users so they can attack each other
 /// outside of normal PvP rules (e.g. in safe zones).
-pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
-    let (my_name, dead, my_map, mx, my_) = match state.users.get(&conn_id) {
+pub(super) async fn handle_slash_desafio(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target_name: &str,
+) {
+    let (my_name, dead, my_map, _mx, _my_) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.char_name.clone(), u.dead, u.pos_map, u.pos_x, u.pos_y),
         _ => return,
     };
@@ -483,12 +619,18 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
     };
 
     if target_conn == conn_id {
-        state.send_console(conn_id, "No puedes desafiarte a ti mismo.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "No puedes desafiarte a ti mismo.",
+            font_index::INFO,
+        );
         return;
     }
 
     let target_data = match state.users.get(&target_conn) {
-        Some(u) if u.logged && !u.dead => (u.pos_map, u.pos_x, u.pos_y, u.atacable_por, u.duel_pending),
+        Some(u) if u.logged && !u.dead => {
+            (u.pos_map, u.pos_x, u.pos_y, u.atacable_por, u.duel_pending)
+        }
         _ => {
             state.send_console(conn_id, "El jugador no esta disponible.", font_index::INFO);
             return;
@@ -498,12 +640,20 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
 
     // Must be on same map
     if t_map != my_map {
-        state.send_console(conn_id, "El jugador no esta en el mismo mapa.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "El jugador no esta en el mismo mapa.",
+            font_index::INFO,
+        );
         return;
     }
 
     // Check if already dueling
-    let my_atacable = state.users.get(&conn_id).map(|u| u.atacable_por).unwrap_or(0);
+    let my_atacable = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.atacable_por)
+        .unwrap_or(0);
     if my_atacable > 0 {
         state.send_console(conn_id, "Ya estas en un duelo.", font_index::INFO);
         return;
@@ -525,9 +675,21 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
             u.duel_pending = 0;
         }
 
-        let target_real = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(conn_id, &format!("Has aceptado el duelo con {}!", target_real), font_index::FIGHT);
-        state.send_console(target_conn, &format!("{} ha aceptado tu desafio!", my_name), font_index::FIGHT);
+        let target_real = state
+            .users
+            .get(&target_conn)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
+        state.send_console(
+            conn_id,
+            &format!("Has aceptado el duelo con {}!", target_real),
+            font_index::FIGHT,
+        );
+        state.send_console(
+            target_conn,
+            &format!("{} ha aceptado tu desafio!", my_name),
+            font_index::FIGHT,
+        );
         return;
     }
 
@@ -536,9 +698,24 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
         u.duel_pending = target_conn;
     }
 
-    let target_real = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(target_conn, &format!("{} te ha desafiado a un duelo. Usa /DESAFIO {} para aceptar.", my_name, my_name), font_index::FIGHT);
-    state.send_console(conn_id, &format!("Has desafiado a {} a un duelo.", target_real), font_index::INFO);
+    let target_real = state
+        .users
+        .get(&target_conn)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
+    state.send_console(
+        target_conn,
+        &format!(
+            "{} te ha desafiado a un duelo. Usa /DESAFIO {} para aceptar.",
+            my_name, my_name
+        ),
+        font_index::FIGHT,
+    );
+    state.send_console(
+        conn_id,
+        &format!("Has desafiado a {} a un duelo.", target_real),
+        font_index::INFO,
+    );
 }
 
 /// /FINDESAFIO — End current duel.
@@ -570,7 +747,11 @@ pub(super) async fn handle_slash_findesafio(state: &mut GameState, conn_id: Conn
     }
 
     state.send_console(conn_id, "Has terminado el duelo.", font_index::INFO);
-    state.send_console(partner, &format!("{} ha terminado el duelo.", my_name), font_index::INFO);
+    state.send_console(
+        partner,
+        &format!("{} ha terminado el duelo.", my_name),
+        font_index::INFO,
+    );
 }
 
 // =====================================================================
@@ -579,7 +760,11 @@ pub(super) async fn handle_slash_findesafio(state: &mut GameState, conn_id: Conn
 
 /// /APOSTAR <amount> — Bet gold at the Timbero NPC.
 /// VB6: 47% win chance, min 1 max 5000 gold.
-pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: ConnectionId, amount: i64) {
+pub(super) async fn handle_slash_apostar(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    amount: i64,
+) {
     let (dead, target_npc, gold, map, x, y) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.dead, u.target_npc, u.gold, u.pos_map, u.pos_x, u.pos_y),
         _ => return,
@@ -591,7 +776,11 @@ pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: Connect
     }
 
     if amount < 1 || amount > 5000 {
-        state.send_console(conn_id, "La apuesta debe ser entre 1 y 5000 monedas de oro.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "La apuesta debe ser entre 1 y 5000 monedas de oro.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -608,7 +797,11 @@ pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: Connect
 
     let npc_type = state.get_npc(target_npc).map(|n| n.npc_type);
     if npc_type != Some(crate::data::npcs::NpcType::Gambler) {
-        state.send_console(conn_id, "Debes seleccionar un Timbero para apostar.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Debes seleccionar un Timbero para apostar.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -633,13 +826,21 @@ pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: Connect
             u.gold += amount;
         }
         state.timbero_perdidas += amount;
-        state.send_console(conn_id, &format!("Ganaste {} monedas de oro!", amount), font_index::FIGHT);
+        state.send_console(
+            conn_id,
+            &format!("Ganaste {} monedas de oro!", amount),
+            font_index::FIGHT,
+        );
     } else {
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.gold -= amount;
         }
         state.timbero_ganancias += amount;
-        state.send_console(conn_id, &format!("Perdiste {} monedas de oro.", amount), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("Perdiste {} monedas de oro.", amount),
+            font_index::INFO,
+        );
     }
 
     send_stats_gold(state, conn_id).await;
@@ -676,14 +877,25 @@ pub(super) async fn handle_slash_hogar(state: &mut GameState, conn_id: Connectio
     }
 
     if target_npc == 0 {
-        state.send_console(conn_id, "Primero selecciona un Gobernador.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Primero selecciona un Gobernador.",
+            font_index::INFO,
+        );
         return;
     }
 
     // VB6: NpcType = 11 (Gobernador) — our enum uses Quest=11 for this
-    let npc_type_num = state.get_npc(target_npc).map(|n| n.npc_type as i32).unwrap_or(0);
+    let npc_type_num = state
+        .get_npc(target_npc)
+        .map(|n| n.npc_type as i32)
+        .unwrap_or(0);
     if npc_type_num != 11 {
-        state.send_console(conn_id, "Debes seleccionar un Gobernador.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Debes seleccionar un Gobernador.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -702,7 +914,8 @@ pub(super) async fn handle_slash_hogar(state: &mut GameState, conn_id: Connectio
     }
 
     // Get city from NPC's spawn location (map name as city)
-    let city_name = state.get_npc(target_npc)
+    let city_name = state
+        .get_npc(target_npc)
         .and_then(|n| state.game_data.maps.get(n.map as usize))
         .and_then(|m| m.as_ref())
         .map(|m| m.info.name.clone())
@@ -712,7 +925,11 @@ pub(super) async fn handle_slash_hogar(state: &mut GameState, conn_id: Connectio
         u.hogar = city_name.clone();
     }
 
-    state.send_console(conn_id, &format!("Tu hogar ha sido establecido en {}.", city_name), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Tu hogar ha sido establecido en {}.", city_name),
+        font_index::INFO,
+    );
 }
 
 // =====================================================================
@@ -730,7 +947,11 @@ pub(super) async fn handle_slash_passwd(state: &mut GameState, conn_id: Connecti
     }
 
     if new_pass.len() < 3 {
-        state.send_console(conn_id, "La nueva password debe tener al menos 3 caracteres.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "La nueva password debe tener al menos 3 caracteres.",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -763,10 +984,16 @@ pub(super) async fn handle_slash_passwd(state: &mut GameState, conn_id: Connecti
     };
 
     // Update in DB
-    if crate::db::accounts::update_password(&state.pool, &account_name, &new_hash).await.is_ok() {
+    if crate::db::accounts::update_password(&state.pool, &account_name, &new_hash)
+        .await
+        .is_ok()
+    {
         state.send_console(conn_id, "Password cambiada exitosamente.", font_index::INFO);
     } else {
-        state.send_console(conn_id, "Error al guardar la nueva password.", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Error al guardar la nueva password.",
+            font_index::INFO,
+        );
     }
 }
-

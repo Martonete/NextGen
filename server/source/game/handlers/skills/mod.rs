@@ -6,29 +6,21 @@
 //! - `combat` — taming, ranged attacks
 //! - `stealth` — stealing, hiding
 
-mod resource;
-mod craft;
 mod combat;
+mod craft;
+mod resource;
 mod stealth;
 
 // Re-export all sub-module items to parent (handlers) scope
-pub(crate) use resource::*;
 pub(crate) use craft::*;
-pub(crate) use combat::*;
 pub(crate) use stealth::*;
 
-
-use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::game::world;
-use crate::protocol::{font_index, binary_packets};
-use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
-use crate::game::handlers::{
-    send_inventory_slot, send_full_inventory, user_die, do_cast_spell,
-    check_user_level,
-};
+use crate::game::handlers::{do_cast_spell, send_inventory_slot};
+use crate::game::types::{GameState, UserState};
+use crate::game::world;
+use crate::net::ConnectionId;
 
 pub(super) mod skill_id {
     pub const SUERTE: i32 = 1;
@@ -55,8 +47,6 @@ pub(super) mod skill_id {
     pub const DEFENSA_MAGICA: i32 = 22;
     pub const FUNDIR_METAL: i32 = 88;
 }
-
-use crate::game::constants::*;
 
 /// Stamina costs.
 pub(crate) const ESFUERZO_TALAR_RECOLECTOR: i32 = 2;
@@ -111,9 +101,9 @@ fn max_items_extraibles(level: i32) -> i32 {
 
 // VB6 13.3 skill constants (Declares.bas)
 const MAXSKILLPOINTS: i32 = 100;
-const EXP_ACIERTO_SKILL: i32 = 50;  // XP on successful skill use
-const EXP_FALLO_SKILL: i32 = 20;    // XP on failed skill use
-const ELU_SKILL_INICIAL: i32 = 200;  // Base ELU for skill progression
+const EXP_ACIERTO_SKILL: i32 = 50; // XP on successful skill use
+const EXP_FALLO_SKILL: i32 = 20; // XP on failed skill use
+const ELU_SKILL_INICIAL: i32 = 200; // Base ELU for skill progression
 
 /// VB6 13.3 level cap table for skills (General.bas:347-397).
 fn skill_level_cap(char_level: i32) -> i32 {
@@ -143,7 +133,9 @@ fn skill_level_cap(char_level: i32) -> i32 {
 
 /// VB6 13.3: CheckEluSkill — calculate ELU for a skill.
 pub(super) fn calc_elu_skill(skill_level: i32) -> i32 {
-    if skill_level >= MAXSKILLPOINTS { return 0; }
+    if skill_level >= MAXSKILLPOINTS {
+        return 0;
+    }
     (ELU_SKILL_INICIAL as f64 * 1.05f64.powi(skill_level)) as i32
 }
 
@@ -153,21 +145,33 @@ pub(super) fn try_level_skill(user: &mut UserState, skill_idx: usize) -> bool {
 }
 
 pub(super) fn try_level_skill_with_hit(user: &mut UserState, skill_idx: usize, hit: bool) -> bool {
-    if skill_idx == 0 || skill_idx > 21 { return false; }
+    if skill_idx == 0 || skill_idx > 21 {
+        return false;
+    }
     let idx = skill_idx - 1; // 0-based
 
-    // Must not be hungry or thirsty
-    if user.min_ham <= 0 || user.min_agua <= 0 { return false; }
+    // VB6 13.3 parity: can't level skills while starving or dehydrated
+    if user.min_ham <= 1 || user.min_agua <= 1 {
+        return false;
+    }
 
     // Max skill check
-    if user.skills[idx] >= MAXSKILLPOINTS { return false; }
+    if user.skills[idx] >= MAXSKILLPOINTS {
+        return false;
+    }
 
     // Level cap check
     let cap = skill_level_cap(user.level);
-    if user.skills[idx] >= cap { return false; }
+    if user.skills[idx] >= cap {
+        return false;
+    }
 
     // Add skill XP based on success/failure
-    let xp_gain = if hit { EXP_ACIERTO_SKILL } else { EXP_FALLO_SKILL };
+    let xp_gain = if hit {
+        EXP_ACIERTO_SKILL
+    } else {
+        EXP_FALLO_SKILL
+    };
     user.exp_skills[idx] += xp_gain;
 
     // Check if enough XP to level up
@@ -205,7 +209,9 @@ pub(super) fn has_tool_equipped(user: &UserState, tool_obj_index: i32) -> bool {
 pub(super) fn equipped_weapon_obj(user: &UserState) -> i32 {
     if user.equip.weapon > 0 && user.equip.weapon <= user.inventory.len() {
         let slot = &user.inventory[user.equip.weapon - 1];
-        if slot.equipped { return slot.obj_index; }
+        if slot.equipped {
+            return slot.obj_index;
+        }
     }
     0
 }
@@ -233,21 +239,53 @@ pub(super) fn mod_carpinteria(class: PlayerClass) -> f32 {
     if class.is_recolector() { 1.0 } else { 3.0 }
 }
 
+/// VB6: ModNavegacion — navigation skill modifier for boat boarding.
+/// Pirata=1.0 (no penalty), Worker with Pesca=100: 1.71, Worker otherwise: 2.0,
+/// all others: 2.0.
+/// `fishing_skill` is the player's Pesca skill value (0–100).
+pub(crate) fn mod_navegacion(class: PlayerClass, fishing_skill: i32) -> f32 {
+    match class {
+        PlayerClass::Pirata => 1.0,
+        PlayerClass::Trabajador => {
+            if fishing_skill >= 100 {
+                1.71
+            } else {
+                2.0
+            }
+        }
+        _ => 2.0,
+    }
+}
+
 /// Helper: check if user has at least `amount` of an item.
 fn has_items(state: &GameState, conn_id: ConnectionId, obj_index: i32, amount: i32) -> bool {
-    if amount <= 0 { return true; }
-    let total: i32 = state.users.get(&conn_id)
-        .map(|u| u.inventory.iter()
-            .filter(|s| s.obj_index == obj_index)
-            .map(|s| s.amount)
-            .sum())
+    if amount <= 0 {
+        return true;
+    }
+    let total: i32 = state
+        .users
+        .get(&conn_id)
+        .map(|u| {
+            u.inventory
+                .iter()
+                .filter(|s| s.obj_index == obj_index)
+                .map(|s| s.amount)
+                .sum()
+        })
         .unwrap_or(0);
     total >= amount
 }
 
 /// Helper: remove `amount` of an item from inventory, updating slots.
-async fn remove_items(state: &mut GameState, conn_id: ConnectionId, obj_index: i32, mut amount: i32) {
-    if amount <= 0 { return; }
+async fn remove_items(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    obj_index: i32,
+    mut amount: i32,
+) {
+    if amount <= 0 {
+        return;
+    }
     let slots_to_update: Vec<usize> = {
         let mut slots = Vec::new();
         if let Some(u) = state.users.get_mut(&conn_id) {
@@ -258,8 +296,8 @@ async fn remove_items(state: &mut GameState, conn_id: ConnectionId, obj_index: i
                     let new_amt = u.inventory[i].amount - take;
                     if new_amt <= 0 {
                         u.inventory[i].obj_index = 0;
-        u.inventory[i].amount = 0;
-        u.inventory[i].equipped = false;
+                        u.inventory[i].amount = 0;
+                        u.inventory[i].equipped = false;
                     } else {
                         u.inventory[i].amount = new_amt;
                     }
@@ -275,10 +313,15 @@ async fn remove_items(state: &mut GameState, conn_id: ConnectionId, obj_index: i
 }
 
 /// WLC — Work Left Click (main skill dispatch).
-pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: ConnectionId, target_x: i32, target_y: i32, skill_type: i32) {
-
+pub(super) async fn handle_work_left_click(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target_x: i32,
+    target_y: i32,
+    skill_type: i32,
+) {
     // Validate user
-    let (dead, meditating, map, ux, uy) = match state.users.get(&conn_id) {
+    let (dead, meditating, _map, ux, uy) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.dead, u.meditating, u.pos_map, u.pos_x, u.pos_y),
         _ => return,
     };
@@ -287,7 +330,9 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
         state.send_msg_id(conn_id, 3, "");
         return;
     }
-    if meditating { return; }
+    if meditating {
+        return;
+    }
 
     // Range check
     if (target_x - ux).abs() > world::MIN_X_BORDER || (target_y - uy).abs() > world::MIN_Y_BORDER {
@@ -301,7 +346,18 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
 
     match skill_type {
         skill_id::PESCA => {
-            resource::do_pescar(state, conn_id, target_x, target_y).await;
+            // VB6 Protocol.bas:3033: RED_PESCA → DoPescarRed (fish school tile check inside),
+            // CANA_PESCA / CANA_PESCA_NEWBIE → DoPescar (water tile check inside).
+            let weapon = state
+                .users
+                .get(&conn_id)
+                .map(|u| equipped_weapon_obj(u))
+                .unwrap_or(0);
+            if weapon == crate::game::constants::RED_PESCA {
+                resource::do_pescar_red(state, conn_id, target_x, target_y).await;
+            } else {
+                resource::do_pescar(state, conn_id, target_x, target_y).await;
+            }
         }
         skill_id::TALAR => {
             resource::do_talar(state, conn_id, target_x, target_y).await;
@@ -335,7 +391,11 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
             }
 
             // Cast the pending spell
-            let pending = state.users.get(&conn_id).map(|u| u.pending_spell).unwrap_or(0);
+            let pending = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.pending_spell)
+                .unwrap_or(0);
             if pending > 0 {
                 do_cast_spell(state, conn_id).await;
                 send_stats_mana(state, conn_id).await;
@@ -347,8 +407,22 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
         skill_id::OCULTARSE => {
             stealth::do_ocultarse(state, conn_id).await;
         }
+        skill_id::SUERTE
+        | skill_id::TACTICAS
+        | skill_id::ARMAS
+        | skill_id::MEDITAR
+        | skill_id::APUNALAR
+        | skill_id::SUPERVIVENCIA
+        | skill_id::COMERCIAR
+        | skill_id::DEFENSA
+        | skill_id::LIDERAZGO
+        | skill_id::WRESTERLING
+        | skill_id::NAVEGACION
+        | skill_id::DEFENSA_MAGICA => {
+            // Passive skills have no click action — VB6 silently ignores
+        }
         _ => {
-            tracing::info!("[WLC] #{} unsupported skill type {}", conn_id, skill_type);
+            tracing::info!("[WLC] #{} unknown skill type {}", conn_id, skill_type);
         }
     }
 }

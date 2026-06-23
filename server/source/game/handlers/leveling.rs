@@ -3,25 +3,37 @@
 
 use tracing::info;
 
-use crate::net::ConnectionId;
-use crate::protocol::binary_packets;
+use super::common::*;
 use crate::game::class_race::{PlayerClass, PlayerRace};
 use crate::game::types::{GameState, SendTarget};
-use super::common::*;
+use crate::net::ConnectionId;
+use crate::protocol::binary_packets;
 
 // =====================================================================
 // Level up system
 // =====================================================================
 
-const MAX_LEVEL: i32 = 50;
+const MAX_LEVEL: i32 = 255;
 
 /// Check if user has enough exp to level up, and apply it.
 /// VB6 parity: two separate paths for levels 1-49 vs 50+.
 pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
+    // VB6: QuitarNewbieObj is called when player stops being newbie (level > 12).
+    // Record whether they were newbie before the level-up loop.
+    let was_newbie = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.level <= 12)
+        .unwrap_or(false);
+
     loop {
-        let (level, exp, class, race, intelligence, constitution) = match state.users.get(&conn_id) {
+        let (level, exp, class, race, intelligence, constitution) = match state.users.get(&conn_id)
+        {
             Some(u) if u.logged => (
-                u.level, u.exp, u.class, u.race,
+                u.level,
+                u.exp,
+                u.class,
+                u.race,
                 u.attributes[2], // Intelligence
                 u.attributes[4], // Constitution
             ),
@@ -43,8 +55,14 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         // ══════════════════════════════════════════════════════════════
         // VB6: Level 1-49 path — full promedio HP + INT-based mana
         // ══════════════════════════════════════════════════════════════
-        let (hp_gain, mana_gain, sta_gain, hit_gain) =
-            level_up_gains(class, race, level, constitution, intelligence, &state.game_data.balance);
+        let (hp_gain, mana_gain, sta_gain, hit_gain) = level_up_gains(
+            class,
+            race,
+            level,
+            constitution,
+            intelligence,
+            &state.game_data.balance,
+        );
 
         if let Some(user) = state.users.get_mut(&conn_id) {
             let new_level = level + 1;
@@ -54,23 +72,37 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
 
             // HP: add gain, cap at STAT_MAXHP (VB6: 999)
             user.max_hp += hp_gain;
-            if user.max_hp > STAT_MAXHP { user.max_hp = STAT_MAXHP; }
+            if user.max_hp > STAT_MAXHP {
+                user.max_hp = STAT_MAXHP;
+            }
 
             // Mana: add with cap (VB6: <36 → STAT_MAXMAN, >=36 → 9999)
             user.max_mana += mana_gain;
             let mana_cap = if user.level < 36 { STAT_MAXMAN } else { 9999 };
-            if user.max_mana > mana_cap { user.max_mana = mana_cap; }
+            if user.max_mana > mana_cap {
+                user.max_mana = mana_cap;
+            }
 
             // STA: add with cap
             user.max_sta += sta_gain;
-            if user.max_sta > STAT_MAXSTA { user.max_sta = STAT_MAXSTA; }
+            if user.max_sta > STAT_MAXSTA {
+                user.max_sta = STAT_MAXSTA;
+            }
 
             // Hit: add with level-dependent caps
-            let hit_cap = if user.level < 36 { STAT_MAXHIT_UNDER36 } else { STAT_MAXHIT_OVER36 };
+            let hit_cap = if user.level < 36 {
+                STAT_MAXHIT_UNDER36
+            } else {
+                STAT_MAXHIT_OVER36
+            };
             user.max_hit += hit_gain;
-            if user.max_hit > hit_cap { user.max_hit = hit_cap; }
+            if user.max_hit > hit_cap {
+                user.max_hit = hit_cap;
+            }
             user.min_hit += hit_gain;
-            if user.min_hit > hit_cap { user.min_hit = hit_cap; }
+            if user.min_hit > hit_cap {
+                user.min_hit = hit_cap;
+            }
 
             // VB6 parity: full heal on level up (MinHP = MaxHP)
             let final_max_hp = user.max_hp;
@@ -82,13 +114,20 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         }
 
         let new_level = level + 1;
-        let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
+        let char_index = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.char_index.0)
+            .unwrap_or(0);
         let map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
         let x = state.users.get(&conn_id).map(|u| u.pos_x).unwrap_or(0);
         let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
 
         // Level up sound + FX
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as i16, y as i16));
+        state.send_data_bytes(
+            SendTarget::ToArea { map, x, y },
+            &binary_packets::write_play_wave(6, x as i16, y as i16),
+        );
         state.send_data_bytes(
             SendTarget::ToArea { map, x, y },
             &binary_packets::write_char_particle_create(char_index as i16, 58),
@@ -121,19 +160,38 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         // Send LevelUp packet with skill points (VB6: WriteLevelUp → client accumulates)
         state.send_bytes(conn_id, &binary_packets::write_level_up(pts as i16));
         // Send updated level
-        state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8));
+        state.send_bytes(
+            conn_id,
+            &binary_packets::write_level_update(new_level as u8),
+        );
         send_stats_hp(state, conn_id).await;
         send_stats_mana(state, conn_id).await;
         send_stats_sta(state, conn_id).await;
         send_stats_exp(state, conn_id).await;
 
-        let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        info!("[LEVEL] '{}' reached level {} (HP+{}, MANA+{}, STA+{}, HIT+{})",
-            name, new_level, hp_gain, mana_gain, sta_gain, hit_gain);
+        let name = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
+        info!(
+            "[LEVEL] '{}' reached level {} (HP+{}, MANA+{}, STA+{}, HIT+{})",
+            name, new_level, hp_gain, mana_gain, sta_gain, hit_gain
+        );
+
+        // VB6 13.3 parity: at level 25, expel from faction guild (Armada/Caos pretoriano guilds).
+        if new_level == 25 {
+            super::guilds_handler::expel_from_faction_guild_at_25(state, conn_id).await;
+        }
 
         // 13.3: Level 50 — announcement + 50 bonus skill points (one-time)
         if new_level == 50 {
-            state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535);
+            state.send_chat_talk_to(
+                SendTarget::ToAll,
+                0i16,
+                &format!("{} ha alcanzado el nivel 50!", name),
+                65535,
+            );
             state.send_msg_id(conn_id, 57, "50");
             // VB6: AgregarPuntos(50) — 50 bonus free skill points at level 50
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -144,19 +202,102 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
 
         // Continue looping in case of multi-level jumps
     }
+
+    // VB6: QuitarNewbieObj — called when player was newbie and is now no longer newbie.
+    // Removes newbie items from inventory; teleports out of newbie dungeon.
+    let is_now_newbie = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.level <= 12)
+        .unwrap_or(true);
+    if was_newbie && !is_now_newbie {
+        quitar_newbie_obj(state, conn_id).await;
+    }
+}
+
+/// VB6: QuitarNewbieObj — remove newbie items when player stops being a newbie.
+/// Removes all inventory items with `newbie == true`, then teleports player out
+/// of the newbie dungeon if they're currently in a newbie zone.
+async fn quitar_newbie_obj(state: &mut GameState, conn_id: ConnectionId) {
+    // Remove newbie items from inventory
+    let slots_to_clear: Vec<usize> = {
+        match state.users.get(&conn_id) {
+            Some(u) => u
+                .inventory
+                .iter()
+                .enumerate()
+                .filter_map(|(i, slot)| {
+                    if slot.obj_index > 0 {
+                        let is_newbie_item = state
+                            .game_data
+                            .objects
+                            .get((slot.obj_index - 1) as usize)
+                            .map(|o| o.newbie)
+                            .unwrap_or(false);
+                        if is_newbie_item { Some(i) } else { None }
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            None => return,
+        }
+    };
+
+    for slot_idx in slots_to_clear {
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.inventory[slot_idx].obj_index = 0;
+            u.inventory[slot_idx].amount = 0;
+            u.inventory[slot_idx].equipped = false;
+        }
+        super::send_inventory_slot(state, conn_id, slot_idx).await;
+    }
+
+    // VB6: If in newbie dungeon, teleport to hometown
+    let (map, x, y, hogar) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.hogar.clone()),
+        None => return,
+    };
+
+    let in_newbie_zone = state
+        .game_data
+        .maps
+        .get(map as usize)
+        .and_then(|m| m.as_ref())
+        .and_then(|gm| gm.get_zone_at(x - 1, y - 1))
+        .map(|z| z.newbie)
+        .unwrap_or(false);
+
+    if in_newbie_zone {
+        let (home_map, home_x, home_y) = resolve_home_city_for_newbie(&hogar);
+        if home_map > 0 {
+            super::warp_user(state, conn_id, home_map, home_x, home_y).await;
+        }
+    }
+}
+
+/// Resolve hometown warp coordinates for QuitarNewbieObj.
+/// VB6: Lindos/Ullathorpe/Banderbill/Nix select block.
+fn resolve_home_city_for_newbie(hogar: &str) -> (i32, i32, i32) {
+    match hogar.to_uppercase().as_str() {
+        "LINDOS" => (28, 50, 50),
+        "ULLATHORPE" => (1, 50, 50),
+        "BANDERBILL" => (14, 50, 50),
+        _ => (3, 50, 50), // Default: Nix
+    }
 }
 
 // VB6 13.3 constants (Declares.bas)
-const STAT_MAXHP: i32 = 999;             // VB6: STAT_MAXHP = 999
+const STAT_MAXHP: i32 = 999; // VB6: STAT_MAXHP = 999
 const AUMENTO_ST_DEF: i32 = 15;
-const AUMENTO_ST_LADRON: i32 = 18;    // AumentoSTDef + 3
-const AUMENTO_ST_BANDIDO: i32 = 18;   // AumentoSTDef + 3
-const AUMENTO_ST_MAGO: i32 = 14;      // AumentoSTDef - 1
+const AUMENTO_ST_LADRON: i32 = 18; // AumentoSTDef + 3
+const AUMENTO_ST_BANDIDO: i32 = 18; // AumentoSTDef + 3
+const AUMENTO_ST_MAGO: i32 = 14; // AumentoSTDef - 1
 const AUMENTO_ST_TRABAJADOR: i32 = 40; // AumentoSTDef + 25
-const STAT_MAXSTA: i32 = 999;         // VB6: STAT_MAXSTA = 999
-const STAT_MAXMAN: i32 = 9999;        // VB6: STAT_MAXMAN = 9999
-const STAT_MAXHIT_UNDER36: i32 = 99;  // VB6: STAT_MAXHIT_UNDER36
-const STAT_MAXHIT_OVER36: i32 = 999;  // VB6: STAT_MAXHIT_OVER36
+const STAT_MAXSTA: i32 = 999; // VB6: STAT_MAXSTA = 999
+const STAT_MAXMAN: i32 = 9999; // VB6: STAT_MAXMAN = 9999
+const STAT_MAXHIT_UNDER36: i32 = 99; // VB6: STAT_MAXHIT_UNDER36
+const STAT_MAXHIT_OVER36: i32 = 999; // VB6: STAT_MAXHIT_OVER36
 
 /// VB6 13.3 level-up stat gains (Modulo_UsUaRiOs.bas:499-707).
 /// HP: MODVIDA + CON-based probabilistic distribution.
@@ -164,8 +305,14 @@ const STAT_MAXHIT_OVER36: i32 = 999;  // VB6: STAT_MAXHIT_OVER36
 /// STA: per-class constants.
 /// HIT: per-class with level>35 cutoffs.
 /// Returns (hp_gain, mana_gain, sta_gain, hit_gain).
-fn level_up_gains(class: PlayerClass, _race: PlayerRace, level: i32, constitution: i32, intelligence: i32,
-                  balance: &crate::data::balance::BalanceData) -> (i32, i32, i32, i32) {
+fn level_up_gains(
+    class: PlayerClass,
+    _race: PlayerRace,
+    level: i32,
+    constitution: i32,
+    intelligence: i32,
+    balance: &crate::data::balance::BalanceData,
+) -> (i32, i32, i32, i32) {
     use PlayerClass::*;
 
     // ── HP gain (VB6: MODVIDA + CON distribution) ──
@@ -176,10 +323,10 @@ fn level_up_gains(class: PlayerClass, _race: PlayerRace, level: i32, constitutio
 
     // ── Mana gain (VB6 exact multipliers) ──
     let mana_gain = match class {
-        Mago    => (2.8 * intelligence as f64) as i32,
+        Mago => (2.8 * intelligence as f64) as i32,
         Clerigo => 2 * intelligence,
-        Druida  => 2 * intelligence,
-        Bardo   => 2 * intelligence,
+        Druida => 2 * intelligence,
+        Bardo => 2 * intelligence,
         Asesino => intelligence,
         Paladin => intelligence,
         Bandido => intelligence / 3 * 2,
@@ -188,26 +335,56 @@ fn level_up_gains(class: PlayerClass, _race: PlayerRace, level: i32, constitutio
 
     // ── STA gain (VB6 exact constants) ──
     let sta_gain = match class {
-        Mago       => AUMENTO_ST_MAGO,
-        Ladron     => AUMENTO_ST_LADRON,
-        Bandido    => AUMENTO_ST_BANDIDO,
+        Mago => AUMENTO_ST_MAGO,
+        Ladron => AUMENTO_ST_LADRON,
+        Bandido => AUMENTO_ST_BANDIDO,
         Trabajador => AUMENTO_ST_TRABAJADOR,
         _ => AUMENTO_ST_DEF,
     };
 
     // ── HIT gain (VB6 exact with level>35 cutoffs) ──
     let hit_gain = match class {
-        Guerrero => if level > 35 { 2 } else { 3 },
-        Cazador  => if level > 35 { 2 } else { 3 },
-        Pirata   => 3,
-        Paladin  => if level > 35 { 1 } else { 3 },
-        Asesino  => if level > 35 { 1 } else { 3 },
-        Bandido  => if level > 35 { 1 } else { 3 },
-        Ladron   => 2,
-        Mago     => 1,
-        Clerigo  => 2,
-        Druida   => 2,
-        Bardo    => 2,
+        Guerrero => {
+            if level > 35 {
+                2
+            } else {
+                3
+            }
+        }
+        Cazador => {
+            if level > 35 {
+                2
+            } else {
+                3
+            }
+        }
+        Pirata => 3,
+        Paladin => {
+            if level > 35 {
+                1
+            } else {
+                3
+            }
+        }
+        Asesino => {
+            if level > 35 {
+                1
+            } else {
+                3
+            }
+        }
+        Bandido => {
+            if level > 35 {
+                1
+            } else {
+                3
+            }
+        }
+        Ladron => 2,
+        Mago => 1,
+        Clerigo => 2,
+        Druida => 2,
+        Bardo => 2,
         Trabajador => 2,
     };
 
@@ -223,23 +400,37 @@ fn hp_gain_from_distribution(promedio: f64, dist: &crate::data::balance::HpDistr
         // Semi-integer distribution (4 brackets: +1.5, +0.5, -0.5, -1.5)
         let mut cumulative = 0;
         cumulative += dist.semientera[0]; // S1
-        if roll <= cumulative { return (promedio + 1.5) as i32; }
+        if roll <= cumulative {
+            return (promedio + 1.5) as i32;
+        }
         cumulative += dist.semientera[1]; // S2
-        if roll <= cumulative { return (promedio + 0.5) as i32; }
+        if roll <= cumulative {
+            return (promedio + 0.5) as i32;
+        }
         cumulative += dist.semientera[2]; // S3
-        if roll <= cumulative { return (promedio - 0.5) as i32; }
+        if roll <= cumulative {
+            return (promedio - 0.5) as i32;
+        }
         return (promedio - 1.5).max(1.0) as i32;
     } else {
         // Integer distribution (5 brackets: +2, +1, 0, -1, -2)
         let mut cumulative = 0;
         cumulative += dist.entera[0]; // E1
-        if roll <= cumulative { return (promedio as i32) + 2; }
+        if roll <= cumulative {
+            return (promedio as i32) + 2;
+        }
         cumulative += dist.entera[1]; // E2
-        if roll <= cumulative { return (promedio as i32) + 1; }
+        if roll <= cumulative {
+            return (promedio as i32) + 1;
+        }
         cumulative += dist.entera[2]; // E3
-        if roll <= cumulative { return promedio as i32; }
+        if roll <= cumulative {
+            return promedio as i32;
+        }
         cumulative += dist.entera[3]; // E4
-        if roll <= cumulative { return (promedio as i32) - 1; }
+        if roll <= cumulative {
+            return (promedio as i32) - 1;
+        }
         return ((promedio as i32) - 2).max(1);
     }
 }

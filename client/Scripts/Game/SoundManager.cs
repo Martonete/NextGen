@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.Game;
 
@@ -98,6 +99,7 @@ public partial class SoundManager : Node
 
     // State
     private string _dataPath = "";
+    private IResourceProvider? _resources;
     private bool _soundEnabled = true;
     private bool _musicEnabled = true;
     private float _sfxVolumeDb = SfxHeadroomDb;
@@ -134,9 +136,10 @@ public partial class SoundManager : Node
 
     // ── Initialization ───────────────────────────────────────────────
 
-    public void Init(string dataPath)
+    public void Init(string dataPath, IResourceProvider? resources = null)
     {
         _dataPath = dataPath;
+        _resources = resources;
 
         // Create AudioListener2D so spatial sounds work relative to player
         _listener = new AudioListener2D();
@@ -255,12 +258,12 @@ public partial class SoundManager : Node
 
         if (!_sfxCache.TryGetValue(cacheKey, out var stream))
         {
-            string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", fileName);
-            if (System.IO.File.Exists(filePath))
+            string relativePath = $"Sounds/WAV/{fileName}";
+            if (_resources != null ? _resources.Exists(relativePath) : System.IO.File.Exists(System.IO.Path.Combine(_dataPath, "Sounds", "WAV", fileName)))
             {
                 try
                 {
-                    byte[] raw = System.IO.File.ReadAllBytes(filePath);
+                    byte[] raw = _resources != null ? _resources.ReadBytes(relativePath) : System.IO.File.ReadAllBytes(System.IO.Path.Combine(_dataPath, "Sounds", "WAV", fileName));
                     stream = ParseWav(raw);
                 }
                 catch { stream = null; }
@@ -523,12 +526,13 @@ public partial class SoundManager : Node
 
     private AudioStream? LoadWav(int id)
     {
-        string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
-        if (!System.IO.File.Exists(filePath)) return null;
+        string relativePath = $"Sounds/WAV/{id}.wav";
+        if (_resources != null ? !_resources.Exists(relativePath) : !System.IO.File.Exists(System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav")))
+            return null;
 
         try
         {
-            byte[] raw = System.IO.File.ReadAllBytes(filePath);
+            byte[] raw = _resources != null ? _resources.ReadBytes(relativePath) : System.IO.File.ReadAllBytes(System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav"));
             return ParseWav(raw);
         }
         catch (Exception e)
@@ -540,12 +544,13 @@ public partial class SoundManager : Node
 
     private AudioStream? LoadMp3(int id)
     {
-        string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "MP3", $"{id}.mp3");
-        if (!System.IO.File.Exists(filePath)) return null;
+        string relativePath = $"Sounds/MP3/{id}.mp3";
+        if (_resources != null ? !_resources.Exists(relativePath) : !System.IO.File.Exists(System.IO.Path.Combine(_dataPath, "Sounds", "MP3", $"{id}.mp3")))
+            return null;
 
         try
         {
-            byte[] raw = System.IO.File.ReadAllBytes(filePath);
+            byte[] raw = _resources != null ? _resources.ReadBytes(relativePath) : System.IO.File.ReadAllBytes(System.IO.Path.Combine(_dataPath, "Sounds", "MP3", $"{id}.mp3"));
             var mp3 = new AudioStreamMP3();
             mp3.Data = raw;
             return mp3;
@@ -559,12 +564,13 @@ public partial class SoundManager : Node
 
     private AudioStream? LoadWavAsMp3(int id)
     {
-        string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
-        if (!System.IO.File.Exists(filePath)) return null;
+        string relativePath = $"Sounds/WAV/{id}.wav";
+        if (_resources != null ? !_resources.Exists(relativePath) : !System.IO.File.Exists(System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav")))
+            return null;
 
         try
         {
-            byte[] raw = System.IO.File.ReadAllBytes(filePath);
+            byte[] raw = _resources != null ? _resources.ReadBytes(relativePath) : System.IO.File.ReadAllBytes(System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav"));
             if (raw.Length > 20 && raw[0] == 'R' && raw[1] == 'I')
             {
                 int fmt = FindFmtFormat(raw);

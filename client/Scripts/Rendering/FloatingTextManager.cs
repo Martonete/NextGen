@@ -18,6 +18,7 @@ public class FloatingText
     public float Duration;   // total lifetime in seconds
     public float RisePixels; // total pixels to rise
     public float OffsetY;    // extra Y offset (stacks multiple texts)
+    public float CachedTextWidth;  // cached width to avoid GetStringSize every frame
 
     public FloatingText(int charIndex, string text, Color color, float duration = 1.5f, float risePixels = 40f, float offsetY = 0f)
     {
@@ -28,6 +29,7 @@ public class FloatingText
         Duration = duration;
         RisePixels = risePixels;
         OffsetY = offsetY;
+        CachedTextWidth = -1f;  // will be computed on first use
     }
 }
 
@@ -62,16 +64,25 @@ public partial class FloatingTextLayer : Node2D
         float offsetY = stack * 16f;
         _recentCountPerChar[charIndex] = stack + 1;
 
-        _texts.Add(new FloatingText(charIndex, text, color, 1.5f, 40f, offsetY));
+        var ft = new FloatingText(charIndex, text, color, 1.5f, 40f, offsetY);
+        if (_font != null)
+            ft.CachedTextWidth = _font.GetStringSize(text, HorizontalAlignment.Center, -1, FontSize).X;
+        _texts.Add(ft);
     }
 
     /// <summary>
     /// Convenience: red damage received on user char.
     /// </summary>
+    // Pre-computed floating text colors
+    private static readonly Color DamageReceivedColor = new Color(1f, 0.2f, 0.2f);
+    private static readonly Color DamageDealtColor = new Color(1f, 1f, 0.4f);
+    private static readonly Color HealColor = new Color(0.3f, 1f, 0.3f);
+    private static readonly Color MissColor = new Color(0.8f, 0.8f, 0.8f);
+
     public void AddDamageReceived(int damage)
     {
         if (_state == null) return;
-        AddText(_state.UserCharIndex, $"-{damage}", new Color(1f, 0.2f, 0.2f));
+        AddText(_state.UserCharIndex, $"-{damage}", DamageReceivedColor);
     }
 
     /// <summary>
@@ -79,7 +90,7 @@ public partial class FloatingTextLayer : Node2D
     /// </summary>
     public void AddDamageDealt(int charIndex, int damage)
     {
-        AddText(charIndex, $"-{damage}", new Color(1f, 1f, 0.4f));
+        AddText(charIndex, $"-{damage}", DamageDealtColor);
     }
 
     /// <summary>
@@ -87,7 +98,7 @@ public partial class FloatingTextLayer : Node2D
     /// </summary>
     public void AddHeal(int charIndex, int amount)
     {
-        AddText(charIndex, $"+{amount}", new Color(0.3f, 1f, 0.3f));
+        AddText(charIndex, $"+{amount}", HealColor);
     }
 
     /// <summary>
@@ -95,7 +106,7 @@ public partial class FloatingTextLayer : Node2D
     /// </summary>
     public void AddMiss(int charIndex, string text = "Fallo!")
     {
-        AddText(charIndex, text, new Color(0.8f, 0.8f, 0.8f));
+        AddText(charIndex, text, MissColor);
     }
 
     public override void _Process(double delta)
@@ -161,15 +172,13 @@ public partial class FloatingTextLayer : Node2D
             var outlineColor = new Color(0f, 0f, 0f, alpha * 0.8f);
             var pos = new Vector2(finalX, finalY);
 
-            // Center the text horizontally
-            var textSize = _font.GetStringSize(ft.Text, HorizontalAlignment.Center, -1, FontSize);
-            pos.X -= textSize.X * 0.5f;
+            // Center the text horizontally using cached width
+            if (ft.CachedTextWidth < 0)
+                ft.CachedTextWidth = _font.GetStringSize(ft.Text, HorizontalAlignment.Center, -1, FontSize).X;
+            pos.X -= ft.CachedTextWidth * 0.5f;
 
-            // Outline (draw text 4 times offset by 1px in each direction)
-            DrawString(_font, pos + new Vector2(-1, 0), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
-            DrawString(_font, pos + new Vector2(1, 0), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
-            DrawString(_font, pos + new Vector2(0, -1), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
-            DrawString(_font, pos + new Vector2(0, 1), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
+            // Shadow (offset by 1px down-right for depth effect)
+            DrawString(_font, pos + new Vector2(1, 1), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
             // Main text
             DrawString(_font, pos, ft.Text, HorizontalAlignment.Left, -1, FontSize, textColor);
         }

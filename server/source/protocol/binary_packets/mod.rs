@@ -11,10 +11,10 @@
 
 mod core;
 mod inventory;
-mod systems;
 mod social;
+mod systems;
 
 pub use self::core::*;
 pub use inventory::*;
-pub use systems::*;
 pub use social::*;
+pub use systems::*;

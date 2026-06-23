@@ -201,7 +201,7 @@ public class CharCreateScreen
         var headViewport = new SubViewport();
         headViewport.Size = new Vector2I(64, 64);
         headViewport.TransparentBg = true;
-        headViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+        headViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.WhenVisible;
         headPreviewContainer.AddChild(headViewport);
 
         _charCreateHeadPreview = new Node2D();

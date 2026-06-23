@@ -543,6 +543,26 @@ public partial class GmPanel : RpgBaseForm
         }
     }
 
+    // ── User list ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Display the online user list from the UserNameList packet.
+    /// Format: "name1,name2,name3,..."
+    /// Shown in the User Info tab label area as a scrollable text block.
+    /// TODO: replace with a proper ItemList control when a dedicated tab is needed.
+    /// </summary>
+    public void PopulateUserList(string data)
+    {
+        if (_userInfoLabel == null) return;
+        if (string.IsNullOrEmpty(data))
+        {
+            _userInfoLabel.Text = "(no users online)";
+            return;
+        }
+        var names = data.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        _userInfoLabel.Text = $"Online ({names.Length}):\n" + string.Join(", ", names);
+    }
+
     // ── Open / Close ──────────────────────────────────────────
 
     public void Open()

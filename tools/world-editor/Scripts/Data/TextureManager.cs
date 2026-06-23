@@ -7,7 +7,7 @@ using Godot;
 namespace AOWorldEditor.Data;
 
 /// <summary>
-/// LRU cache of textures from Graficos/ folder.
+/// LRU cache of textures from Graficos/ folder (loose files).
 /// Black (0,0,0) color key → transparent.
 /// Supports bulk preload at startup with time-budgeted batching
 /// to avoid frame drops on large textures (2048x2048).
@@ -128,8 +128,8 @@ public class TextureManager
         string filePath = System.IO.Path.Combine(_graficosPath, $"{fileNum}.png");
         if (!System.IO.File.Exists(filePath))
             return null;
+        Image? image = Image.LoadFromFile(filePath);
 
-        var image = Image.LoadFromFile(filePath);
         if (image == null) return null;
 
         ApplyBlackColorKeyFast(image);
@@ -154,12 +154,10 @@ public class TextureManager
 
     /// <summary>
     /// Fast black color key using raw byte buffer.
-    /// Skips images that already have meaningful alpha (PNG with transparency).
-    /// Uses SetData to avoid double allocation.
+    /// Matches the game client exactly: skips PNGs with existing alpha.
     /// </summary>
     private static void ApplyBlackColorKeyFast(Image image)
     {
-        // If the image loaded as RGB8 (no alpha), it definitely needs color key
         bool needsConvert = image.GetFormat() != Image.Format.Rgba8;
         if (needsConvert)
             image.Convert(Image.Format.Rgba8);
@@ -168,38 +166,31 @@ public class TextureManager
         int len = data.Length;
 
         // If the image already had alpha, check if it has any non-opaque pixels.
-        // If yes, the PNG has proper transparency — skip color key to preserve black pixels.
+        // If yes, the PNG has proper transparency — skip color key.
         if (!needsConvert)
         {
-            bool hasAlpha = false;
             for (int i = 3; i < len; i += 4)
             {
-                if (data[i] < 250) // some pixel is not fully opaque
-                {
-                    hasAlpha = true;
-                    break;
-                }
+                if (data[i] < 250)
+                    return; // image has real transparency, don't touch it
             }
-            if (hasAlpha)
-                return; // image already has real transparency, don't touch it
         }
 
         // Apply black color key: (R,G,B) near (0,0,0) → alpha=0
         bool modified = false;
         for (int i = 0; i < len; i += 4)
         {
-            if (data[i] <= BlackThreshold &&     // R
-                data[i + 1] <= BlackThreshold &&  // G
-                data[i + 2] <= BlackThreshold)    // B
+            if (data[i] <= BlackThreshold &&
+                data[i + 1] <= BlackThreshold &&
+                data[i + 2] <= BlackThreshold)
             {
-                data[i + 3] = 0; // A = transparent
+                data[i + 3] = 0;
                 modified = true;
             }
         }
 
         if (modified)
         {
-            // SetData replaces image data in-place — no extra Image allocation
             image.SetData(image.GetWidth(), image.GetHeight(),
                 false, Image.Format.Rgba8, data);
         }

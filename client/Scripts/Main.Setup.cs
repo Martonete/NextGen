@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using ArgentumNextgen.Data.Resources;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
 using ArgentumNextgen.Rendering;
@@ -72,8 +73,12 @@ public partial class Main
         _gameUI.AddChild(_inventoryPanel);
 
         // DyD toggle
-        _dydOffTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_off.jpg"));
-        _dydOnTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_on.jpg"));
+        _dydOffTex = _resources != null
+            ? UIHelpers.LoadJpgTexture(_resources, "Graficos/DyD_off.jpg")
+            : LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_off.jpg"));
+        _dydOnTex = _resources != null
+            ? UIHelpers.LoadJpgTexture(_resources, "Graficos/DyD_on.jpg")
+            : LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_on.jpg"));
         _dydToggle = new TextureButton();
         _dydToggle.Position = new Vector2(sideX - S(25), S(338));
         _dydToggle.Size = new Vector2(S(21), S(21));
@@ -401,6 +406,10 @@ public partial class Main
         _tutorialPanel.Init(_state, _dataPath);
         _tutorialPanel.LoadCompletion();
         _gameUI.AddChild(_tutorialPanel);
+
+        // Signal/cartel overlay (VB6: frmCartel)
+        _signalPanel = new SignalPanel();
+        _gameUI.AddChild(_signalPanel);
     }
 
     private void SetupOverlayPanels()
@@ -422,7 +431,7 @@ public partial class Main
 
         // Inventory/spell tab UI manager
         _inventoryUI = new UI.InventoryUI(_state);
-        _inventoryUI.BindPanels(_inventoryPanel, _spellPanel, null, _dydToggle!,
+        _inventoryUI.BindPanels(_inventoryPanel, _spellPanel, _dydToggle!,
             _dydOffTex, _dydOnTex, _lanzarButton!, _infoButton!, _spellUpButton!, _spellDownButton!,
             null, null, null, _tooltipPanel);
         _inventoryUI.BindTabButtons(_invTabButton!, _spellTabButton!);
@@ -476,7 +485,7 @@ public partial class Main
         _gameUI.AddChild(minimapBorder);
 
         _minimapPanel = new MinimapPanel();
-        _minimapPanel.Init(_state, _gameData, System.IO.Path.Combine(_dataPath, "Graficos"));
+        _minimapPanel.Init(_state, _gameData, System.IO.Path.Combine(_dataPath, "Graficos"), _resources);
         _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28));
         _minimapPanel.Size = new Vector2(S(100), S(100));
         _minimapPanel.Visible = _state.Config.ShowMinimap;
@@ -543,8 +552,8 @@ public partial class Main
             _changePasswordPanel, _charInfoPopup, _deathPanel, _optionsPanel,
             _tooltipPanel, _blindOverlay);
         _panelSync.UpdateDropDialogVisibility = () => _dialogManager?.UpdateDropDialogVisibility();
-        _panelSync.BindNewPanels(_gmPanel, _sosPanel, _peaceProposalPanel, _guildAlignmentPanel,
-            _motdEditorPanel, _guildMemberPanel, _dayNightCycle, _loadingScreen, _tutorialPanel);
+        _panelSync.BindNewPanels(_gmPanel, _spawnListPanel, _sosPanel, _peaceProposalPanel, _guildAlignmentPanel,
+            _motdEditorPanel, _guildMemberPanel, _dayNightCycle, _loadingScreen, _tutorialPanel, _signalPanel);
 
         // Input router
         _inputRouter = new InputRouter(_state);

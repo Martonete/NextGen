@@ -45,6 +45,9 @@ public partial class PacketHandler
     /// Callback to stop all SFX (called on position warp within same map).
     public Action? OnStopSfx;
 
+    /// Callback when an inventory slot changes (drop, pickup, equip, use).
+    public Action? OnInventoryChanged;
+
     // Meditation FX IDs — cleared when the character moves or the meditate toggle fires.
     // Each ID corresponds to a GRH animation played over the character while meditating:
     //   4   = Meditación básica (aura blanca pequeña)

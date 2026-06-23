@@ -16,9 +16,10 @@ namespace ArgentumNextgen.UI;
 public partial class InventoryPanel : Control
 {
     private const int Cols = 5;
-    private const int Rows = 5;
     private const int SlotSize = 34;
-    private const int TotalSlots = 25;
+    private int _totalSlots = 25;
+
+    private int EffectiveRows => (_totalSlots + Cols - 1) / Cols;
 
     // GRH IDs from VB6 client
     private const int GrhInvBackground = 31570;
@@ -37,6 +38,7 @@ public partial class InventoryPanel : Control
     private Vector2 _dragStartPos; // position where press started (for drag threshold)
     private bool _dragPending;     // press happened but drag not yet activated (needs movement threshold)
     private const float DragThreshold = 6f; // pixels of movement before drag activates
+    private bool _dirty = true;
 
     // Tooltip label (set by Main.cs) — simple name display in bottom bar
     public Label? TooltipLabel;
@@ -77,9 +79,23 @@ public partial class InventoryPanel : Control
         TextureFilter = TextureFilterEnum.Nearest;
     }
 
+    public void MarkDirty() => _dirty = true;
+
     public override void _Process(double delta)
     {
-        QueueRedraw();
+        if (!Visible) return;
+
+        if (_state != null && _state.MaxInventorySlots != _totalSlots)
+        {
+            _totalSlots = _state.MaxInventorySlots;
+            QueueRedraw();
+        }
+
+        if (_dirty || _hoveredSlot >= 0)
+        {
+            _dirty = false;
+            QueueRedraw();
+        }
     }
 
     public override void _Notification(int what)
@@ -113,7 +129,7 @@ public partial class InventoryPanel : Control
             var localPos = globalMb.Position - GlobalPosition;
             int destSlot = HitTestSlot(localPos);
 
-            if (destSlot >= 0 && destSlot < TotalSlots && destSlot != _dragSourceSlot)
+            if (destSlot >= 0 && destSlot < _totalSlots && destSlot != _dragSourceSlot)
             {
                 // Drop inside inventory — swap
                 _tcp?.SendPacket(ClientPackets.WriteSwapItems(
@@ -152,7 +168,7 @@ public partial class InventoryPanel : Control
 
         var font = _data.Fonts?[1];
 
-        for (int slot = 0; slot < TotalSlots; slot++)
+        for (int slot = 0; slot < _totalSlots; slot++)
         {
             // VB6 uses 1-indexed slots (i = slot+1)
             int i = slot + 1;
@@ -182,11 +198,6 @@ public partial class InventoryPanel : Control
             {
                 // Drag destination highlight — green tint
                 DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0f, 1f, 0f, 0.2f));
-            }
-            else if (slot == _hoveredSlot)
-            {
-                // Hover highlight
-                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(1f, 1f, 1f, 0.1f));
             }
 
             // Item icon — dimmed if this is the drag source
@@ -225,15 +236,37 @@ public partial class InventoryPanel : Control
                 // VB6: Engine_Text_Draw X-1, Y+3, amount, white
                 if (invSlot.Amount > 0 && font != null)
                 {
-                    font.DrawText(this, (int)x - 1, (int)y + 3,
-                        invSlot.Amount.ToString(), Colors.White);
+                    if (uiScale > 1.001f)
+                    {
+                        float inv = 1f / uiScale;
+                        float tx = x - 1, ty = y + 3;
+                        DrawSetTransform(new Vector2(tx, ty), 0f, new Vector2(inv, inv));
+                        font.DrawText(this, 0, 0, invSlot.Amount.ToString(), Colors.White);
+                        DrawSetTransform(Vector2.Zero);
+                    }
+                    else
+                    {
+                        font.DrawText(this, (int)x - 1, (int)y + 3,
+                            invSlot.Amount.ToString(), Colors.White);
+                    }
                 }
 
                 // VB6: Engine_Text_Draw X+23, Y+20, "E", yellow
                 if (invSlot.Equipped && font != null)
                 {
-                    font.DrawText(this, (int)x + 23, (int)y + 20, "E",
-                        new Color(1f, 1f, 0f));
+                    if (uiScale > 1.001f)
+                    {
+                        float inv = 1f / uiScale;
+                        float tx = x + 23, ty = y + 20;
+                        DrawSetTransform(new Vector2(tx, ty), 0f, new Vector2(inv, inv));
+                        font.DrawText(this, 0, 0, "E", new Color(1f, 1f, 0f));
+                        DrawSetTransform(Vector2.Zero);
+                    }
+                    else
+                    {
+                        font.DrawText(this, (int)x + 23, (int)y + 20, "E",
+                            new Color(1f, 1f, 0f));
+                    }
                 }
             }
 
@@ -242,7 +275,7 @@ public partial class InventoryPanel : Control
         }
 
         // VB6: Draw dragged item at cursor position (Draw_GrhInv at MouseXInv, MouseYInv)
-        if (_dragging && _dydEnabled && _dragSourceSlot >= 0 && _dragSourceSlot < TotalSlots)
+        if (_dragging && _dydEnabled && _dragSourceSlot >= 0 && _dragSourceSlot < _totalSlots)
         {
             var srcItem = _state.Inventory[_dragSourceSlot];
             if (srcItem.GrhIndex > 0)
@@ -303,7 +336,7 @@ public partial class InventoryPanel : Control
             {
                 if (mb.Pressed)
                 {
-                    if (slot >= 0 && slot < TotalSlots)
+                    if (slot >= 0 && slot < _totalSlots)
                     {
                         if (mb.DoubleClick)
                         {
@@ -342,7 +375,7 @@ public partial class InventoryPanel : Control
             }
             else if (mb.ButtonIndex == MouseButton.Right && mb.Pressed)
             {
-                if (slot >= 0 && slot < TotalSlots && _state.Inventory[slot].ObjIndex > 0)
+                if (slot >= 0 && slot < _totalSlots && _state.Inventory[slot].ObjIndex > 0)
                 {
                     if (mb.DoubleClick)
                     {
@@ -360,7 +393,7 @@ public partial class InventoryPanel : Control
             }
 
             // Only consume the event if we actually handled a valid slot interaction
-            if (mb.ButtonIndex == MouseButton.Left && slot >= 0 && slot < TotalSlots)
+            if (mb.ButtonIndex == MouseButton.Left && slot >= 0 && slot < _totalSlots)
                 AcceptEvent();
         }
         else if (@event is InputEventKey key && key.Pressed && !key.Echo)
@@ -382,8 +415,9 @@ public partial class InventoryPanel : Control
         int stride = SlotSize + 1; // 35px per slot (34 + 1px gap)
 
         // Total grid extent including gaps
+        int rows = EffectiveRows;
         int gridW = 1 + Cols * SlotSize + (Cols - 1); // 1 + 170 + 4 = 175
-        int gridH = Rows * SlotSize + (Rows - 1);     // 170 + 4 = 174
+        int gridH = rows * SlotSize + (rows - 1);
 
         if (pos.X < 0 || pos.X >= gridW || pos.Y < 0 || pos.Y >= gridH)
             return -1;
@@ -394,10 +428,10 @@ public partial class InventoryPanel : Control
 
         if (tempX < 0) tempX = 0;
         if (tempX >= Cols) tempX = Cols - 1;
-        if (tempY >= Rows) tempY = Rows - 1;
+        if (tempY >= rows) tempY = rows - 1;
 
         int item = tempX + tempY * Cols;
-        if (item >= 0 && item < TotalSlots)
+        if (item >= 0 && item < _totalSlots)
             return item;
         return -1;
     }
@@ -410,7 +444,7 @@ public partial class InventoryPanel : Control
             RichTooltip?.Hide();
             return;
         }
-        if (slot >= 0 && slot < TotalSlots)
+        if (slot >= 0 && slot < _totalSlots)
         {
             var inv = _state!.Inventory[slot];
             if (inv.ObjIndex > 0)

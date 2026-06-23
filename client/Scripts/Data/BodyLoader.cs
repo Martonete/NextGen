@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -16,9 +17,9 @@ public static class BodyLoader
     /// Load Personajes.ind — body animations per direction + head offset.
     /// Per entry: 4×2 bytes (Walk GRH per direction) + 2 bytes HeadOffsetX + 2 bytes HeadOffsetY = 12 bytes
     /// </summary>
-    public static BodyData[] LoadBodies(string path)
+    public static BodyData[] LoadBodies(IResourceProvider resources)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        byte[] fileData = resources.ReadBytes("INIT/Personajes.ind");
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
@@ -47,9 +48,9 @@ public static class BodyLoader
     /// Load Cabezas.ind — head GRH per direction.
     /// Per entry: 8 bytes (4×Int16 directional GRHs). VB6 reads count entries, ignores rest of file.
     /// </summary>
-    public static HeadData[] LoadHeads(string path)
+    public static HeadData[] LoadHeads(IResourceProvider resources)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        byte[] fileData = resources.ReadBytes("INIT/Cabezas.ind");
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
@@ -77,9 +78,9 @@ public static class BodyLoader
     /// Load Cascos.ind — helmet GRH per direction.
     /// Per entry: 8 bytes (4×Int16 directional GRHs). VB6 reads count entries, ignores rest of file.
     /// </summary>
-    public static HeadData[] LoadCascos(string path)
+    public static HeadData[] LoadCascos(IResourceProvider resources)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        byte[] fileData = resources.ReadBytes("INIT/Cascos.ind");
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);

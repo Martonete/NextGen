@@ -49,7 +49,13 @@ impl CoordCipher {
     /// Decode with desync tolerance: try current counter, then ±1.
     /// Returns decoded coords and whether a resync was needed.
     /// If resync succeeds, the counter is corrected.
-    pub fn decode_tolerant(&mut self, encoded_x: i16, encoded_y: i16, map_w: i32, map_h: i32) -> Option<(i16, i16)> {
+    pub fn decode_tolerant(
+        &mut self,
+        encoded_x: i16,
+        encoded_y: i16,
+        map_w: i32,
+        map_h: i32,
+    ) -> Option<(i16, i16)> {
         // Save state before trying
         let saved_counter = self.counter;
 

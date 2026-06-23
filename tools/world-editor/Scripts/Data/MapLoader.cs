@@ -112,7 +112,11 @@ public static class MapLoader
 
     private static MapData LoadAoMapFile(string path)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        return LoadAoMapData(File.ReadAllBytes(path));
+    }
+
+    private static MapData LoadAoMapData(byte[] fileData)
+    {
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         // Validate magic "AOMAP\0" (6 bytes)
@@ -120,12 +124,12 @@ public static class MapLoader
         for (int i = 0; i < 6; i++)
         {
             if (magic[i] != AoMapMagic[i])
-                throw new InvalidDataException($"Invalid .aomap magic in {path}");
+                throw new InvalidDataException("Invalid .aomap magic bytes.");
         }
 
         ushort version = reader.ReadUInt16();
         if (version != 1)
-            throw new InvalidDataException($"Unsupported .aomap version {version} in {path}");
+            throw new InvalidDataException($"Unsupported .aomap version {version}.");
 
         ushort width = reader.ReadUInt16();
         ushort height = reader.ReadUInt16();
@@ -168,7 +172,11 @@ public static class MapLoader
 
     private static void LoadAoInfFile(string path, MapData mapData)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        LoadAoInfData(File.ReadAllBytes(path), mapData);
+    }
+
+    private static void LoadAoInfData(byte[] fileData, MapData mapData)
+    {
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         // Validate magic "AOINF\0" (6 bytes)
@@ -176,12 +184,12 @@ public static class MapLoader
         for (int i = 0; i < 6; i++)
         {
             if (magic[i] != AoInfMagic[i])
-                throw new InvalidDataException($"Invalid .aoinf magic in {path}");
+                throw new InvalidDataException("Invalid .aoinf magic bytes.");
         }
 
         ushort version = reader.ReadUInt16();
         if (version != 1)
-            throw new InvalidDataException($"Unsupported .aoinf version {version} in {path}");
+            throw new InvalidDataException($"Unsupported .aoinf version {version}.");
 
         ushort width = reader.ReadUInt16();
         ushort height = reader.ReadUInt16();
@@ -322,6 +330,11 @@ public static class MapLoader
 
     private static void SaveAoMapFile(string path, MapData mapData)
     {
+        File.WriteAllBytes(path, BuildAoMapBytes(mapData));
+    }
+
+    internal static byte[] BuildAoMapBytes(MapData mapData)
+    {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
 
@@ -363,10 +376,16 @@ public static class MapLoader
             }
         }
 
-        File.WriteAllBytes(path, ms.ToArray());
+        writer.Flush();
+        return ms.ToArray();
     }
 
     private static void SaveAoInfFile(string path, MapData mapData)
+    {
+        File.WriteAllBytes(path, BuildAoInfBytes(mapData));
+    }
+
+    internal static byte[] BuildAoInfBytes(MapData mapData)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms);
@@ -404,7 +423,8 @@ public static class MapLoader
             }
         }
 
-        File.WriteAllBytes(path, ms.ToArray());
+        writer.Flush();
+        return ms.ToArray();
     }
 
     #endregion

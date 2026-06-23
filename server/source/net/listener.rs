@@ -1,8 +1,8 @@
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info};
 
 use super::connection::{self, ConnectionId, ConnectionWriter};
 
@@ -51,9 +51,13 @@ impl TcpServer {
                     Ok((stream, addr)) => {
                         let current_active = active_count.load(Ordering::Relaxed);
                         if current_active >= max_connections {
-                            warn!(
-                                "Max active connections ({}/{}) reached, rejecting {}",
-                                current_active, max_connections, addr
+                            let channel_backlog = tx.max_capacity() - tx.capacity();
+                            tracing::info!(
+                                active = current_active,
+                                max = max_connections,
+                                channel_backlog = channel_backlog,
+                                channel_capacity = tx.max_capacity(),
+                                "connection limit reached — rejecting new connection"
                             );
                             drop(stream);
                             continue;
@@ -64,9 +68,8 @@ impl TcpServer {
 
                         debug!("New connection #{} from {}", conn_id, addr);
 
-                        let (mut reader, writer) = connection::split_connection(
-                            conn_id, stream, addr,
-                        );
+                        let (mut reader, writer) =
+                            connection::split_connection(conn_id, stream, addr);
 
                         let event_tx = tx.clone();
 
@@ -105,9 +108,8 @@ impl TcpServer {
                                     None => {
                                         debug!("Connection #{} disconnected", conn_id);
                                         active_clone.fetch_sub(1, Ordering::Relaxed);
-                                        let _ = read_tx
-                                            .send(ServerEvent::Disconnected(conn_id))
-                                            .await;
+                                        let _ =
+                                            read_tx.send(ServerEvent::Disconnected(conn_id)).await;
                                         return;
                                     }
                                 }

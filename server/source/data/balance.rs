@@ -5,56 +5,74 @@
 //   MODDAÑOARMAS, MODDAÑOPROYECTILES, MODDAÑOWRESTLING, MODESCUDO, MODVIDA,
 //   DISTRIBUCION, EXTRA, PARTY, RECOMPENSAFACCION.
 
-use std::path::Path;
 use crate::config::IniFile;
 use crate::game::class_race::{PlayerClass, PlayerRace};
+use std::path::Path;
 
 /// Number of classes in the game (VB6 13.3: Mage..Pirat = 12).
 pub const NUM_CLASSES: usize = 12;
 
 /// VB6 eClass enum order (1-based in VB6, 0-based here).
 pub mod class_id {
-    pub const MAGO: usize = 0;       // eClass.Mage = 1
-    pub const CLERIGO: usize = 1;    // eClass.Cleric = 2
-    pub const GUERRERO: usize = 2;   // eClass.Warrior = 3
-    pub const ASESINO: usize = 3;    // eClass.Assasin = 4
-    pub const LADRON: usize = 4;     // eClass.Thief = 5
-    pub const BARDO: usize = 5;      // eClass.Bard = 6
-    pub const DRUIDA: usize = 6;     // eClass.Druid = 7
-    pub const BANDIDO: usize = 7;    // eClass.Bandit = 8
-    pub const PALADIN: usize = 8;    // eClass.Paladin = 9
-    pub const CAZADOR: usize = 9;    // eClass.Hunter = 10
+    pub const MAGO: usize = 0; // eClass.Mage = 1
+    pub const CLERIGO: usize = 1; // eClass.Cleric = 2
+    pub const GUERRERO: usize = 2; // eClass.Warrior = 3
+    pub const ASESINO: usize = 3; // eClass.Assasin = 4
+    pub const LADRON: usize = 4; // eClass.Thief = 5
+    pub const BARDO: usize = 5; // eClass.Bard = 6
+    pub const DRUIDA: usize = 6; // eClass.Druid = 7
+    pub const BANDIDO: usize = 7; // eClass.Bandit = 8
+    pub const PALADIN: usize = 8; // eClass.Paladin = 9
+    pub const CAZADOR: usize = 9; // eClass.Hunter = 10
     pub const TRABAJADOR: usize = 10; // eClass.Worker = 11
-    pub const PIRATA: usize = 11;    // eClass.Pirat = 12
+    pub const PIRATA: usize = 11; // eClass.Pirat = 12
 }
 
 /// Race indices.
 pub mod race_id {
-    pub const HUMANO: usize = 0;       // eRaza.Humano = 1
-    pub const ELFO: usize = 1;         // eRaza.Elfo = 2
-    pub const ELFO_OSCURO: usize = 2;  // eRaza.Drow = 3
-    pub const ENANO: usize = 3;        // eRaza.Enano = 4
-    pub const GNOMO: usize = 4;        // eRaza.Gnomo = 5
+    pub const HUMANO: usize = 0; // eRaza.Humano = 1
+    pub const ELFO: usize = 1; // eRaza.Elfo = 2
+    pub const ELFO_OSCURO: usize = 2; // eRaza.Drow = 3
+    pub const ENANO: usize = 3; // eRaza.Enano = 4
+    pub const GNOMO: usize = 4; // eRaza.Gnomo = 5
 }
 
 pub const NUM_RACES: usize = 5;
 
 /// Class names as they appear in Balance.dat keys.
 const CLASS_NAMES: [&str; NUM_CLASSES] = [
-    "Mago", "Clerigo", "Guerrero", "Asesino", "Ladron", "Bardo",
-    "Druida", "Bandido", "Paladin", "Cazador", "Trabajador", "Pirata",
+    "Mago",
+    "Clerigo",
+    "Guerrero",
+    "Asesino",
+    "Ladron",
+    "Bardo",
+    "Druida",
+    "Bandido",
+    "Paladin",
+    "Cazador",
+    "Trabajador",
+    "Pirata",
 ];
 
 /// Class section names (uppercase, for AF/AM matrices).
 const CLASS_SECTIONS: [&str; NUM_CLASSES] = [
-    "MAGO", "CLERIGO", "GUERRERO", "ASESINO", "LADRON", "BARDO",
-    "DRUIDA", "BANDIDO", "PALADIN", "CAZADOR", "TRABAJADOR", "PIRATA",
+    "MAGO",
+    "CLERIGO",
+    "GUERRERO",
+    "ASESINO",
+    "LADRON",
+    "BARDO",
+    "DRUIDA",
+    "BANDIDO",
+    "PALADIN",
+    "CAZADOR",
+    "TRABAJADOR",
+    "PIRATA",
 ];
 
 /// Race names for MODRAZA loading.
-const RACE_PREFIXES: [&str; NUM_RACES] = [
-    "Humano", "Elfo", "Drow", "Enano", "Gnomo",
-];
+const RACE_PREFIXES: [&str; NUM_RACES] = ["Humano", "Elfo", "Drow", "Enano", "Gnomo"];
 
 /// Per-race attribute modifiers (VB6: ModRaza).
 #[derive(Debug, Clone, Copy, Default)]
@@ -69,8 +87,8 @@ pub struct RaceModifiers {
 /// HP distribution probabilities for level-up (VB6: [DISTRIBUCION]).
 #[derive(Debug, Clone)]
 pub struct HpDistribution {
-    pub entera: [i32; 5],       // E1-E5 (integer average: 5 brackets)
-    pub semientera: [i32; 4],   // S1-S4 (half-integer average: 4 brackets)
+    pub entera: [i32; 5],     // E1-E5 (integer average: 5 brackets)
+    pub semientera: [i32; 4], // S1-S4 (half-integer average: 4 brackets)
 }
 
 impl Default for HpDistribution {
@@ -98,9 +116,9 @@ pub type FactionArmorTable = [[FactionArmors; NUM_RACES]; NUM_CLASSES];
 /// VB6: GetArmourAmount — quantity of armors given per tier based on rank.
 pub fn faction_armor_amount(rango: i32, tier: usize) -> i32 {
     match tier {
-        0 => 20 / (rango + 1),                               // Baja: many at low rank
-        1 => rango * 2 / (rango - 4).max(1),                 // Media: scales then plateaus
-        2 => (rango as f32 * 1.35) as i32,                   // Alta: linear growth
+        0 => 20 / (rango + 1),               // Baja: many at low rank
+        1 => rango * 2 / (rango - 4).max(1), // Media: scales then plateaus
+        2 => (rango as f32 * 1.35) as i32,   // Alta: linear growth
         _ => 0,
     }
 }
@@ -210,34 +228,54 @@ pub fn race_name_to_index(name: &str) -> Option<usize> {
 
 impl BalanceData {
     pub fn class_mod_evasion(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_evasion[i]).unwrap_or(1.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_evasion[i])
+            .unwrap_or(1.0)
     }
     pub fn class_mod_ataque_armas(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_ataque_armas[i]).unwrap_or(1.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_ataque_armas[i])
+            .unwrap_or(1.0)
     }
     pub fn class_mod_ataque_proyectiles(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_ataque_proyectiles[i]).unwrap_or(1.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_ataque_proyectiles[i])
+            .unwrap_or(1.0)
     }
     pub fn class_mod_ataque_wrestling(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_ataque_wrestling[i]).unwrap_or(1.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_ataque_wrestling[i])
+            .unwrap_or(1.0)
     }
     pub fn class_mod_dano_armas(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_dano_armas[i]).unwrap_or(1.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_dano_armas[i])
+            .unwrap_or(1.0)
     }
     pub fn class_mod_dano_proyectiles(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_dano_proyectiles[i]).unwrap_or(1.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_dano_proyectiles[i])
+            .unwrap_or(1.0)
     }
     pub fn class_mod_dano_wrestling(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_dano_wrestling[i]).unwrap_or(1.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_dano_wrestling[i])
+            .unwrap_or(1.0)
     }
     pub fn class_mod_escudo(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_escudo[i]).unwrap_or(1.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_escudo[i])
+            .unwrap_or(1.0)
     }
     pub fn class_mod_vida(&self, class: &str) -> f32 {
-        class_name_to_index(class).map(|i| self.mod_vida[i]).unwrap_or(8.0)
+        class_name_to_index(class)
+            .map(|i| self.mod_vida[i])
+            .unwrap_or(8.0)
     }
     pub fn race_modifiers(&self, race: &str) -> RaceModifiers {
-        race_name_to_index(race).map(|i| self.mod_raza[i]).unwrap_or_default()
+        race_name_to_index(race)
+            .map(|i| self.mod_raza[i])
+            .unwrap_or_default()
     }
     /// Get faction armor assignments for a class+race combo.
     pub fn get_faction_armor(&self, class: &str, race: &str) -> FactionArmors {
@@ -301,7 +339,13 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
         };
 
         // MODRAZA — race attribute modifiers
-        let _attr_names = ["Fuerza", "Agilidad", "Inteligencia", "Carisma", "Constitucion"];
+        let _attr_names = [
+            "Fuerza",
+            "Agilidad",
+            "Inteligencia",
+            "Carisma",
+            "Constitucion",
+        ];
         for (ri, race_prefix) in RACE_PREFIXES.iter().enumerate() {
             let f = get_i32("MODRAZA", &format!("{}Fuerza", race_prefix));
             let a = get_i32("MODRAZA", &format!("{}Agilidad", race_prefix));
@@ -309,7 +353,11 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
             let c = get_i32("MODRAZA", &format!("{}Carisma", race_prefix));
             let co = get_i32("MODRAZA", &format!("{}Constitucion", race_prefix));
             data.mod_raza[ri] = RaceModifiers {
-                fuerza: f, agilidad: a, inteligencia: i, carisma: c, constitucion: co,
+                fuerza: f,
+                agilidad: a,
+                inteligencia: i,
+                carisma: c,
+                constitucion: co,
             };
         }
 
@@ -341,42 +389,71 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
             data.mod_vida[ci] = get_f32("MODVIDA", name);
 
             // Default multipliers to 1.0 if still 0.0
-            if data.mod_evasion[ci] == 0.0 { data.mod_evasion[ci] = 1.0; }
-            if data.mod_ataque_armas[ci] == 0.0 { data.mod_ataque_armas[ci] = 1.0; }
-            if data.mod_ataque_proyectiles[ci] == 0.0 { data.mod_ataque_proyectiles[ci] = 1.0; }
-            if data.mod_ataque_wrestling[ci] == 0.0 { data.mod_ataque_wrestling[ci] = 1.0; }
-            if data.mod_dano_armas[ci] == 0.0 { data.mod_dano_armas[ci] = 1.0; }
-            if data.mod_dano_proyectiles[ci] == 0.0 { data.mod_dano_proyectiles[ci] = 1.0; }
-            if data.mod_dano_wrestling[ci] == 0.0 { data.mod_dano_wrestling[ci] = 1.0; }
-            if data.mod_escudo[ci] == 0.0 { data.mod_escudo[ci] = 1.0; }
+            if data.mod_evasion[ci] == 0.0 {
+                data.mod_evasion[ci] = 1.0;
+            }
+            if data.mod_ataque_armas[ci] == 0.0 {
+                data.mod_ataque_armas[ci] = 1.0;
+            }
+            if data.mod_ataque_proyectiles[ci] == 0.0 {
+                data.mod_ataque_proyectiles[ci] = 1.0;
+            }
+            if data.mod_ataque_wrestling[ci] == 0.0 {
+                data.mod_ataque_wrestling[ci] = 1.0;
+            }
+            if data.mod_dano_armas[ci] == 0.0 {
+                data.mod_dano_armas[ci] = 1.0;
+            }
+            if data.mod_dano_proyectiles[ci] == 0.0 {
+                data.mod_dano_proyectiles[ci] = 1.0;
+            }
+            if data.mod_dano_wrestling[ci] == 0.0 {
+                data.mod_dano_wrestling[ci] = 1.0;
+            }
+            if data.mod_escudo[ci] == 0.0 {
+                data.mod_escudo[ci] = 1.0;
+            }
             // mod_vida 0 is valid for non-loaded, use default
-            if data.mod_vida[ci] == 0.0 { data.mod_vida[ci] = 8.0; }
+            if data.mod_vida[ci] == 0.0 {
+                data.mod_vida[ci] = 8.0;
+            }
         }
 
         // DISTRIBUCION — HP level-up probability brackets
         for i in 0..5 {
             let val = get_i32("DISTRIBUCION", &format!("E{}", i + 1));
-            if val > 0 { data.hp_distribution.entera[i] = val; }
+            if val > 0 {
+                data.hp_distribution.entera[i] = val;
+            }
         }
         for i in 0..4 {
             let val = get_i32("DISTRIBUCION", &format!("S{}", i + 1));
-            if val > 0 { data.hp_distribution.semientera[i] = val; }
+            if val > 0 {
+                data.hp_distribution.semientera[i] = val;
+            }
         }
 
         // EXTRA
         let prm = get_i32("EXTRA", "PorcentajeRecuperoMana");
-        if prm > 0 { data.porcentaje_recupero_mana = prm; }
+        if prm > 0 {
+            data.porcentaje_recupero_mana = prm;
+        }
 
         // PARTY
         let enp = get_f32("PARTY", "ExponenteNivelParty");
-        if enp > 0.0 { data.exponente_nivel_party = enp; }
+        if enp > 0.0 {
+            data.exponente_nivel_party = enp;
+        }
 
         // RECOMPENSAFACCION
         for i in 1..=15 {
-            let val = ini.get("RECOMPENSAFACCION", &format!("Rango{}", i))
+            let val = ini
+                .get("RECOMPENSAFACCION", &format!("Rango{}", i))
                 .and_then(|s| s.parse::<i64>().ok())
                 .unwrap_or(0);
-            if val > 0 { data.recompensa_faccion.push(val); }
+            if val > 0 {
+                data.recompensa_faccion.push(val);
+            }
         }
     } else {
         tracing::warn!("Balance.dat not found, using defaults");
@@ -386,7 +463,8 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
     let af_path = base.join("dat").join("ArmadurasFaccionarias.dat");
     if let Ok(af_ini) = IniFile::load(&af_path) {
         let af_get = |section: &str, key: &str| -> i32 {
-            af_ini.get(section, key)
+            af_ini
+                .get(section, key)
                 .and_then(|s| s.trim().parse::<i32>().ok())
                 .unwrap_or(0)
         };
@@ -422,13 +500,20 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
                 ];
             }
         }
-        tracing::info!("ArmadurasFaccionarias.dat loaded — {} classes x {} races", NUM_CLASSES, NUM_RACES);
+        tracing::info!(
+            "ArmadurasFaccionarias.dat loaded — {} classes x {} races",
+            NUM_CLASSES,
+            NUM_RACES
+        );
     } else {
         tracing::warn!("ArmadurasFaccionarias.dat not found");
     }
 
-    tracing::info!("Balance data loaded — {} classes, {} races",
-        NUM_CLASSES, NUM_RACES);
+    tracing::info!(
+        "Balance data loaded — {} classes, {} races",
+        NUM_CLASSES,
+        NUM_RACES
+    );
     Ok(data)
 }
 

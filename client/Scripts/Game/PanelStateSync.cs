@@ -37,6 +37,7 @@ public class PanelStateSync
 
     // New panels
     private GmPanel? _gmPanel;
+    private SpawnListPanel? _spawnListPanel;
     private SosPanel? _sosPanel;
     private PeaceProposalPanel? _peaceProposalPanel;
     private GuildAlignmentPanel? _guildAlignmentPanel;
@@ -45,6 +46,7 @@ public class PanelStateSync
     private Rendering.DayNightCycle? _dayNightCycle;
     private LoadingScreen? _loadingScreen;
     private TutorialPanel? _tutorialPanel;
+    private SignalPanel? _signalPanel;
 
     // State tracking for edge detection
     private bool _lastComerciando;
@@ -98,13 +100,14 @@ public class PanelStateSync
 
     /// <summary>Bind new feature panels added in parity update.</summary>
     public void BindNewPanels(
-        GmPanel? gmPanel, SosPanel? sosPanel,
+        GmPanel? gmPanel, SpawnListPanel? spawnListPanel, SosPanel? sosPanel,
         PeaceProposalPanel? peaceProposalPanel, GuildAlignmentPanel? guildAlignmentPanel,
         MotdEditorPanel? motdEditorPanel, GuildMemberPanel? guildMemberPanel,
         DayNightCycle? dayNightCycle, LoadingScreen? loadingScreen,
-        TutorialPanel? tutorialPanel)
+        TutorialPanel? tutorialPanel, SignalPanel? signalPanel = null)
     {
         _gmPanel = gmPanel;
+        _spawnListPanel = spawnListPanel;
         _sosPanel = sosPanel;
         _peaceProposalPanel = peaceProposalPanel;
         _guildAlignmentPanel = guildAlignmentPanel;
@@ -113,6 +116,7 @@ public class PanelStateSync
         _dayNightCycle = dayNightCycle;
         _loadingScreen = loadingScreen;
         _tutorialPanel = tutorialPanel;
+        _signalPanel = signalPanel;
     }
 
     /// <summary>Reset edge-detection tracking state (on disconnect).</summary>
@@ -304,7 +308,14 @@ public class PanelStateSync
         if (_state.ShowSosPanel)
         {
             _state.ShowSosPanel = false;
-            _sosPanel?.AddSosEntry(_state.SosPlayerName, _state.SosMessage);
+            if (!string.IsNullOrEmpty(_state.SosListData))
+            {
+                _sosPanel?.PopulateFromServerList(_state.SosListData);
+            }
+            else
+            {
+                _sosPanel?.AddSosEntry(_state.SosPlayerName, _state.SosMessage);
+            }
             _sosPanel?.Open();
         }
 
@@ -326,7 +337,14 @@ public class PanelStateSync
         if (_state.ShowMotdEditor)
         {
             _state.ShowMotdEditor = false;
-            _motdEditorPanel?.Open();
+            if (!string.IsNullOrEmpty(_state.MotdEditorContent))
+            {
+                _motdEditorPanel?.OpenWithContent(_state.MotdEditorContent);
+            }
+            else
+            {
+                _motdEditorPanel?.Open();
+            }
         }
 
         // Guild member detail
@@ -358,6 +376,60 @@ public class PanelStateSync
         {
             _state.ShowTutorial = false;
             _tutorialPanel?.Open();
+        }
+
+        // User name list — triggered by UserNameList packet; populate GM panel user tab
+        if (!string.IsNullOrEmpty(_state.UserNameListData))
+        {
+            string listData = _state.UserNameListData;
+            _state.UserNameListData = "";
+            _gmPanel?.PopulateUserList(listData);
+        }
+
+        // GM Panel — triggered by ShowGMPanelForm packet
+        if (_state.GmPanelOpen && _gmPanel != null && !_gmPanel.Visible)
+        {
+            _gmPanel.Open();
+        }
+
+        // Spawn list — triggered by SpawnList packet
+        if (_state.ShowSpawnList)
+        {
+            _state.ShowSpawnList = false;
+            if (_spawnListPanel != null && !string.IsNullOrEmpty(_state.SpawnListData))
+            {
+                _spawnListPanel.PopulateFromServerData(_state.SpawnListData);
+                _spawnListPanel.ShowForm();
+            }
+        }
+
+        // Show signal / cartel (VB6: InitCartel)
+        if (_state.ShowSignal)
+        {
+            _state.ShowSignal = false;
+            _signalPanel?.ShowSignal(_state.SignalText, _state.SignalGrh);
+        }
+
+        // Context menu (VB6: right-click menu)
+        if (_state.ShowContextMenu)
+        {
+            _state.ShowContextMenu = false;
+            // No dedicated context menu panel yet — log to console as fallback
+            GD.Print($"[MENU] ContextMenu for '{_state.MenuTargetName}' priv={_state.MenuTargetPriv}");
+        }
+
+        // Selection list (VB6: frmSeleccionar)
+        if (_state.ShowSelectList)
+        {
+            _state.ShowSelectList = false;
+            GD.Print($"[SELE] SelectList data: {_state.SelectListData?.Substring(0, System.Math.Min(80, _state.SelectListData?.Length ?? 0))}");
+        }
+
+        // Mini ranking (VB6: MiniTop)
+        if (_state.ShowMiniTop)
+        {
+            _state.ShowMiniTop = false;
+            GD.Print($"[MTOP] MiniTop data: {_state.MiniTopData?.Substring(0, System.Math.Min(80, _state.MiniTopData?.Length ?? 0))}");
         }
 
         // Safety net: if AnyFormOpen is true but no panel is actually visible,

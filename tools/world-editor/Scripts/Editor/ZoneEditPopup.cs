@@ -12,6 +12,7 @@ public partial class ZoneEditPopup : Window
 {
     public ZoneInfo? Zone;
     public MapZoneData? ZoneData;
+    public MapData? Map; // map-level settings (like FogFreeSmoke)
     public Action? OnSaved;
     /// <summary>Called when user clicks "Seleccionar en mapa" — host should activate Select tool and wire selection back.</summary>
     public Action? OnRequestMapSelect;
@@ -26,6 +27,9 @@ public partial class ZoneEditPopup : Window
     private SpinBox? _minLevelSpin, _maxLevelSpin;
     private SpinBox? _musicaSpin;
     private CheckBox? _lluviaCheck, _nieveCheck, _nieblaCheck;
+    private VBoxContainer? _fogParamsBox;
+    private SpinBox? _fogDensitySpin, _fogRSpin, _fogGSpin, _fogBSpin, _fogSpeedXSpin, _fogSpeedYSpin, _fogSizeSpin;
+    private CheckBox? _freeSmokeCheck;
     private SpinBox? _ambRSpin, _ambGSpin, _ambBSpin;
     private SpinBox? _salidaMapSpin, _salidaXSpin, _salidaYSpin;
 
@@ -140,12 +144,164 @@ public partial class ZoneEditPopup : Window
         _nieblaCheck = AddCheckInline(weatherRow, "Niebla", Zone.Niebla);
         vbox.AddChild(weatherRow);
 
+        // Fog shader parameters (shown only when Niebla is checked)
+        _fogParamsBox = new VBoxContainer();
+        _fogParamsBox.AddThemeConstantOverride("separation", 4);
+        _fogParamsBox.Visible = Zone.Niebla;
+
+        var fogDensityRow = new HBoxContainer();
+        fogDensityRow.AddThemeConstantOverride("separation", 8);
+        AddSpinWithLabel(fogDensityRow, "Densidad:", 0, 255, Zone.NieblaDensity, out _fogDensitySpin);
+        _fogParamsBox.AddChild(fogDensityRow);
+
+        var fogColorRow = new HBoxContainer();
+        fogColorRow.AddThemeConstantOverride("separation", 8);
+        AddSpinWithLabel(fogColorRow, "R:", 0, 255, Zone.NieblaR, out _fogRSpin);
+        AddSpinWithLabel(fogColorRow, "G:", 0, 255, Zone.NieblaG, out _fogGSpin);
+        AddSpinWithLabel(fogColorRow, "B:", 0, 255, Zone.NieblaB, out _fogBSpin);
+        _fogParamsBox.AddChild(fogColorRow);
+
+        var fogSpeedRow = new HBoxContainer();
+        fogSpeedRow.AddThemeConstantOverride("separation", 8);
+        AddSpinWithLabel(fogSpeedRow, "Speed X:", -100, 100, Zone.NieblaSpeedX, out _fogSpeedXSpin);
+        AddSpinWithLabel(fogSpeedRow, "Speed Y:", -100, 100, Zone.NieblaSpeedY, out _fogSpeedYSpin);
+        _fogParamsBox.AddChild(fogSpeedRow);
+
+        // Noise cell size — controls the visual scale of the smoke clouds.
+        // Bigger = softer/wider, smaller = denser/granular.
+        var fogSizeRow = new HBoxContainer();
+        fogSizeRow.AddThemeConstantOverride("separation", 8);
+        AddSpinWithLabel(fogSizeRow, "Tamaño:", 64, 2048, Zone.NieblaSize > 0 ? Zone.NieblaSize : 512, out _fogSizeSpin);
+        if (_fogSizeSpin != null) _fogSizeSpin.Step = 16;
+        _fogParamsBox.AddChild(fogSizeRow);
+
+        // Humo libre — global map toggle (domain-warped multi-directional swirl).
+        // When on, the speed vector is ignored and fog swirls chaotically like
+        // real smoke. Stored on MapData (not the zone) since the shader runs
+        // with a single global uniform for the whole map.
+        _freeSmokeCheck = new CheckBox
+        {
+            Text = "Humo libre (global — swirl multi-direccional)",
+            ButtonPressed = Map?.FogFreeSmoke ?? false,
+        };
+        _fogParamsBox.AddChild(_freeSmokeCheck);
+
+        // Live preview ColorRect for the fog shader
+        var fogShader = GD.Load<Shader>("res://Shaders/fog_overlay.gdshader");
+        if (fogShader != null)
+        {
+            var previewNoise = new NoiseTexture2D();
+            var previewFnl = new FastNoiseLite();
+            previewFnl.Seed = 42;
+            previewNoise.Noise = previewFnl;
+            previewNoise.Width = 256;
+            previewNoise.Height = 256;
+            previewNoise.Seamless = true;
+
+            var previewMat = new ShaderMaterial();
+            previewMat.Shader = fogShader;
+            previewMat.SetShaderParameter("noise_texture", previewNoise);
+
+            // Fake 1x1 white mask so the shader's mask check passes (the main
+            // renderer uses a real map-sized mask, but the preview doesn't
+            // need one — just show fog everywhere).
+            var whiteMaskImg = Image.CreateEmpty(1, 1, false, Image.Format.R8);
+            whiteMaskImg.SetPixel(0, 0, Colors.White);
+            var whiteMaskTex = ImageTexture.CreateFromImage(whiteMaskImg);
+            previewMat.SetShaderParameter("fog_mask", whiteMaskTex);
+            previewMat.SetShaderParameter("map_tile_size", new Vector2(1, 1));
+            previewMat.SetShaderParameter("rect_world_origin", Vector2.Zero);
+            previewMat.SetShaderParameter("rect_world_size", new Vector2(32, 32));
+
+            var fogPreview = new ColorRect
+            {
+                CustomMinimumSize = new Vector2(120, 40),
+                Material = previewMat,
+            };
+
+            void UpdateFogPreview()
+            {
+                previewMat.SetShaderParameter("density", (float)(_fogDensitySpin?.Value ?? 0) / 255f);
+                previewMat.SetShaderParameter("fog_color", new Color(
+                    (float)(_fogRSpin?.Value ?? 128) / 255f,
+                    (float)(_fogGSpin?.Value ?? 140) / 255f,
+                    (float)(_fogBSpin?.Value ?? 160) / 255f, 1f));
+                previewMat.SetShaderParameter("speed", new Vector2(
+                    (float)(_fogSpeedXSpin?.Value ?? 5) / 100f,
+                    (float)(_fogSpeedYSpin?.Value ?? 2) / 100f));
+                // Preview swatch spans only 32 world-px (see rect_world_size
+                // above), so we divide the user-facing size by 16 to map the
+                // slider range (64..2048) onto something the swatch can
+                // actually visualize (4..128 cell pixels). Without this the
+                // size slider would have nearly no visible effect in the
+                // preview because the whole swatch is smaller than one cell.
+                float previewSize = (float)(_fogSizeSpin?.Value ?? 512) / 16f;
+                previewMat.SetShaderParameter("noise_scale", previewSize);
+                previewMat.SetShaderParameter("free_smoke", (_freeSmokeCheck?.ButtonPressed ?? false) ? 1.0f : 0.0f);
+            }
+
+            if (_fogDensitySpin != null) _fogDensitySpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogRSpin != null) _fogRSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogGSpin != null) _fogGSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogBSpin != null) _fogBSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogSpeedXSpin != null) _fogSpeedXSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogSpeedYSpin != null) _fogSpeedYSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_fogSizeSpin != null) _fogSizeSpin.ValueChanged += (_) => UpdateFogPreview();
+            if (_freeSmokeCheck != null) _freeSmokeCheck.Toggled += (_) => UpdateFogPreview();
+
+            UpdateFogPreview();
+            _fogParamsBox.AddChild(fogPreview);
+        }
+
+        vbox.AddChild(_fogParamsBox);
+
+        // Toggle fog params visibility with niebla checkbox.
+        // When turning Niebla ON for the first time (density still 0), auto-bump
+        // density to 90 so the effect is immediately visible without the user
+        // having to discover the slider.
+        _nieblaCheck.Toggled += (on) =>
+        {
+            if (_fogParamsBox != null) _fogParamsBox.Visible = on;
+            if (on && _fogDensitySpin != null && (int)_fogDensitySpin.Value == 0)
+            {
+                _fogDensitySpin.Value = 90;
+            }
+        };
+
+        // Color picker label
+        var ambLabel = EditorTheme.MakeLabel("Color ambiente (oscuridad/tinte de la zona):", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        vbox.AddChild(ambLabel);
+
         var ambRow = new HBoxContainer();
         ambRow.AddThemeConstantOverride("separation", 4);
         AddSpinWithLabel(ambRow, "R:", 0, 255, Zone.AmbientR, out _ambRSpin);
         AddSpinWithLabel(ambRow, "G:", 0, 255, Zone.AmbientG, out _ambGSpin);
         AddSpinWithLabel(ambRow, "B:", 0, 255, Zone.AmbientB, out _ambBSpin);
         vbox.AddChild(ambRow);
+
+        // Live color preview rectangle
+        var ambPreview = new ColorRect
+        {
+            CustomMinimumSize = new Vector2(0, 24),
+            Color = new Color(Zone.AmbientR / 255f, Zone.AmbientG / 255f, Zone.AmbientB / 255f),
+        };
+        ambPreview.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        vbox.AddChild(ambPreview);
+
+        // Wire spin → live preview update
+        if (_ambRSpin != null) _ambRSpin.ValueChanged += (v) => UpdateAmbPreview(ambPreview);
+        if (_ambGSpin != null) _ambGSpin.ValueChanged += (v) => UpdateAmbPreview(ambPreview);
+        if (_ambBSpin != null) _ambBSpin.ValueChanged += (v) => UpdateAmbPreview(ambPreview);
+
+        // Quick presets row
+        var presetsRow = new HBoxContainer();
+        presetsRow.AddThemeConstantOverride("separation", 4);
+        AddPresetButton(presetsRow, "Día", 230, 230, 230, ambPreview);
+        AddPresetButton(presetsRow, "Tarde", 200, 150, 100, ambPreview);
+        AddPresetButton(presetsRow, "Noche", 50, 60, 110, ambPreview);
+        AddPresetButton(presetsRow, "Cueva", 30, 30, 40, ambPreview);
+        AddPresetButton(presetsRow, "Infierno", 120, 30, 30, ambPreview);
+        vbox.AddChild(presetsRow);
 
         // === Exit ===
         vbox.AddChild(EditorTheme.MakeHSeparator());
@@ -211,6 +367,19 @@ public partial class ZoneEditPopup : Window
         Zone.Lluvia = _lluviaCheck?.ButtonPressed ?? false;
         Zone.Nieve = _nieveCheck?.ButtonPressed ?? false;
         Zone.Niebla = _nieblaCheck?.ButtonPressed ?? false;
+        // Fallbacks match ZoneInfo field defaults so null-guarded spinboxes
+        // never produce a black/zero fog config.
+        Zone.NieblaDensity = (int)(_fogDensitySpin?.Value ?? 0);
+        Zone.NieblaR = (int)(_fogRSpin?.Value ?? 128);
+        Zone.NieblaG = (int)(_fogGSpin?.Value ?? 140);
+        Zone.NieblaB = (int)(_fogBSpin?.Value ?? 160);
+        Zone.NieblaSpeedX = (int)(_fogSpeedXSpin?.Value ?? 5);
+        Zone.NieblaSpeedY = (int)(_fogSpeedYSpin?.Value ?? 2);
+        Zone.NieblaSize = (int)(_fogSizeSpin?.Value ?? 512);
+        if (Zone.NieblaSize <= 0) Zone.NieblaSize = 512;
+        // Humo libre is global — writes back to the map, not the zone
+        if (Map != null && _freeSmokeCheck != null)
+            Map.FogFreeSmoke = _freeSmokeCheck.ButtonPressed;
         Zone.AmbientR = (int)(_ambRSpin?.Value ?? 0);
         Zone.AmbientG = (int)(_ambGSpin?.Value ?? 0);
         Zone.AmbientB = (int)(_ambBSpin?.Value ?? 0);
@@ -233,6 +402,28 @@ public partial class ZoneEditPopup : Window
         if (_x2Spin != null) _x2Spin.Value = x2;
         if (_y2Spin != null) _y2Spin.Value = y2;
         Show();
+    }
+
+    private void UpdateAmbPreview(ColorRect preview)
+    {
+        int r = (int)(_ambRSpin?.Value ?? 0);
+        int g = (int)(_ambGSpin?.Value ?? 0);
+        int b = (int)(_ambBSpin?.Value ?? 0);
+        preview.Color = new Color(r / 255f, g / 255f, b / 255f);
+    }
+
+    private void AddPresetButton(HBoxContainer parent, string label, int r, int g, int b, ColorRect preview)
+    {
+        var btn = EditorTheme.MakeButton(label);
+        btn.CustomMinimumSize = new Vector2(60, 0);
+        btn.Pressed += () =>
+        {
+            if (_ambRSpin != null) _ambRSpin.Value = r;
+            if (_ambGSpin != null) _ambGSpin.Value = g;
+            if (_ambBSpin != null) _ambBSpin.Value = b;
+            UpdateAmbPreview(preview);
+        };
+        parent.AddChild(btn);
     }
 
     // === Helpers ===

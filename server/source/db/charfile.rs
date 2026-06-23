@@ -22,8 +22,13 @@ impl CharPreview {
     pub fn to_addpj_data(&self) -> String {
         format!(
             "{},{},{},{},{},{},{},{},{}",
-            self.head, self.body, self.weapon, self.shield, self.helmet,
-            self.level, self.class,
+            self.head,
+            self.body,
+            self.weapon,
+            self.shield,
+            self.helmet,
+            self.level,
+            self.class,
             if self.dead { 1 } else { 0 },
             self.race,
         )
@@ -146,7 +151,7 @@ pub async fn load_equipped_obj_indices(pool: &PgPool, char_name: &str) -> (i32, 
                 (SELECT ci.obj_index FROM character_inventory ci
                  WHERE ci.character_id = c.id AND ci.slot = c.helmet_eqp_slot - 1)
             END, 0)
-         FROM characters c WHERE UPPER(c.name) = UPPER($1)"
+         FROM characters c WHERE UPPER(c.name) = UPPER($1)",
     )
     .bind(char_name)
     .fetch_optional(pool)
@@ -159,7 +164,7 @@ pub async fn load_equipped_obj_indices(pool: &PgPool, char_name: &str) -> (i32, 
 /// Check if a character exists.
 pub async fn character_exists(pool: &PgPool, char_name: &str) -> bool {
     let result = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM characters WHERE UPPER(name) = UPPER($1)"
+        "SELECT COUNT(*) FROM characters WHERE UPPER(name) = UPPER($1)",
     )
     .bind(char_name)
     .fetch_one(pool)
@@ -172,7 +177,7 @@ pub async fn character_exists(pool: &PgPool, char_name: &str) -> bool {
 pub async fn load_char_preview(pool: &PgPool, char_name: &str) -> Result<CharPreview, String> {
     let row = sqlx::query_as::<_, (String, i32, i32, i32, i32, i32, i32, String, bool, String)>(
         "SELECT name, head, body, weapon, shield, helmet, level, class, dead, race
-         FROM characters WHERE UPPER(name) = UPPER($1)"
+         FROM characters WHERE UPPER(name) = UPPER($1)",
     )
     .bind(char_name)
     .fetch_optional(pool)
@@ -181,7 +186,18 @@ pub async fn load_char_preview(pool: &PgPool, char_name: &str) -> Result<CharPre
     .ok_or_else(|| format!("Character '{}' not found", char_name))?;
 
     let (name, head, body, weapon, shield, helmet, level, class, dead, race) = row;
-    Ok(CharPreview { name, head, body, weapon, shield, helmet, level, class, dead, race })
+    Ok(CharPreview {
+        name,
+        head,
+        body,
+        weapon,
+        shield,
+        helmet,
+        level,
+        class,
+        dead,
+        race,
+    })
 }
 
 /// Helper: convert SQL INT[] to fixed-size Rust array.
@@ -315,7 +331,10 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     let pet_types: Vec<i32> = if pet_types_str.is_empty() {
         Vec::new()
     } else {
-        pet_types_str.split(',').filter_map(|s| s.trim().parse::<i32>().ok()).collect()
+        pet_types_str
+            .split(',')
+            .filter_map(|s| s.trim().parse::<i32>().ok())
+            .collect()
     };
 
     // New VB6 13.3 fields
@@ -348,7 +367,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     // Load inventory
     let inv_rows: Vec<(i16, i32, i32, bool)> = sqlx::query_as(
         "SELECT slot, obj_index, amount, equipped FROM character_inventory
-         WHERE character_id = $1 ORDER BY slot"
+         WHERE character_id = $1 ORDER BY slot",
     )
     .bind(id)
     .fetch_all(pool)
@@ -366,7 +385,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     // Load bank
     let bank_rows: Vec<(i16, i32, i32)> = sqlx::query_as(
         "SELECT slot, obj_index, amount FROM character_bank
-         WHERE character_id = $1 ORDER BY slot"
+         WHERE character_id = $1 ORDER BY slot",
     )
     .bind(id)
     .fetch_all(pool)
@@ -382,27 +401,61 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     }
 
     // Get security_code from account (used as "password" for VB6 compat)
-    let password: String = sqlx::query_scalar(
-        "SELECT security_code FROM accounts WHERE id = $1"
-    )
-    .bind(account_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| format!("DB error: {}", e))?
-    .unwrap_or_default();
+    let password: String = sqlx::query_scalar("SELECT security_code FROM accounts WHERE id = $1")
+        .bind(account_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?
+        .unwrap_or_default();
 
     Ok(CharData {
-        id, account_id, name,
-        head, body, heading, weapon, shield, helmet,
-        class, race, gender, hogar,
-        level, exp, max_hp, min_hp, max_sta, min_sta, max_mana, min_mana,
-        max_hit, min_hit, max_agua, min_agua, max_ham, min_ham,
-        gold, bank_gold, skill_pts_libres,
+        id,
+        account_id,
+        name,
+        head,
+        body,
+        heading,
+        weapon,
+        shield,
+        helmet,
+        class,
+        race,
+        gender,
+        hogar,
+        level,
+        exp,
+        max_hp,
+        min_hp,
+        max_sta,
+        min_sta,
+        max_mana,
+        min_mana,
+        max_hit,
+        min_hit,
+        max_agua,
+        min_agua,
+        max_ham,
+        min_ham,
+        gold,
+        bank_gold,
+        skill_pts_libres,
         attributes: sql_array_to_5(&attributes_vec),
         skills: sql_array_to_22(&skills_vec),
-        banned, dead, poisoned, paralyzed, hidden, navigating, barco_slot,
-        montado, levitando, montado_body,
-        map, x, y, guild_index, privileges,
+        banned,
+        dead,
+        poisoned,
+        paralyzed,
+        hidden,
+        navigating,
+        barco_slot,
+        montado,
+        levitando,
+        montado_body,
+        map,
+        x,
+        y,
+        guild_index,
+        privileges,
         inventory,
         weapon_eqp_slot: weapon_eqp_slot as usize,
         armour_eqp_slot: armour_eqp_slot as usize,
@@ -411,20 +464,39 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
         municion_eqp_slot: municion_eqp_slot as usize,
         bank,
         spells: sql_array_to_20(&spells_vec),
-        reputation, criminal,
-        armada_real, fuerzas_caos, criminales_matados, ciudadanos_matados,
-        recompensas_real, recompensas_caos, reenlistadas,
+        reputation,
+        criminal,
+        armada_real,
+        fuerzas_caos,
+        criminales_matados,
+        ciudadanos_matados,
+        recompensas_real,
+        recompensas_caos,
+        reenlistadas,
         password,
         pet_count,
         pet_types,
         exp_skills: sql_array_to_22(&exp_skills_vec),
         usuarios_matados,
         npcs_muertos,
-        rep_asesino, rep_bandido, rep_burgues, rep_ladrones, rep_noble, rep_plebe,
-        recibio_armadura_real, recibio_armadura_caos,
-        recibio_exp_real, recibio_exp_caos,
-        nivel_ingreso, fecha_ingreso, matados_ingreso, next_recompensa,
-        counter_pena, skills_asignados, last_map, uptime,
+        rep_asesino,
+        rep_bandido,
+        rep_burgues,
+        rep_ladrones,
+        rep_noble,
+        rep_plebe,
+        recibio_armadura_real,
+        recibio_armadura_caos,
+        recibio_exp_real,
+        recibio_exp_caos,
+        nivel_ingreso,
+        fecha_ingreso,
+        matados_ingreso,
+        next_recompensa,
+        counter_pena,
+        skills_asignados,
+        last_map,
+        uptime,
         mochila_eqp_slot: mochila_eqp_slot as usize,
         anillo_eqp_slot: anillo_eqp_slot as usize,
         pareja,
@@ -453,15 +525,19 @@ pub async fn create_charfile(
     }
 
     let body = starter_body(race, gender);
-    let head_val = if head > 0 { head } else { starter_head(race, gender) };
+    let head_val = if head > 0 {
+        head
+    } else {
+        starter_head(race, gender)
+    };
 
     // VB6: Apply MODRAZA attribute bonuses from Balance.dat
     let mut attrs = attributes;
     let race_mods = balance.race_modifiers(race);
-    attrs[0] += race_mods.fuerza;       // Fuerza
-    attrs[1] += race_mods.agilidad;     // Agilidad
+    attrs[0] += race_mods.fuerza; // Fuerza
+    attrs[1] += race_mods.agilidad; // Agilidad
     attrs[2] += race_mods.inteligencia; // Inteligencia
-    attrs[3] += race_mods.carisma;      // Carisma
+    attrs[3] += race_mods.carisma; // Carisma
     attrs[4] += race_mods.constitucion; // Constitucion
     for a in attrs.iter_mut() {
         *a = (*a).clamp(1, 25);
@@ -495,19 +571,17 @@ pub async fn create_charfile(
             spells[0] = 2; // Magia Misil
         }
         "DRUIDA" => {
-            spells[0] = 2;  // Magia Misil
+            spells[0] = 2; // Magia Misil
             spells[1] = 46; // Druida extra spell
         }
         _ => {}
     }
 
-    let slot: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM characters WHERE account_id = $1"
-    )
-    .bind(account_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("DB error: {}", e))?;
+    let slot: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM characters WHERE account_id = $1")
+        .bind(account_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?;
 
     // VB6: MaxHIT=2, MinHIT=1
     let char_id: (i32,) = sqlx::query_as(
@@ -527,7 +601,7 @@ pub async fn create_charfile(
             0, 0, 10,
             $16, $17, $18,
             0
-        ) RETURNING id"
+        ) RETURNING id",
     )
     .bind(account_id)
     .bind(name)
@@ -567,52 +641,63 @@ pub async fn create_charfile(
     let mut slot_idx: i16 = 0;
 
     // Slot 0: Food (Manzanas=467, 100)
-    items.push((slot_idx, 467, 100, false)); slot_idx += 1;
+    items.push((slot_idx, 467, 100, false));
+    slot_idx += 1;
     // Slot 1: Drink (Jugos=468, 100)
-    items.push((slot_idx, 468, 100, false)); slot_idx += 1;
+    items.push((slot_idx, 468, 100, false));
+    slot_idx += 1;
 
     // Slot 2: Weapon (class-specific)
     match class_upper.as_str() {
         "CAZADOR" => {
-            items.push((slot_idx, 859, 1, true)); slot_idx += 1; // Arco (bow)
+            items.push((slot_idx, 859, 1, true));
+            slot_idx += 1; // Arco (bow)
         }
         "TRABAJADOR" => {
             // Random tool: 561-565
             let tool = random_range(561, 565);
-            items.push((slot_idx, tool, 1, true)); slot_idx += 1;
+            items.push((slot_idx, tool, 1, true));
+            slot_idx += 1;
         }
         _ => {
-            items.push((slot_idx, 460, 1, true)); slot_idx += 1; // Daga (dagger)
+            items.push((slot_idx, 460, 1, true));
+            slot_idx += 1; // Daga (dagger)
         }
     }
     let weapon_slot = slot_idx; // 1-based: slot_idx (already incremented = 3)
 
     // Slot 3: Armor (race-specific, equipped)
-    items.push((slot_idx, race_armor, 1, true)); slot_idx += 1;
+    items.push((slot_idx, race_armor, 1, true));
+    slot_idx += 1;
     let armor_slot = slot_idx; // 1-based: 4
 
     // Slot 4: Red potion (PociónRoja=857, 200)
-    items.push((slot_idx, 857, 200, false)); slot_idx += 1;
+    items.push((slot_idx, 857, 200, false));
+    slot_idx += 1;
 
     // Slot 5: Blue potion if caster or Paladin (PociónAzul=856, 200)
     let has_mana = base_mana > 0 || class_upper == "PALADIN";
     if has_mana {
-        items.push((slot_idx, 856, 200, false)); slot_idx += 1;
+        items.push((slot_idx, 856, 200, false));
+        slot_idx += 1;
     } else {
         // Non-casters: Yellow potion (855, 100) + Green potion (858, 50)
-        items.push((slot_idx, 855, 100, false)); slot_idx += 1;
-        items.push((slot_idx, 858, 50, false)); slot_idx += 1;
+        items.push((slot_idx, 855, 100, false));
+        slot_idx += 1;
+        items.push((slot_idx, 858, 50, false));
+        slot_idx += 1;
     }
 
     // Cazador: Arrows (Flechas=860, 150, equipped)
     if class_upper == "CAZADOR" {
-        items.push((slot_idx, 860, 150, true)); slot_idx += 1;
+        items.push((slot_idx, 860, 150, true));
+        slot_idx += 1;
     }
 
     for (slot, obj_idx, amount, equipped) in &items {
         sqlx::query(
             "INSERT INTO character_inventory (character_id, slot, obj_index, amount, equipped)
-             VALUES ($1, $2, $3, $4, $5)"
+             VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(cid)
         .bind(slot)
@@ -625,7 +710,11 @@ pub async fn create_charfile(
     }
 
     // Set equipment slots (1-indexed VB6 style: weapon=3, armor=4)
-    let municion_slot = if class_upper == "CAZADOR" { slot_idx as i32 } else { 0 };
+    let municion_slot = if class_upper == "CAZADOR" {
+        slot_idx as i32
+    } else {
+        0
+    };
     sqlx::query(
         "UPDATE characters SET weapon_eqp_slot = $2, armour_eqp_slot = $3, municion_eqp_slot = $4 WHERE id = $1"
     )
@@ -642,12 +731,16 @@ pub async fn create_charfile(
 
 fn random_range(min: i32, max: i32) -> i32 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    if min >= max { return min; }
+    if min >= max {
+        return min;
+    }
     let seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos() as u64;
-    let val = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let val = seed
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     let range = (max - min + 1) as u64;
     min + (val % range) as i32
 }
@@ -743,20 +836,25 @@ pub struct CharSaveData {
 /// Save full character state back to DB (called on disconnect / auto-save).
 /// Wrapped in an atomic transaction — either everything saves or nothing does.
 /// Inventory and bank use multi-row batch upserts (71 → 3 queries).
-pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) -> Result<(), String> {
+pub async fn save_charfile(
+    pool: &PgPool,
+    char_name: &str,
+    data: &CharSaveData,
+) -> Result<(), String> {
     // Begin transaction — all-or-nothing save
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|e| format!("DB error starting transaction: {}", e))?;
 
     // Get character ID
-    let char_id: i32 = sqlx::query_scalar(
-        "SELECT id FROM characters WHERE UPPER(name) = UPPER($1)"
-    )
-    .bind(char_name)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| format!("DB error: {}", e))?
-    .ok_or_else(|| format!("Character '{}' not found for save", char_name))?;
+    let char_id: i32 =
+        sqlx::query_scalar("SELECT id FROM characters WHERE UPPER(name) = UPPER($1)")
+            .bind(char_name)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| format!("DB error: {}", e))?
+            .ok_or_else(|| format!("Character '{}' not found for save", char_name))?;
 
     // Update main character record
     sqlx::query(
@@ -794,43 +892,96 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             mochila_eqp_slot = $80, anillo_eqp_slot = $81,
             pareja = $82,
             logged = FALSE, updated_at = NOW()
-         WHERE id = $1"
+         WHERE id = $1",
     )
     .bind(char_id)
-    .bind(data.head).bind(data.body).bind(data.heading)
-    .bind(data.weapon).bind(data.shield).bind(data.helmet)
-    .bind(data.map).bind(data.x).bind(data.y)
-    .bind(data.level).bind(data.exp)
-    .bind(data.max_hp).bind(data.min_hp).bind(data.max_sta).bind(data.min_sta)
-    .bind(data.max_mana).bind(data.min_mana).bind(data.max_hit).bind(data.min_hit)
-    .bind(data.max_agua).bind(data.min_agua).bind(data.max_ham).bind(data.min_ham)
-    .bind(data.gold).bind(data.bank_gold).bind(data.skill_pts_libres)
-    .bind(&data.attributes[..]).bind(&data.skills[..]).bind(&data.spells[..])
-    .bind(data.dead).bind(data.poisoned).bind(data.paralyzed).bind(data.criminal)
-    .bind(data.hidden).bind(data.navigating).bind(data.privileges)
-    .bind(data.weapon_eqp_slot as i32).bind(data.armour_eqp_slot as i32)
-    .bind(data.shield_eqp_slot as i32).bind(data.helmet_eqp_slot as i32)
+    .bind(data.head)
+    .bind(data.body)
+    .bind(data.heading)
+    .bind(data.weapon)
+    .bind(data.shield)
+    .bind(data.helmet)
+    .bind(data.map)
+    .bind(data.x)
+    .bind(data.y)
+    .bind(data.level)
+    .bind(data.exp)
+    .bind(data.max_hp)
+    .bind(data.min_hp)
+    .bind(data.max_sta)
+    .bind(data.min_sta)
+    .bind(data.max_mana)
+    .bind(data.min_mana)
+    .bind(data.max_hit)
+    .bind(data.min_hit)
+    .bind(data.max_agua)
+    .bind(data.min_agua)
+    .bind(data.max_ham)
+    .bind(data.min_ham)
+    .bind(data.gold)
+    .bind(data.bank_gold)
+    .bind(data.skill_pts_libres)
+    .bind(&data.attributes[..])
+    .bind(&data.skills[..])
+    .bind(&data.spells[..])
+    .bind(data.dead)
+    .bind(data.poisoned)
+    .bind(data.paralyzed)
+    .bind(data.criminal)
+    .bind(data.hidden)
+    .bind(data.navigating)
+    .bind(data.privileges)
+    .bind(data.weapon_eqp_slot as i32)
+    .bind(data.armour_eqp_slot as i32)
+    .bind(data.shield_eqp_slot as i32)
+    .bind(data.helmet_eqp_slot as i32)
     .bind(data.municion_eqp_slot as i32)
-    .bind(data.reputation).bind(data.guild_index)
-    .bind(data.criminales_matados).bind(data.ciudadanos_matados)
-    .bind(data.ejercito_real).bind(data.ejercito_caos)
+    .bind(data.reputation)
+    .bind(data.guild_index)
+    .bind(data.criminales_matados)
+    .bind(data.ciudadanos_matados)
+    .bind(data.ejercito_real)
+    .bind(data.ejercito_caos)
     .bind(data.barco_slot as i32)
-    .bind(data.montado).bind(data.levitando).bind(data.montado_body)
-    .bind(data.recompensas_real).bind(data.recompensas_caos).bind(data.reenlistadas)
+    .bind(data.montado)
+    .bind(data.levitando)
+    .bind(data.montado_body)
+    .bind(data.recompensas_real)
+    .bind(data.recompensas_caos)
+    .bind(data.reenlistadas)
     .bind(&data.description)
     .bind(data.pet_count)
-    .bind(&data.pet_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(","))
+    .bind(
+        &data
+            .pet_types
+            .iter()
+            .map(|t| t.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    )
     .bind(&data.exp_skills[..])
-    .bind(data.usuarios_matados).bind(data.npcs_muertos)
-    .bind(data.rep_asesino).bind(data.rep_bandido).bind(data.rep_burgues)
-    .bind(data.rep_ladrones).bind(data.rep_noble).bind(data.rep_plebe)
-    .bind(data.recibio_armadura_real).bind(data.recibio_armadura_caos)
-    .bind(data.recibio_exp_real).bind(data.recibio_exp_caos)
-    .bind(data.nivel_ingreso).bind(&data.fecha_ingreso)
-    .bind(data.matados_ingreso).bind(data.next_recompensa)
-    .bind(data.counter_pena).bind(data.skills_asignados)
-    .bind(data.last_map).bind(data.uptime)
-    .bind(data.mochila_eqp_slot as i32).bind(data.anillo_eqp_slot as i32)
+    .bind(data.usuarios_matados)
+    .bind(data.npcs_muertos)
+    .bind(data.rep_asesino)
+    .bind(data.rep_bandido)
+    .bind(data.rep_burgues)
+    .bind(data.rep_ladrones)
+    .bind(data.rep_noble)
+    .bind(data.rep_plebe)
+    .bind(data.recibio_armadura_real)
+    .bind(data.recibio_armadura_caos)
+    .bind(data.recibio_exp_real)
+    .bind(data.recibio_exp_caos)
+    .bind(data.nivel_ingreso)
+    .bind(&data.fecha_ingreso)
+    .bind(data.matados_ingreso)
+    .bind(data.next_recompensa)
+    .bind(data.counter_pena)
+    .bind(data.skills_asignados)
+    .bind(data.last_map)
+    .bind(data.uptime)
+    .bind(data.mochila_eqp_slot as i32)
+    .bind(data.anillo_eqp_slot as i32)
     .bind(&data.pareja)
     .execute(&mut *tx)
     .await
@@ -842,14 +993,19 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
         if count > 0 {
             // Build multi-row VALUES: ($1, 0, obj, amt, eq), ($1, 1, obj, amt, eq), ...
             let mut sql = String::from(
-                "INSERT INTO character_inventory (character_id, slot, obj_index, amount, equipped) VALUES "
+                "INSERT INTO character_inventory (character_id, slot, obj_index, amount, equipped) VALUES ",
             );
             let mut param_idx = 2u32; // $1 = char_id
             for i in 0..count {
-                if i > 0 { sql.push_str(", "); }
+                if i > 0 {
+                    sql.push_str(", ");
+                }
                 sql.push_str(&format!(
                     "($1, ${}, ${}, ${}, ${})",
-                    param_idx, param_idx + 1, param_idx + 2, param_idx + 3
+                    param_idx,
+                    param_idx + 1,
+                    param_idx + 2,
+                    param_idx + 3
                 ));
                 param_idx += 4;
             }
@@ -861,9 +1017,15 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             let mut query = sqlx::query(&sql).bind(char_id);
             for i in 0..count {
                 let (obj_idx, amount, equipped) = data.inventory[i];
-                query = query.bind(i as i16).bind(obj_idx).bind(amount).bind(equipped);
+                query = query
+                    .bind(i as i16)
+                    .bind(obj_idx)
+                    .bind(amount)
+                    .bind(equipped);
             }
-            query.execute(&mut *tx).await
+            query
+                .execute(&mut *tx)
+                .await
                 .map_err(|e| format!("DB error batch-saving inventory: {}", e))?;
         }
     }
@@ -873,20 +1035,24 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
         let count = data.bank.len().min(40);
         if count > 0 {
             let mut sql = String::from(
-                "INSERT INTO character_bank (character_id, slot, obj_index, amount) VALUES "
+                "INSERT INTO character_bank (character_id, slot, obj_index, amount) VALUES ",
             );
             let mut param_idx = 2u32; // $1 = char_id
             for i in 0..count {
-                if i > 0 { sql.push_str(", "); }
+                if i > 0 {
+                    sql.push_str(", ");
+                }
                 sql.push_str(&format!(
                     "($1, ${}, ${}, ${})",
-                    param_idx, param_idx + 1, param_idx + 2
+                    param_idx,
+                    param_idx + 1,
+                    param_idx + 2
                 ));
                 param_idx += 3;
             }
             sql.push_str(
                 " ON CONFLICT (character_id, slot) DO UPDATE SET \
-                 obj_index = EXCLUDED.obj_index, amount = EXCLUDED.amount"
+                 obj_index = EXCLUDED.obj_index, amount = EXCLUDED.amount",
             );
 
             let mut query = sqlx::query(&sql).bind(char_id);
@@ -894,13 +1060,16 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
                 let (obj_idx, amount) = data.bank[i];
                 query = query.bind(i as i16).bind(obj_idx).bind(amount);
             }
-            query.execute(&mut *tx).await
+            query
+                .execute(&mut *tx)
+                .await
                 .map_err(|e| format!("DB error batch-saving bank: {}", e))?;
         }
     }
 
     // Commit transaction — atomic save complete
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|e| format!("DB error committing save: {}", e))?;
 
     Ok(())
@@ -938,7 +1107,11 @@ async fn get_char_id(pool: &PgPool, char_name: &str) -> Result<i32, String> {
 }
 
 /// Update only the guild_index column for a character (online or offline).
-pub async fn update_guild_index(pool: &PgPool, char_name: &str, guild_index: i32) -> Result<(), String> {
+pub async fn update_guild_index(
+    pool: &PgPool,
+    char_name: &str,
+    guild_index: i32,
+) -> Result<(), String> {
     sqlx::query("UPDATE characters SET guild_index = $1 WHERE UPPER(name) = UPPER($2)")
         .bind(guild_index)
         .bind(char_name)
@@ -962,14 +1135,12 @@ pub async fn set_char_banned(pool: &PgPool, char_name: &str, banned: bool) -> Re
 /// Add a penalty to a character.
 pub async fn add_penalty(pool: &PgPool, char_name: &str, text: &str) -> Result<(), String> {
     let char_id = get_char_id(pool, char_name).await?;
-    sqlx::query(
-        "INSERT INTO character_penalties (character_id, penalty_text) VALUES ($1, $2)"
-    )
-    .bind(char_id)
-    .bind(text)
-    .execute(pool)
-    .await
-    .map_err(|e| format!("DB error: {}", e))?;
+    sqlx::query("INSERT INTO character_penalties (character_id, penalty_text) VALUES ($1, $2)")
+        .bind(char_id)
+        .bind(text)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?;
     Ok(())
 }
 
@@ -991,13 +1162,29 @@ pub async fn load_penalties(pool: &PgPool, char_name: &str) -> Vec<String> {
         Err(_) => return Vec::new(),
     };
     let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT penalty_text FROM character_penalties WHERE character_id = $1 ORDER BY id"
+        "SELECT penalty_text FROM character_penalties WHERE character_id = $1 ORDER BY id",
     )
     .bind(char_id)
     .fetch_all(pool)
     .await
     .unwrap_or_default();
     rows.into_iter().map(|(t,)| t).collect()
+}
+
+/// Rename a character. Returns Ok(true) if found and renamed, Ok(false) if not found.
+/// VB6 /ANAME parity: updates the name column in characters table.
+pub async fn rename_character(
+    pool: &PgPool,
+    old_name: &str,
+    new_name: &str,
+) -> Result<bool, String> {
+    let rows = sqlx::query("UPDATE characters SET name = $1 WHERE UPPER(name) = UPPER($2)")
+        .bind(new_name)
+        .bind(old_name)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("DB error renaming character: {}", e))?;
+    Ok(rows.rows_affected() > 0)
 }
 
 // --- Starter data helpers (same as data/charfile.rs) ---
@@ -1031,3 +1218,75 @@ fn starter_head(race: &str, gender: i32) -> i32 {
 }
 
 // starter_stats removed — VB6 13.3 calculates HP/Mana/Sta from attributes inline
+
+/// Ranking entry returned by DB queries.
+#[derive(Debug, Clone)]
+pub struct RankingEntry {
+    pub name: String,
+    pub level: i32,
+    pub kills: i32,
+    pub gold: i64,
+}
+
+/// Query top characters by level from DB (VB6: HandleRecordListRequest).
+pub async fn query_rankings_by_level(pool: &PgPool, limit: i32) -> Vec<RankingEntry> {
+    let rows: Vec<(String, i32, i32, i32, i64)> = sqlx::query_as(
+        "SELECT name, level, criminales_matados, ciudadanos_matados, gold
+         FROM characters ORDER BY level DESC, (criminales_matados + ciudadanos_matados) DESC LIMIT $1"
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter()
+        .map(|(name, level, crim, ciud, gold)| RankingEntry {
+            name,
+            level,
+            kills: crim + ciud,
+            gold,
+        })
+        .collect()
+}
+
+/// Query top characters by kills from DB.
+pub async fn query_rankings_by_kills(pool: &PgPool, limit: i32) -> Vec<RankingEntry> {
+    let rows: Vec<(String, i32, i32, i32, i64)> = sqlx::query_as(
+        "SELECT name, level, criminales_matados, ciudadanos_matados, gold
+         FROM characters ORDER BY (criminales_matados + ciudadanos_matados) DESC, level DESC LIMIT $1"
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter()
+        .map(|(name, level, crim, ciud, gold)| RankingEntry {
+            name,
+            level,
+            kills: crim + ciud,
+            gold,
+        })
+        .collect()
+}
+
+/// Query top characters by gold from DB.
+pub async fn query_rankings_by_gold(pool: &PgPool, limit: i32) -> Vec<RankingEntry> {
+    let rows: Vec<(String, i32, i32, i32, i64)> = sqlx::query_as(
+        "SELECT name, level, criminales_matados, ciudadanos_matados, gold
+         FROM characters ORDER BY gold DESC, level DESC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter()
+        .map(|(name, level, crim, ciud, gold)| RankingEntry {
+            name,
+            level,
+            kills: crim + ciud,
+            gold,
+        })
+        .collect()
+}

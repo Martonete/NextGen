@@ -698,12 +698,7 @@ public partial class PacketHandler
 
     private void HandleBinCharacterInfo(ByteQueue bq)
     {
-        // LEGACY / UNIMPLEMENTED (opcode 75 — CharacterInfo)
-        // Reads 10 fields to advance the byte queue and prevent stream corruption,
-        // but stores nothing. The newer FullCharInfo (opcode 245) supersedes this
-        // packet and populates _state.CharInfoCurrent via HandleBinFullCharInfo.
-        // TODO: either remove from server send list or populate CharInfoCurrent here
-        // once it is confirmed opcode 75 is still sent by 13.3+ servers.
+        // VB6 Protocol.bas:4552 — legacy CharacterInfo opcode (75)
         string name = bq.ReadString();
         byte race = bq.ReadByte();
         byte charClass = bq.ReadByte();
@@ -714,7 +709,21 @@ public partial class PacketHandler
         int reputation = bq.ReadLong();
         string description = bq.ReadString();
         string guildName = bq.ReadString();
-        GD.Print($"[PKT] CharacterInfo (opcode 75) received for '{name}' — legacy, data discarded");
+
+        // Map to CharInfoData for CharInfoPopup display
+        string[] raceNames = { "Humano", "Elfo", "Elfo Oscuro", "Enano", "Gnomo" };
+        string[] classNames = { "Mago", "Clerigo", "Guerrero", "Asesino", "Ladron", "Bardo", "Druida", "Bandido", "Paladin", "Cazador", "Trabajador", "Pirata" };
+
+        _state.CharInfoCurrent = new CharInfoData
+        {
+            Name = name,
+            Race = race > 0 && race <= raceNames.Length ? raceNames[race - 1] : $"Raza {race}",
+            ClassName = charClass > 0 && charClass <= classNames.Length ? classNames[charClass - 1] : $"Clase {charClass}",
+            Level = level,
+            Gold = gold,
+            Reputation = reputation,
+        };
+        _state.ShowCharInfo = true;
     }
 
     // ── Console message by ID ─────────────────────────────────────
@@ -757,8 +766,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinNavigationData(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
+        _state.NavigationData = data;
     }
 
     /// <summary>
@@ -866,8 +875,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinWorkMode(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
         byte skill = bq.ReadByte();
+        _state.CurrentWorkMode = skill;
     }
 
     /// <summary>
@@ -892,6 +901,28 @@ public partial class PacketHandler
         short zoneX2 = bq.ReadInteger();
         short zoneY2 = bq.ReadInteger();
 
+        // Optional ambient RGB (3 bytes appended by newer server versions)
+        byte ambR = 0, ambG = 0, ambB = 0;
+        if (bq.Available >= 3)
+        {
+            ambR = bq.ReadByte();
+            ambG = bq.ReadByte();
+            ambB = bq.ReadByte();
+        }
+
+        // Optional fog bytes (6 bytes appended by newer server versions)
+        byte fogDensity = 0, fogR = 128, fogG = 140, fogB = 160;
+        sbyte fogSpeedX = 5, fogSpeedY = 2;
+        if (bq.Available >= 6)
+        {
+            fogDensity = bq.ReadByte();
+            fogR = bq.ReadByte();
+            fogG = bq.ReadByte();
+            fogB = bq.ReadByte();
+            fogSpeedX = (sbyte)bq.ReadByte();
+            fogSpeedY = (sbyte)bq.ReadByte();
+        }
+
         _state.CurrentZoneName = zoneName;
         _state.CurrentZoneType = zoneType;
         _state.CurrentZoneSafe = isSafe;
@@ -906,5 +937,19 @@ public partial class PacketHandler
         _state.ZoneLluvia = lluvia;
         _state.ZoneNieve = nieve;
         _state.ZoneNiebla = niebla;
+
+        // Store zone ambient; trigger light recalc so LightSystem picks up new ambient
+        _state.ZoneAmbientR = ambR;
+        _state.ZoneAmbientG = ambG;
+        _state.ZoneAmbientB = ambB;
+        _state.LightsDirty = true;
+
+        // Store fog shader parameters
+        _state.ZoneFogDensity = fogDensity;
+        _state.ZoneFogR = fogR;
+        _state.ZoneFogG = fogG;
+        _state.ZoneFogB = fogB;
+        _state.ZoneFogSpeedX = fogSpeedX;
+        _state.ZoneFogSpeedY = fogSpeedY;
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Godot;
 using ArgentumNextgen.Data;
+using ArgentumNextgen.Data.Resources;
 using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.Rendering;
@@ -55,7 +56,7 @@ public partial class WorldRenderer : Node2D
 	private static int HalfWindowTileHeight => ResolutionManager.HalfTilesY;
 
 	// Buffer sizes beyond visible area
-	private const int TerrainBufferSize = 16; // L1-L4: supports GRHs up to 512px (16 tiles)
+	private const int TerrainBufferSize = 4; // L1-L4: supports GRHs up to 128px (4 tiles). VB6 max sprite ~128px.
 	private const int CharBufferSize = 1;     // Characters/NPCs: +1 tile for smooth fade at viewport edge
 
 	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)
@@ -118,6 +119,11 @@ public partial class WorldRenderer : Node2D
 	// Pre-computed water tile map — built on map load, avoids per-frame GRH range checks.
 	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in any known water range.
 	private bool[,]? _waterMap;
+
+	// Cached per-column and per-row screen coordinate arrays (Opt 4).
+	// Resized only when the frame range changes. Avoids per-tile multiply in the hot path.
+	private float[] _screenXCache = Array.Empty<float>();
+	private float[] _screenYCache = Array.Empty<float>();
 
 
 
@@ -371,9 +377,9 @@ void fragment() {
 	/// <summary>
 	/// Initialize weather renderer with sound manager (called from Main after Init).
 	/// </summary>
-	public void InitWeather(SoundManager? soundManager)
+	public void InitWeather(SoundManager? soundManager, IResourceProvider? resources = null)
 	{
-		_weatherRenderer?.Init(_state!, soundManager);
+		_weatherRenderer?.Init(_state!, soundManager, resources);
 	}
 
 	/// <summary>
@@ -438,8 +444,20 @@ void fragment() {
 	private void UpdateAllCharacterTimers()
 	{
 		if (_state == null || _data == null) return;
+		int ux = _state.UserPosX;
+		int uy = _state.UserPosY;
+		int halfX = HalfWindowTileWidth + 3; // viewport + small buffer
+		int halfY = HalfWindowTileHeight + 3;
 		foreach (var ch in _state.Characters.Values)
-			CharRenderer.UpdateCharacterTimers(ch, _deltaMs, _state, _data);
+		{
+			// Full update for characters near viewport (visible or about to be)
+			// Lightweight FOV-only update for distant characters
+			bool nearViewport = Math.Abs(ch.PosX - ux) <= halfX && Math.Abs(ch.PosY - uy) <= halfY;
+			if (nearViewport)
+				CharRenderer.UpdateCharacterTimers(ch, _deltaMs, _state, _data);
+			else
+				CharRenderer.UpdateCharacterFovOnly(ch, _deltaMs, _state);
+		}
 	}
 
 	/// <summary>
@@ -615,6 +633,19 @@ void fragment() {
 		_frameCharMinY = Math.Max(1, screenMinY - CharBufferSize);
 		_frameCharMaxY = Math.Min(mapH, screenMaxY + CharBufferSize);
 
+		// Opt 4: Pre-compute per-column X and per-row Y screen coords for the terrain buffer range.
+		// These are reused by DrawContent, DrawNonWaterMask, DrawLayer2, and the roof loop.
+		{
+			int colCount = _frameMaxX - _frameMinX + 1;
+			int rowCount = _frameMaxY - _frameMinY + 1;
+			if (_screenXCache.Length < colCount) _screenXCache = new float[colCount];
+			if (_screenYCache.Length < rowCount) _screenYCache = new float[rowCount];
+			for (int xi = 0; xi < colCount; xi++)
+				_screenXCache[xi] = (_frameMinX + xi - _frameUserX + HalfWindowTileWidth) * TileSize + _framePixelOffsetX;
+			for (int yi = 0; yi < rowCount; yi++)
+				_screenYCache[yi] = (_frameMinY + yi - _frameUserY + HalfWindowTileHeight) * TileSize + _framePixelOffsetY;
+		}
+
 		_frameHasLights = (_state.Config?.ShowLights ?? true)
 						  && _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
@@ -693,12 +724,23 @@ void fragment() {
 		bool showReflections = _state.Config?.ShowReflections ?? true;
 		_frameAnyReflection = false;
 
+		// Opt 2 & 3: viewport bounds used for culling both reflections and aura collection.
+		int reflMinX = _frameUserX - HalfWindowTileWidth - 2;
+		int reflMaxX = _frameUserX + HalfWindowTileWidth + 2;
+		int reflMinY = _frameUserY - HalfWindowTileHeight - 2;
+		int reflMaxY = _frameUserY + HalfWindowTileHeight + 2;
+
 		if (showReflections)
 		{
 			foreach (var kvp in _state.Characters)
 			{
 				var ch = kvp.Value;
 				if (ch.Invisible) continue;
+
+				// Skip characters outside viewport + small buffer — no visual impact
+				if (ch.PosX < reflMinX || ch.PosX > reflMaxX ||
+					ch.PosY < reflMinY || ch.PosY > reflMaxY)
+					continue;
 
 				// Draw reflection if ANY tile below (Y+1..Y+3) and within sprite width
 				// has water. Uses pre-computed _waterMap for O(1) lookups instead of
@@ -762,6 +804,7 @@ void fragment() {
 		// ==========================================
 		// Collect aura draws by iterating characters and updating their aura state.
 		// This populates _pendingAuraDraws before AuraLayer._Draw() fires.
+		// Opt 3: reuse viewport bounds from reflection pass (already computed above).
 		foreach (var kvp in _state.Characters)
 		{
 			var ch = kvp.Value;
@@ -769,6 +812,11 @@ void fragment() {
 			if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
 			// Auras not drawn when Navegando or Montado (equipment hidden)
 			if (ch.Navigating || ch.Mounted) continue;
+
+			// Opt 3: skip aura collection for characters well outside viewport
+			if (ch.PosX < reflMinX || ch.PosX > reflMaxX ||
+				ch.PosY < reflMinY || ch.PosY > reflMaxY)
+				continue;
 
 			// Compute character screen position
 			var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
@@ -812,7 +860,7 @@ void fragment() {
 				foreach (var p in stream.Particles)
 				{
 					if (!p.Alive || p.GrhIndex <= 0) continue;
-					var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+					var color = new Color(ByteToFloat.Table[p.ColR], ByteToFloat.Table[p.ColG], ByteToFloat.Table[p.ColB], p.Alpha);
 					Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
 					int frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
 					_pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color));
@@ -827,6 +875,7 @@ void fragment() {
 
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
+				float sy = _screenYCache[y - _frameMinY];
 				for (int x = _frameMinX; x <= _frameMaxX; x++)
 				{
 					ref var tile = ref _state.MapData.Tiles[x, y];
@@ -846,7 +895,8 @@ void fragment() {
 						roofColor = Colors.White; // other roofs always visible
 					}
 
-					Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+					// Opt 4: use pre-computed screen coords
+					Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
 					_pendingRoofDraws.Add((tile.Layer4, pos, roofColor));
 				}
 			}

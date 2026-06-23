@@ -1,14 +1,11 @@
 //! Miscellaneous slash command handlers: mount, dismount, pet, messaging,
 //! citizenship, travel, training, centinela, navigation, voting, marriage.
 
-use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::protocol::{font_index, fields::read_field, binary_packets};
 use super::common::*;
-use super::{
-    warp_user, send_full_inventory,
-    remove_pet_from_owner,
-};
+use super::{send_full_inventory, warp_user};
+use crate::game::types::{GameState, SendTarget};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, fields::read_field, font_index};
 
 // =====================================================================
 // Missing slash commands
@@ -16,13 +13,21 @@ use super::{
 
 /// /MONTAR — Mount pet.
 pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: ConnectionId) {
-    let has_mount = state.users.get(&conn_id).map(|u| u.nro_mascotas > 0).unwrap_or(false);
+    let has_mount = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.nro_mascotas > 0)
+        .unwrap_or(false);
     if !has_mount {
         state.send_console(conn_id, "No tienes una montura.", font_index::INFO);
         return;
     }
 
-    let already_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
+    let already_mounted = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.montado)
+        .unwrap_or(false);
     if already_mounted {
         state.send_console(conn_id, "Ya estas montado.", font_index::INFO);
         return;
@@ -35,7 +40,11 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
     };
 
     // VB6: Check first pet's NPC number and assign mount body
-    let pet_idx = state.users.get(&conn_id).map(|u| u.mascotas_index[0]).unwrap_or(0);
+    let pet_idx = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.mascotas_index[0])
+        .unwrap_or(0);
     let npc_num = state.get_npc(pet_idx).map(|n| n.npc_number).unwrap_or(0);
     let mount_body = match npc_num {
         156 => 331, // Horse 1
@@ -57,17 +66,30 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
     }
 
     let cp = {
-        let user = state.users.get(&conn_id).unwrap();
+        let Some(user) = state.users.get(&conn_id) else {
+            tracing::warn!(conn_id = conn_id, "user not found after mount body change");
+            return;
+        };
         binary_packets::write_character_change(
-            user.char_index.0 as i16, user.body as i16, user.head as i16, user.heading as u8,
-            super::common::NINGUN_ARMA as i16, super::common::NINGUN_ESCUDO as i16,
-            super::common::NINGUN_CASCO as i16, 0, 0,
+            user.char_index.0 as i16,
+            user.body as i16,
+            user.head as i16,
+            user.heading as u8,
+            super::common::NINGUN_ARMA as i16,
+            super::common::NINGUN_ESCUDO as i16,
+            super::common::NINGUN_CASCO as i16,
+            0,
+            0,
         )
     };
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
 
     // Send mount state packet
-    let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
+    let char_index = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_index.0)
+        .unwrap_or(0);
     let usm_pkt = binary_packets::write_user_mount(char_index as i16, true);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &usm_pkt);
 
@@ -76,7 +98,11 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
 
 /// /DESMONTAR — Dismount.
 pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: ConnectionId) {
-    let is_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
+    let is_mounted = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.montado)
+        .unwrap_or(false);
     if !is_mounted {
         state.send_console(conn_id, "No estas montado.", font_index::INFO);
         return;
@@ -105,16 +131,33 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
     }
 
     let cp = {
-        let user = state.users.get(&conn_id).unwrap();
+        let Some(user) = state.users.get(&conn_id) else {
+            tracing::warn!(
+                conn_id = conn_id,
+                "user not found after dismount body restore"
+            );
+            return;
+        };
         binary_packets::write_character_change(
-            user.char_index.0 as i16, user.body as i16, user.head as i16, user.heading as u8,
-            user.weapon_anim as i16, user.shield_anim as i16, user.casco_anim as i16, 0, 0,
+            user.char_index.0 as i16,
+            user.body as i16,
+            user.head as i16,
+            user.heading as u8,
+            user.weapon_anim as i16,
+            user.shield_anim as i16,
+            user.casco_anim as i16,
+            0,
+            0,
         )
     };
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
 
     // Send mount state packet
-    let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
+    let char_index = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_index.0)
+        .unwrap_or(0);
     let usm_pkt = binary_packets::write_user_mount(char_index as i16, false);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &usm_pkt);
 
@@ -125,7 +168,11 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
 
 /// /QUITARMASCOTA — Remove pet.
 pub(super) async fn handle_slash_quitarmascota(state: &mut GameState, conn_id: ConnectionId) {
-    let nro = state.users.get(&conn_id).map(|u| u.nro_mascotas).unwrap_or(0);
+    let nro = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.nro_mascotas)
+        .unwrap_or(0);
     if nro == 0 {
         state.send_console(conn_id, "No tienes mascotas.", font_index::INFO);
         return;
@@ -195,7 +242,9 @@ pub(super) async fn handle_slash_ciudadania(state: &mut GameState, conn_id: Conn
     }
 
     // VB6: NPCtype must be Ciudadania (13)
-    if npc_type != crate::data::npcs::NpcType::Citizenship { return; }
+    if npc_type != crate::data::npcs::NpcType::Citizenship {
+        return;
+    }
 
     // VB6: Set home based on map (130=Inthak, 25=Thir)
     let city = match map {
@@ -207,8 +256,14 @@ pub(super) async fn handle_slash_ciudadania(state: &mut GameState, conn_id: Conn
         }
     };
 
-    let current_home = state.users.get(&conn_id).map(|u| u.hogar.clone()).unwrap_or_default();
-    if current_home == city { return; } // VB6: If already same home, exit
+    let current_home = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.hogar.clone())
+        .unwrap_or_default();
+    if current_home == city {
+        return;
+    } // VB6: If already same home, exit
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.hogar = city.to_string();
@@ -224,7 +279,16 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
     let city_upper = city.trim().to_uppercase();
 
     // Validate city name (VB6 line 763)
-    let valid = ["TANARIS", "ANVILMAR", "KAHLIMDOR", "THIR", "INTHAK", "JHUMBEL", "RUVENDEL", "HELKA"];
+    let valid = [
+        "TANARIS",
+        "ANVILMAR",
+        "KAHLIMDOR",
+        "THIR",
+        "INTHAK",
+        "JHUMBEL",
+        "RUVENDEL",
+        "HELKA",
+    ];
     if !valid.contains(&city_upper.as_str()) {
         state.send_console(conn_id, "Ciudad desconocida. Ciudades: Tanaris, Anvilmar, Kahlimdor, Thir, Inthak, Jhumbel, Ruvendel, Helka", font_index::INFO);
         return;
@@ -232,7 +296,15 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
 
     // Must have traveler NPC targeted (VB6 NpcType=12)
     let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.dead, u.level, u.gold, u.target_npc_idx, u.pos_map, u.pos_x, u.pos_y),
+        Some(u) if u.logged => (
+            u.dead,
+            u.level,
+            u.gold,
+            u.target_npc_idx,
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+        ),
         _ => return,
     };
     let (dead, level, gold, target_npc, _map, _ux, _uy) = user_data;
@@ -248,8 +320,13 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
     }
 
     // Check NPC is a Traveler (type 12)
-    let npc_ok = state.get_npc(target_npc).map(|n| n.npc_type == crate::data::npcs::NpcType::Traveler).unwrap_or(false);
-    if !npc_ok { return; }
+    let npc_ok = state
+        .get_npc(target_npc)
+        .map(|n| n.npc_type == crate::data::npcs::NpcType::Traveler)
+        .unwrap_or(false);
+    if !npc_ok {
+        return;
+    }
 
     // Gold cost: <30 = 1000, >=30 = 5000 (VB6 lines 778-788)
     let cost = if level < 30 { 1000i64 } else { 5000 };
@@ -276,11 +353,31 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
             // Random spawn in map 69 (VB6 lines 820-832)
             let roll = rand_simple_u32() % 5;
             match roll {
-                0 => (69, 35 + (rand_simple_u32() % 8) as i32, 16 + (rand_simple_u32() % 9) as i32),
-                1 => (69, 42 + (rand_simple_u32() % 6) as i32, 40 + (rand_simple_u32() % 9) as i32),
-                2 => (69, 54 + (rand_simple_u32() % 14) as i32, 71 + (rand_simple_u32() % 6) as i32),
-                3 => (69, 30 + (rand_simple_u32() % 8) as i32, 79 + (rand_simple_u32() % 7) as i32),
-                _ => (69, 19 + (rand_simple_u32() % 6) as i32, 31 + (rand_simple_u32() % 4) as i32),
+                0 => (
+                    69,
+                    35 + (rand_simple_u32() % 8) as i32,
+                    16 + (rand_simple_u32() % 9) as i32,
+                ),
+                1 => (
+                    69,
+                    42 + (rand_simple_u32() % 6) as i32,
+                    40 + (rand_simple_u32() % 9) as i32,
+                ),
+                2 => (
+                    69,
+                    54 + (rand_simple_u32() % 14) as i32,
+                    71 + (rand_simple_u32() % 6) as i32,
+                ),
+                3 => (
+                    69,
+                    30 + (rand_simple_u32() % 8) as i32,
+                    79 + (rand_simple_u32() % 7) as i32,
+                ),
+                _ => (
+                    69,
+                    19 + (rand_simple_u32() % 6) as i32,
+                    31 + (rand_simple_u32() % 4) as i32,
+                ),
             }
         }
         "RUVENDEL" => (26, 51, 52),
@@ -349,7 +446,9 @@ pub(super) async fn handle_slash_entrenar(state: &mut GameState, conn_id: Connec
     }
 
     // VB6: NPCtype must be Entrenador (3)
-    if npc_type != crate::data::npcs::NpcType::Trainer { return; }
+    if npc_type != crate::data::npcs::NpcType::Trainer {
+        return;
+    }
 
     // VB6: EnviarListaCriaturas — sends LSTCRI<count>,<name1>,<name2>,...
     let npc_number = match state.get_npc(target_npc) {
@@ -370,21 +469,65 @@ pub(super) async fn handle_slash_entrenar(state: &mut GameState, conn_id: Connec
 }
 
 /// /CENTINELA — Anti-AFK response (delegates to improved centinela handler).
-pub(super) async fn handle_slash_centinela(state: &mut GameState, conn_id: ConnectionId, code: &str) {
+pub(super) async fn handle_slash_centinela(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    code: &str,
+) {
     super::parity_gm::handle_centinela_improved(state, conn_id, code).await;
 }
 
-/// /IR — Premium travel.
-pub(super) async fn handle_slash_ir(state: &mut GameState, conn_id: ConnectionId, destination: &str) {
-    // Check premium status (not fully implemented — just accept for now)
+/// /IR — Premium travel. VB6: requires target Traveler NPC, distance <= 5.
+/// Destinations match VB6 13.3 travel system.
+pub(super) async fn handle_slash_ir(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    destination: &str,
+) {
+    // VB6: must not be dead
+    if state.users.get(&conn_id).map(|u| u.dead).unwrap_or(true) {
+        state.send_msg_id(conn_id, 3, "");
+        return;
+    }
+
+    // VB6: must be interacting with a Traveler NPC (target_npc set by click)
+    let target_npc = state.users.get(&conn_id).map(|u| u.target_npc).unwrap_or(0);
+    if target_npc == 0 {
+        state.send_console(
+            conn_id,
+            "Debes hablar con un viajero primero.",
+            font_index::INFO,
+        );
+        return;
+    }
+    let npc_type = state
+        .get_npc(target_npc)
+        .map(|n| n.npc_type)
+        .unwrap_or(crate::data::npcs::NpcType::Common);
+    if npc_type != crate::data::npcs::NpcType::Traveler {
+        state.send_console(
+            conn_id,
+            "Debes hablar con un viajero primero.",
+            font_index::INFO,
+        );
+        return;
+    }
+
     let dest_upper = destination.trim().to_uppercase();
 
+    // VB6 13.3 travel destinations (map, x, y)
     let (dest_map, dest_x, dest_y) = match dest_upper.as_str() {
-        "INTHAK" => (1, 50, 50),
-        "THIR" => (6, 50, 50),
-        "RUVENDEL" => (11, 50, 50),
+        "ULLATHORPE" => (1, 45, 47),
+        "NIX" => (3, 45, 50),
+        "BANDERBILL" => (4, 50, 50),
+        "LINDOS" => (5, 50, 50),
+        "ARGHAL" => (6, 50, 50),
         _ => {
-            state.send_console(conn_id, "Destino desconocido.", font_index::INFO);
+            state.send_console(
+                conn_id,
+                "Destino desconocido. Destinos: Ullathorpe, Nix, Banderbill, Lindos, Arghal.",
+                font_index::INFO,
+            );
             return;
         }
     };
@@ -414,13 +557,19 @@ pub(super) async fn handle_slash_resultados(state: &mut GameState, conn_id: Conn
     let mut msg = String::from("Resultados de la votacion:");
     for i in 0..5 {
         if !state.poll_options[i].is_empty() {
-            let pct = if total > 0 { (state.poll_votes[i] * 100) / total } else { 0 };
-            msg.push_str(&format!(" {}: {} ({}%)", state.poll_options[i], state.poll_votes[i], pct));
+            let pct = if total > 0 {
+                (state.poll_votes[i] * 100) / total
+            } else {
+                0
+            };
+            msg.push_str(&format!(
+                " {}: {} ({}%)",
+                state.poll_options[i], state.poll_votes[i], pct
+            ));
         }
     }
     state.send_console(conn_id, &msg, font_index::INFO);
 }
-
 
 /// /CIRUJIA — Surgery (race change). VB6: requires cirujano NPC, distance <= 3.
 pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: ConnectionId) {
@@ -434,7 +583,9 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
         return;
     }
 
-    if target_npc == 0 { return; }
+    if target_npc == 0 {
+        return;
+    }
 
     // Check distance <= 3
     let (npc_map, npc_x, npc_y, npc_type) = match state.get_npc(target_npc) {
@@ -451,7 +602,9 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
     }
 
     // VB6: NPCtype must be cirujano (19)
-    if npc_type != crate::data::npcs::NpcType::Surgeon { return; }
+    if npc_type != crate::data::npcs::NpcType::Surgeon {
+        return;
+    }
 
     // VB6: sends CIRUJA<raza>,<genero>
     let (raza, genero) = match state.users.get(&conn_id) {
@@ -463,9 +616,6 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
     state.send_bytes(conn_id, &pkt);
 }
 
-
-
-
 // ini_get, ini_write, user_has_items — moved to common.rs
 
 /// FWO — Query house owner and price from Casas.dat.
@@ -476,8 +626,12 @@ pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, pay
     let section = format!("Casa{}", num_casa);
 
     let mut dueno = ini_get(&casas_path, &section, "Dueno");
-    if dueno.is_empty() { dueno = ini_get(&casas_path, &section, "Due\u{00F1}o"); }
-    if dueno.is_empty() { dueno = "N/A".to_string(); }
+    if dueno.is_empty() {
+        dueno = ini_get(&casas_path, &section, "Due\u{00F1}o");
+    }
+    if dueno.is_empty() {
+        dueno = "N/A".to_string();
+    }
     let precio = ini_get(&casas_path, &section, "Precio");
     let fecha = ini_get(&casas_path, &section, "Fecha");
 
@@ -494,15 +648,21 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, pay
     let section = format!("Casa{}", num_casa);
 
     let mut dueno = ini_get(&casas_path, &section, "Dueno");
-    if dueno.is_empty() { dueno = ini_get(&casas_path, &section, "Due\u{00F1}o"); }
-    if dueno.is_empty() { dueno = "N/A".to_string(); }
+    if dueno.is_empty() {
+        dueno = ini_get(&casas_path, &section, "Due\u{00F1}o");
+    }
+    if dueno.is_empty() {
+        dueno = "N/A".to_string();
+    }
 
     if dueno != "N/A" {
         state.send_msg_id(conn_id, 243, "");
         return;
     }
 
-    let precio: i64 = ini_get(&casas_path, &section, "Precio").parse().unwrap_or(0);
+    let precio: i64 = ini_get(&casas_path, &section, "Precio")
+        .parse()
+        .unwrap_or(0);
 
     let gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
     if gold < precio {
@@ -522,12 +682,20 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, pay
     }
 
     // Save owner to Casas.dat
-    let char_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let char_name = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.char_name.clone())
+        .unwrap_or_default();
     ini_write(&casas_path, &section, "Dueno", &char_name);
     ini_write(&casas_path, &section, "Fecha", &chrono_like_date());
 
     // Broadcast to all
-    state.send_msg_id_to(SendTarget::ToAll, 244, &format!("{}@{}", char_name, num_casa));
+    state.send_msg_id_to(
+        SendTarget::ToAll,
+        244,
+        &format!("{}@{}", char_name, num_casa),
+    );
 
     // Deduct gold
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -541,34 +709,173 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, pay
 pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let nick = read_field(1, payload, ',');
 
-    let pet_idx = state.users.get(&conn_id)
-        .and_then(|u| if u.nro_mascotas > 0 { Some(u.mascotas_index[0]) } else { None })
+    let pet_idx = state
+        .users
+        .get(&conn_id)
+        .and_then(|u| {
+            if u.nro_mascotas > 0 {
+                Some(u.mascotas_index[0])
+            } else {
+                None
+            }
+        })
         .unwrap_or(0);
 
     if pet_idx > 0 {
         if let Some(Some(npc)) = state.npcs.get_mut(pet_idx) {
             npc.name = nick.clone();
-            state.send_console(conn_id, &format!("Mascota renombrada a: {}", nick), font_index::INFO);
+            state.send_console(
+                conn_id,
+                &format!("Mascota renombrada a: {}", nick),
+                font_index::INFO,
+            );
         }
     } else {
         state.send_console(conn_id, "No tienes mascotas.", font_index::INFO);
     }
 }
 
-
-
 /// /VOTO — Vote for guild leader candidate.
-pub(super) async fn handle_slash_voto(state: &mut GameState, conn_id: ConnectionId, candidate: &str) {
-    let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
-    if guild_idx <= 0 {
-        state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO);
+pub(super) async fn handle_slash_voto(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    candidate: &str,
+) {
+    let (guild_idx, voter_name) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
+        _ => {
+            state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO);
+            return;
+        }
+    };
+
+    let candidate = candidate.trim();
+    if candidate.is_empty() {
+        state.send_console(
+            conn_id,
+            "Usa: /VOTO <nombre del candidato>",
+            font_index::INFO,
+        );
         return;
     }
 
-    // Simplified: just acknowledge the vote (full guild elections not implemented yet)
-    state.send_msg_id(conn_id, 439, "");
-}
+    // Check election exists
+    let election_exists = state.guild_elections.contains_key(&guild_idx);
+    if !election_exists {
+        state.send_console(
+            conn_id,
+            "No hay elecciones abiertas en tu clan.",
+            font_index::INFO,
+        );
+        return;
+    }
 
+    // Check already voted
+    if state.guild_elections[&guild_idx]
+        .votes
+        .contains_key(&voter_name)
+    {
+        state.send_console(
+            conn_id,
+            "Ya has votado en estas elecciones.",
+            font_index::INFO,
+        );
+        return;
+    }
+
+    // Check candidate is valid
+    let candidate_name = {
+        let election = state.guild_elections.get(&guild_idx).unwrap();
+        election
+            .candidates
+            .iter()
+            .find(|c| c.to_uppercase() == candidate.to_uppercase())
+            .cloned()
+    };
+    let candidate_name = match candidate_name {
+        Some(name) => name,
+        None => {
+            state.send_console(
+                conn_id,
+                "Ese candidato no es miembro del clan.",
+                font_index::INFO,
+            );
+            return;
+        }
+    };
+
+    // Record vote
+    state
+        .guild_elections
+        .get_mut(&guild_idx)
+        .unwrap()
+        .votes
+        .insert(voter_name, candidate_name.clone());
+    state.send_console(
+        conn_id,
+        &format!("Has votado por {}.", candidate_name),
+        font_index::INFO,
+    );
+
+    // Collect online members to check if all voted
+    let online_members: Vec<String> = state
+        .users
+        .values()
+        .filter(|u| u.logged && u.guild_index == guild_idx)
+        .map(|u| u.char_name.clone())
+        .collect();
+
+    let all_voted = {
+        let election = state.guild_elections.get(&guild_idx).unwrap();
+        !online_members.is_empty()
+            && online_members
+                .iter()
+                .all(|m| election.votes.contains_key(m))
+    };
+
+    if all_voted {
+        // Tally votes
+        let tally = {
+            let election = state.guild_elections.get(&guild_idx).unwrap();
+            let mut counts: std::collections::HashMap<String, i32> =
+                std::collections::HashMap::new();
+            for name in election.votes.values() {
+                *counts.entry(name.clone()).or_insert(0) += 1;
+            }
+            counts
+        };
+
+        let winner = tally
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(name, _)| name);
+
+        if let Some(winner_name) = winner {
+            // Update guild leader in DB
+            let pool = state.pool.clone();
+            if let Some(mut gi) = crate::db::guilds::load_guild(&pool, guild_idx).await {
+                gi.leader = winner_name.clone();
+                gi.elecciones_abiertas = false;
+                crate::db::guilds::save_guild(&pool, &gi).await;
+            }
+
+            // Notify all online guild members
+            let msg = format!("{} ha sido elegido como nuevo lider del clan!", winner_name);
+            let member_conns: Vec<ConnectionId> = state
+                .users
+                .values()
+                .filter(|u| u.logged && u.guild_index == guild_idx)
+                .map(|u| u.conn_id)
+                .collect();
+            for mc in member_conns {
+                state.send_console(mc, &msg, font_index::GUILD);
+            }
+        }
+
+        // Remove election state
+        state.guild_elections.remove(&guild_idx);
+    }
+}
 
 // =====================================================================
 // Marriage system — VB6 TCP_HandleData3.bas
@@ -576,9 +883,20 @@ pub(super) async fn handle_slash_voto(state: &mut GameState, conn_id: Connection
 
 /// /CASAR <name> — Marry another player. VB6 TCP_HandleData3.bas:1195
 /// Both must be online, neither married, distance <= 3 tiles.
-pub(super) async fn handle_slash_casar(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
+pub(super) async fn handle_slash_casar(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target_name: &str,
+) {
     let (my_name, my_map, my_x, my_y, my_pareja, my_dead) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.char_name.clone(), u.pos_map, u.pos_x, u.pos_y, u.pareja.clone(), u.dead),
+        Some(u) if u.logged => (
+            u.char_name.clone(),
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+            u.pareja.clone(),
+            u.dead,
+        ),
         _ => return,
     };
 
@@ -588,7 +906,11 @@ pub(super) async fn handle_slash_casar(state: &mut GameState, conn_id: Connectio
     }
 
     if !my_pareja.is_empty() {
-        state.send_console(conn_id, &format!("Ya estas casado/a con {}.", my_pareja), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("Ya estas casado/a con {}.", my_pareja),
+            font_index::INFO,
+        );
         return;
     }
 
@@ -606,7 +928,14 @@ pub(super) async fn handle_slash_casar(state: &mut GameState, conn_id: Connectio
     }
 
     let (t_pareja, t_map, t_x, t_y, t_dead, t_name) = match state.users.get(&target_id) {
-        Some(u) if u.logged => (u.pareja.clone(), u.pos_map, u.pos_x, u.pos_y, u.dead, u.char_name.clone()),
+        Some(u) if u.logged => (
+            u.pareja.clone(),
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+            u.dead,
+            u.char_name.clone(),
+        ),
         _ => {
             state.send_msg_id(conn_id, 196, "");
             return;
@@ -619,13 +948,21 @@ pub(super) async fn handle_slash_casar(state: &mut GameState, conn_id: Connectio
     }
 
     if !t_pareja.is_empty() {
-        state.send_console(conn_id, &format!("{} ya esta casado/a.", t_name), font_index::INFO);
+        state.send_console(
+            conn_id,
+            &format!("{} ya esta casado/a.", t_name),
+            font_index::INFO,
+        );
         return;
     }
 
     // VB6: Distance check <= 3
     if my_map != t_map || (my_x - t_x).abs() > 3 || (my_y - t_y).abs() > 3 {
-        state.send_console(conn_id, "Debes estar cerca del jugador (3 tiles).", font_index::INFO);
+        state.send_console(
+            conn_id,
+            "Debes estar cerca del jugador (3 tiles).",
+            font_index::INFO,
+        );
         return;
     }
 
@@ -640,8 +977,16 @@ pub(super) async fn handle_slash_casar(state: &mut GameState, conn_id: Connectio
     // Broadcast marriage announcement
     state.send_msg_id_to(SendTarget::ToAll, 526, &format!("{}@{}", my_name, t_name));
 
-    state.send_console(conn_id, &format!("Te has casado con {}!", t_name), font_index::INFO);
-    state.send_console(target_id, &format!("Te has casado con {}!", my_name), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Te has casado con {}!", t_name),
+        font_index::INFO,
+    );
+    state.send_console(
+        target_id,
+        &format!("Te has casado con {}!", my_name),
+        font_index::INFO,
+    );
 }
 
 /// /DIVORCIARSE — Divorce from spouse. VB6 TCP_HandleData3.bas:1262
@@ -666,21 +1011,31 @@ pub(super) async fn handle_slash_divorciarse(state: &mut GameState, conn_id: Con
         if let Some(u) = state.users.get_mut(&spouse_id) {
             u.pareja.clear();
         }
-        state.send_console(spouse_id, &format!("{} se ha divorciado de ti.", my_name), font_index::INFO);
+        state.send_console(
+            spouse_id,
+            &format!("{} se ha divorciado de ti.", my_name),
+            font_index::INFO,
+        );
     }
 
     // Broadcast divorce
-    state.send_msg_id_to(SendTarget::ToAll, 527, &format!("{}@{}", my_name, my_pareja));
+    state.send_msg_id_to(
+        SendTarget::ToAll,
+        527,
+        &format!("{}@{}", my_name, my_pareja),
+    );
 
-    state.send_console(conn_id, &format!("Te has divorciado de {}.", my_pareja), font_index::INFO);
+    state.send_console(
+        conn_id,
+        &format!("Te has divorciado de {}.", my_pareja),
+        font_index::INFO,
+    );
 }
 
 // =====================================================================
 // Gran Poder system — VB6 modGranPoder
 // =====================================================================
 
-
 // =====================================================================
 // Integration tests — full client login flow
 // =====================================================================
-

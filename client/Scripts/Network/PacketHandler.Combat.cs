@@ -84,11 +84,14 @@ public partial class PacketHandler
 
     private void HandleBinSendSkills(ByteQueue bq)
     {
-        // Read exactly as many skills as the server sends (Skills array has 22 slots).
-        // Previous code read only 20, leaving indices 20 and 21 at default zero.
+        // VB6 Protocol.bas HandleSendSkills: for each skill, server sends
+        //   UserSkills(i)      = skill level (byte, 0-100)
+        //   PorcentajeSkills(i) = XP progress % toward next level (byte, 0-99)
+        // Both must be read to keep the packet stream in sync.
         for (int i = 0; i < _state.Skills.Length; i++)
         {
             _state.Skills[i] = bq.ReadByte();
+            _state.SkillPct[i] = bq.ReadByte();
         }
     }
 
@@ -510,20 +513,14 @@ public partial class PacketHandler
     // ── Map extras ────────────────────────────────────────────────
 
 
-    private void HandleBinHungerThirst(ByteQueue bq)
-    {
-        _state.MaxAgua = bq.ReadByte();
-        _state.MinAgua = bq.ReadByte();
-        _state.MaxHam = bq.ReadByte();
-        _state.MinHam = bq.ReadByte();
-    }
-
+    private void HandleBinHungerThirst(ByteQueue bq) => ApplyHungerThirst(bq);
 
     /// <summary>
-    /// HungerThirst (ID 128) — same layout as UpdateHungerAndThirst (ID 60).
-    /// Wire: u8 maxAgua, u8 minAgua, u8 maxHam, u8 minHam
+    /// HungerThirst (ID 128) — same wire layout as ID 60.
     /// </summary>
-    private void HandleBinHungerThirst128(ByteQueue bq)
+    private void HandleBinHungerThirst128(ByteQueue bq) => ApplyHungerThirst(bq);
+
+    private void ApplyHungerThirst(ByteQueue bq)
     {
         _state.MaxAgua = bq.ReadByte();
         _state.MinAgua = bq.ReadByte();
@@ -555,12 +552,12 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinTimerInfo(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
-        // Bytes must still be consumed to keep the stream in sync.
         byte id = bq.ReadByte();
         int time1 = bq.ReadLong();
         int time2 = bq.ReadLong();
-        // Scroll timers not yet implemented on the client.
+        _state.TimerInfoId = id;
+        _state.TimerInfoTime1 = time1;
+        _state.TimerInfoTime2 = time2;
     }
 
     // ── Class options ────────────────────────────────────────────────
@@ -602,8 +599,10 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinBattleTeamScores(ByteQueue bq)
     {
-        // Drain 4 ints — scoreboard UI is not yet implemented, data discarded
-        bq.ReadLong(); bq.ReadLong(); bq.ReadLong(); bq.ReadLong();
+        _state.BattleScoreT1 = bq.ReadLong();
+        _state.BattleScoreT2 = bq.ReadLong();
+        _state.BattleScoreT3 = bq.ReadLong();
+        _state.BattleScoreT4 = bq.ReadLong();
     }
 
     /// <summary>

@@ -3,24 +3,25 @@
 //! VB6 13.3 parity: UsuarioImpacto, UsuarioAtacaUsuario, UserDañoUser, CalcularDaño,
 //! PoderAtaqueArma, PoderEvasion, PoderEvasionEscudo, DoApuñalar, DoGolpeCritico.
 
-use tracing::info;
-use crate::net::ConnectionId;
-use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::game::world;
-use crate::protocol::{font_index, binary_packets};
-use crate::data::objects::ObjType;
+#[path = "combat_npc.rs"]
+mod combat_npc;
+#[path = "combat_pvp.rs"]
+mod combat_pvp;
+
+pub(crate) use combat_npc::*;
+use combat_pvp::*;
+
 use super::common::*;
-use crate::game::constants::*;
-use super::{
-    user_attack_npc, check_user_level, warp_user, naked_body,
-    send_inventory_slot, send_full_inventory,
-    pretoriano_check_death,
-};
 use super::npcs::fire_elemental_react;
-use super::skills::{
-    try_desarmar, try_level_skill, try_level_skill_with_hit,
-};
+use super::skills::{try_desarmar, try_level_skill, try_level_skill_with_hit};
+use super::{check_user_level, send_full_inventory, user_attack_npc, warp_user};
+use crate::game::class_race::PlayerClass;
+use crate::game::constants::*;
+use crate::game::types::{GameState, MAX_INVENTORY_SLOTS, SendTarget};
+use crate::game::world;
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
+use tracing::info;
 
 // =====================================================================
 // VB6 Combat Constants
@@ -193,7 +194,11 @@ pub(super) fn do_apunalar(
 
 /// VB6: PuedeApuñalar — check if user can backstab.
 /// Requirements: weapon.Apuñala == 1 AND (skill >= MIN_APUÑALAR OR class == Asesino).
-pub(super) fn puede_apunalar(class: PlayerClass, weapon_apunala: bool, skill_apunalar: i32) -> bool {
+pub(super) fn puede_apunalar(
+    class: PlayerClass,
+    weapon_apunala: bool,
+    skill_apunalar: i32,
+) -> bool {
     weapon_apunala && (skill_apunalar > 0 || class == PlayerClass::Asesino)
 }
 
@@ -273,7 +278,7 @@ pub(super) fn puede_acuchillar(class: PlayerClass, weapon_acuchilla: bool) -> bo
 pub(super) fn do_acuchillar(base_damage: i64) -> Option<i64> {
     if rand_range(1, 100) <= PROB_ACUCHILLAR {
         let dmg = (base_damage as f64 * DANO_ACUCHILLAR) as i64;
-        Some(dmg.max(1))
+        Some(dmg)
     } else {
         None
     }
@@ -300,34 +305,70 @@ pub(super) struct WeaponInfo {
 pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> WeaponInfo {
     let user = match state.users.get(&conn_id) {
         Some(u) => u,
-        None => return WeaponInfo {
-            obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
-            refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false, apunala: false,
-        },
+        None => {
+            return WeaponInfo {
+                obj_index: 0,
+                is_proyectil: false,
+                min_hit: 0,
+                max_hit: 0,
+                refuerzo: 0,
+                envenena: false,
+                has_ammo: false,
+                ammo_min_hit: 0,
+                ammo_max_hit: 0,
+                acuchilla: false,
+                apunala: false,
+            };
+        }
     };
 
     if user.equip.weapon == 0 || user.equip.weapon > MAX_INVENTORY_SLOTS {
         return WeaponInfo {
-            obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
-            refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false, apunala: false,
+            obj_index: 0,
+            is_proyectil: false,
+            min_hit: 0,
+            max_hit: 0,
+            refuerzo: 0,
+            envenena: false,
+            has_ammo: false,
+            ammo_min_hit: 0,
+            ammo_max_hit: 0,
+            acuchilla: false,
+            apunala: false,
         };
     }
 
     let obj_idx = user.inventory[user.equip.weapon - 1].obj_index;
     if obj_idx <= 0 {
         return WeaponInfo {
-            obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
-            refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false, apunala: false,
+            obj_index: 0,
+            is_proyectil: false,
+            min_hit: 0,
+            max_hit: 0,
+            refuerzo: 0,
+            envenena: false,
+            has_ammo: false,
+            ammo_min_hit: 0,
+            ammo_max_hit: 0,
+            acuchilla: false,
+            apunala: false,
         };
     }
 
-    let (is_proy, w_min, w_max, refuerzo, envenena, uses_ammo, acuchilla, apunala) = match state.get_object(obj_idx) {
-        Some(o) => (o.proyectil, o.min_hit, o.max_hit, o.refuerzo, o.envenena, o.municion > 0, o.acuchilla, o.apunala),
-        None => (false, 0, 0, 0, false, false, false, false),
-    };
+    let (is_proy, w_min, w_max, refuerzo, envenena, uses_ammo, acuchilla, apunala) =
+        match state.get_object(obj_idx) {
+            Some(o) => (
+                o.proyectil,
+                o.min_hit,
+                o.max_hit,
+                o.refuerzo,
+                o.envenena,
+                o.municion > 0,
+                o.acuchilla,
+                o.apunala,
+            ),
+            None => (false, 0, 0, 0, false, false, false, false),
+        };
 
     let (has_ammo, ammo_min, ammo_max) = if is_proy && uses_ammo {
         if user.equip.municion > 0 && user.equip.municion <= MAX_INVENTORY_SLOTS {
@@ -371,7 +412,8 @@ pub(super) fn get_ring_info(state: &GameState, conn_id: ConnectionId) -> (i32, b
     let obj_idx = user.inventory[user.equip.ring - 1].obj_index;
     // VB6: GUANTE_HURTO (873) adds min_hit/max_hit to wrestling base damage (4-9)
     if obj_idx == GUANTE_HURTO {
-        let (g_min, g_max) = state.get_object(obj_idx)
+        let (g_min, g_max) = state
+            .get_object(obj_idx)
             .map(|o| (o.min_hit, o.max_hit))
             .unwrap_or((0, 0));
         (obj_idx, true, g_min, g_max)
@@ -388,47 +430,77 @@ pub(super) fn get_ring_info(state: &GameState, conn_id: ConnectionId) -> (i32, b
 pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (
-            u.pos_map, u.pos_x, u.pos_y, u.heading, u.char_index,
-            u.dead, u.safe_toggle, u.level,
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+            u.heading,
+            u.char_index,
+            u.dead,
+            u.safe_toggle,
+            u.level,
             u.attributes[0], // Strength
             u.attributes[1], // Agility
-            u.min_hit, u.max_hit,
-            u.skills[1], // SK2 = Armas (combat skill)
-            u.skills[5], // SK6 = Proyectiles
-            u.skills[3], // SK4 = Tacticas
-            u.skills[4], // SK5 = Defensa
+            u.min_hit,
+            u.max_hit,
+            u.skills[1],  // SK2 = Armas (combat skill)
+            u.skills[5],  // SK6 = Proyectiles
+            u.skills[3],  // SK4 = Tacticas
+            u.skills[4],  // SK5 = Defensa
             u.skills[20], // SK21 = Wrestling
-            u.skills[8], // SK9 = Apuñalar
+            u.skills[8],  // SK9 = Apuñalar
             u.char_name.clone(),
             u.class,
         ),
         _ => return,
     };
-    let (map, x, y, heading, char_index, dead, safe_on, level,
-         strength, agility, min_hit, max_hit,
-         skill_armas, skill_proyectiles, skill_tacticas, skill_defensa, skill_wrestling, skill_apunalar,
-         attacker_name, class) = user_data;
+    let (
+        map,
+        x,
+        y,
+        heading,
+        char_index,
+        dead,
+        safe_on,
+        level,
+        strength,
+        agility,
+        min_hit,
+        max_hit,
+        skill_armas,
+        skill_proyectiles,
+        _skill_tacticas,
+        _skill_defensa,
+        skill_wrestling,
+        skill_apunalar,
+        attacker_name,
+        class,
+    ) = user_data;
 
     if dead {
         return;
     }
 
     // VB6: HandleAttack exits early if Meditando
-    let is_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
+    let is_meditating = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.meditating)
+        .unwrap_or(false);
     if is_meditating {
         return;
     }
 
-    // VB6: Attacking ALWAYS reveals hidden users (no chance check).
-    let (was_hidden, was_invisible) = state.users.get(&conn_id)
-        .map(|u| (u.hidden && !u.admin_invisible, u.invisible && !u.admin_invisible))
-        .unwrap_or((false, false));
-    if was_hidden || was_invisible {
+    // VB6 13.3 parity: Attacking reveals hidden (stealth) but NOT invisible (spell).
+    // Spell invisibility runs on its own timer and is NOT broken by combat.
+    let was_hidden = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.hidden && !u.admin_invisible)
+        .unwrap_or(false);
+    if was_hidden {
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.hidden = false;
             user.counter_oculto = 0;
-            user.invisible = false;
-            user.counter_invisible = 0;
         }
         // Send CC+CD only to non-clanmates (they had CharacterRemove).
         // Clanmates get SetInvisible(false) — avoids animation reset/tosqueo.
@@ -454,12 +526,23 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
     // VB6: If equipped weapon is ranged, block melee attack — "No puedes usar así este arma."
     {
-        let weapon_slot = state.users.get(&conn_id).map(|u| u.equip.weapon).unwrap_or(0);
+        let weapon_slot = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.equip.weapon)
+            .unwrap_or(0);
         if weapon_slot > 0 && weapon_slot <= MAX_INVENTORY_SLOTS {
-            let weapon_obj = state.users.get(&conn_id)
-                .map(|u| u.inventory[weapon_slot - 1].obj_index).unwrap_or(0);
+            let weapon_obj = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.inventory[weapon_slot - 1].obj_index)
+                .unwrap_or(0);
             if weapon_obj > 0 {
-                if state.get_object(weapon_obj).map(|o| o.proyectil).unwrap_or(false) {
+                if state
+                    .get_object(weapon_obj)
+                    .map(|o| o.proyectil)
+                    .unwrap_or(false)
+                {
                     state.send_console(conn_id, "No puedes usar así este arma.", font_index::INFO);
                     return;
                 }
@@ -472,37 +555,72 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
+    // VB6 13.3 parity: melee attacks require min 10 stamina, deduct random 1-10.
+    {
+        let min_sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
+        if min_sta < 10 {
+            state.send_console(
+                conn_id,
+                "No tienes suficiente energía para atacar.",
+                font_index::INFO,
+            );
+            return;
+        }
+        let sta_cost = rand_range(1, 10);
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.min_sta = (user.min_sta - sta_cost).max(0);
+        }
+        send_stats_sta(state, conn_id).await;
+    }
+
     // Get target tile based on heading
     let (dx, dy) = world::heading_to_offset(heading);
     let target_x = x + dx;
     let target_y = y + dy;
 
     // Check if there's a user on the target tile
-    let target_conn = state.world.grid(map)
+    let target_conn = state
+        .world
+        .grid(map)
         .and_then(|g| g.tile(target_x, target_y))
         .and_then(|t| t.user_conn);
 
     // Play attack sound/animation to area
     let swing_pkt = binary_packets::write_play_wave(2, x as i16, y as i16);
-    state.send_data_bytes(
-        SendTarget::ToArea { map, x, y },
-        &swing_pkt,
-    );
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &swing_pkt);
 
     if let Some(victim_id) = target_conn {
         // PvP attack — check guild war bypass before safety toggle
-        let (attacker_guild, attacker_seguro) = state.users.get(&conn_id)
-            .map(|u| (u.guild_index, u.seguro_clan)).unwrap_or((0, false));
-        let victim_guild = state.users.get(&victim_id).map(|u| u.guild_index).unwrap_or(0);
+        let (attacker_guild, attacker_seguro) = state
+            .users
+            .get(&conn_id)
+            .map(|u| (u.guild_index, u.seguro_clan))
+            .unwrap_or((0, false));
+        let victim_guild = state
+            .users
+            .get(&victim_id)
+            .map(|u| u.guild_index)
+            .unwrap_or(0);
 
         // Guild war bypasses safety toggle
-        let guilds_at_war = attacker_guild > 0 && victim_guild > 0
+        let guilds_at_war = attacker_guild > 0
+            && victim_guild > 0
             && attacker_guild != victim_guild
-            && super::guilds_handler::get_guild_relation(state, attacker_guild, victim_guild) == super::guilds_handler::GUILD_REL_WAR;
+            && super::guilds_handler::get_guild_relation(state, attacker_guild, victim_guild)
+                == super::guilds_handler::GUILD_REL_WAR;
 
         if safe_on && !guilds_at_war {
-            state.send_msg_id(conn_id, 207, "");
-            return;
+            // VB6 13.3 parity: safety toggle only blocks attacking citizens (non-criminals).
+            // Attacking criminals is always allowed.
+            let victim_is_criminal = state
+                .users
+                .get(&victim_id)
+                .map(|u| u.criminal)
+                .unwrap_or(false);
+            if !victim_is_criminal {
+                state.send_msg_id(conn_id, 207, "");
+                return;
+            }
         }
 
         // Clan safe check
@@ -512,8 +630,16 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         }
 
         // VB6: Safe zone check — dueling players bypass safe zone restriction
-        let in_duel = state.users.get(&conn_id).map(|u| u.atacable_por == victim_id).unwrap_or(false)
-            && state.users.get(&victim_id).map(|u| u.atacable_por == conn_id).unwrap_or(false);
+        let in_duel = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.atacable_por == victim_id)
+            .unwrap_or(false)
+            && state
+                .users
+                .get(&victim_id)
+                .map(|u| u.atacable_por == conn_id)
+                .unwrap_or(false);
 
         if !in_duel {
             // Zone-aware safe check (Trigger > Zone > Map hierarchy)
@@ -521,20 +647,55 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 state.send_msg_id(conn_id, 163, "");
                 return;
             }
-            let victim_pos = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
+            let victim_pos = state
+                .users
+                .get(&victim_id)
+                .map(|v| (v.pos_x, v.pos_y))
+                .unwrap_or((0, 0));
             if is_safe_at(state, map, victim_pos.0, victim_pos.1) {
                 state.send_msg_id(conn_id, 163, "");
                 return;
             }
         }
 
+        // VB6 13.3: ZONAPELEA — if BOTH players are in CombatZone, allow PvP without criminal penalty.
+        // If only one is in CombatZone, block PvP entirely.
+        let attacker_in_arena =
+            get_map_tile_trigger(state, map, x, y) == crate::data::maps::Trigger::CombatZone;
+        let victim_arena_pos = state
+            .users
+            .get(&victim_id)
+            .map(|v| (v.pos_map, v.pos_x, v.pos_y))
+            .unwrap_or((0, 0, 0));
+        let victim_in_arena = get_map_tile_trigger(
+            state,
+            victim_arena_pos.0,
+            victim_arena_pos.1,
+            victim_arena_pos.2,
+        ) == crate::data::maps::Trigger::CombatZone;
+
+        if attacker_in_arena != victim_in_arena {
+            // One player is in the arena, the other is not — block combat entirely.
+            state.send_console(
+                conn_id,
+                "Ambos jugadores deben estar en la zona de pelea.",
+                font_index::INFO,
+            );
+            return;
+        }
+        let both_in_arena = attacker_in_arena && victim_in_arena;
+
         let victim_data = match state.users.get(&victim_id) {
             Some(v) if v.logged => (
-                v.dead, v.privileges, v.char_name.clone(),
-                v.level, v.attributes[1], // Victim agility
-                v.skills[3], // SK4 = Tacticas
-                v.skills[4], // SK5 = Defensa
-                v.max_hp, v.min_hp,
+                v.dead,
+                v.privileges,
+                v.char_name.clone(),
+                v.level,
+                v.attributes[1], // Victim agility
+                v.skills[3],     // SK4 = Tacticas
+                v.skills[4],     // SK5 = Defensa
+                v.max_hp,
+                v.min_hp,
                 v.class.clone(),
                 v.heading,
                 v.char_index,
@@ -542,8 +703,21 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             ),
             _ => return,
         };
-        let (v_dead, v_privs, victim_name, v_level, v_agility, v_tacticas, v_defensa,
-             v_max_hp, v_min_hp, v_class, v_heading, v_char_index, v_meditating) = victim_data;
+        let (
+            v_dead,
+            v_privs,
+            victim_name,
+            v_level,
+            v_agility,
+            v_tacticas,
+            v_defensa,
+            _v_max_hp,
+            _v_min_hp,
+            v_class,
+            _v_heading,
+            v_char_index,
+            v_meditating,
+        ) = victim_data;
 
         if v_dead {
             state.send_msg_id(conn_id, 154, "");
@@ -555,7 +729,9 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         }
 
         // Check if victim has shield equipped
-        let v_has_shield = state.users.get(&victim_id)
+        let v_has_shield = state
+            .users
+            .get(&victim_id)
             .map(|v| v.equip.shield > 0 && v.equip.shield <= MAX_INVENTORY_SLOTS)
             .unwrap_or(false);
 
@@ -565,15 +741,27 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // VB6: UsuarioImpacto — calculate attack power based on weapon type
         let (attack_power, attack_skill_idx) = if weapon.obj_index > 0 {
             if weapon.is_proyectil {
-                let mod_atk = state.game_data.balance.class_mod_ataque_proyectiles_e(class);
-                (poder_ataque_proyectil(skill_proyectiles, agility, level, mod_atk), 5usize) // eSkill.Proyectiles
+                let mod_atk = state
+                    .game_data
+                    .balance
+                    .class_mod_ataque_proyectiles_e(class);
+                (
+                    poder_ataque_proyectil(skill_proyectiles, agility, level, mod_atk),
+                    5usize,
+                ) // eSkill.Proyectiles
             } else {
                 let mod_atk = state.game_data.balance.class_mod_ataque_armas_e(class);
-                (poder_ataque_arma(skill_armas, agility, level, mod_atk), 1usize) // eSkill.Armas
+                (
+                    poder_ataque_arma(skill_armas, agility, level, mod_atk),
+                    1usize,
+                ) // eSkill.Armas
             }
         } else {
             let mod_atk = state.game_data.balance.class_mod_ataque_wrestling_e(class);
-            (poder_ataque_wrestling(skill_wrestling, agility, level, mod_atk), 20usize) // eSkill.Wrestling
+            (
+                poder_ataque_wrestling(skill_wrestling, agility, level, mod_atk),
+                20usize,
+            ) // eSkill.Wrestling
         };
 
         // VB6: PoderEvasion for victim
@@ -589,6 +777,18 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         };
         victim_evasion += victim_shield_evasion;
 
+        // VB6 13.3 parity: any PvP targeting cancels victim meditation (before hit/miss)
+        let victim_meditating = state
+            .users
+            .get(&victim_id)
+            .map(|u| u.meditating)
+            .unwrap_or(false);
+        if victim_meditating {
+            if let Some(victim) = state.users.get_mut(&victim_id) {
+                victim.meditating = false;
+            }
+        }
+
         // VB6: ProbExito = clamp(50 + (PoderAtaque - UserPoderEvasion) * 0.4, 10, 90)
         let mut prob_exito = (50.0 + (attack_power - victim_evasion) as f64 * 0.4) as i32;
         prob_exito = prob_exito.clamp(10, 90);
@@ -603,7 +803,11 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         // VB6: Desarmar (Ladrón class — disarm) runs regardless of hit or miss
         if class == PlayerClass::Ladron {
-            let wresterling_skill = state.users.get(&conn_id).and_then(|u| u.skills.get(20).copied()).unwrap_or(0);
+            let wresterling_skill = state
+                .users
+                .get(&conn_id)
+                .and_then(|u| u.skills.get(20).copied())
+                .unwrap_or(0);
             if wresterling_skill > 0 && try_desarmar(wresterling_skill) {
                 if let Some(victim) = state.users.get_mut(&victim_id) {
                     if victim.equip.weapon > 0 {
@@ -611,7 +815,11 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     }
                 }
                 state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT);
-                state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
+                state.send_console(
+                    conn_id,
+                    &format!("Has desarmado a {}!", victim_name),
+                    font_index::FIGHT,
+                );
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     try_level_skill(u, 20);
                 }
@@ -627,13 +835,21 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
                 if rechazo {
                     // Shield block — VB6: SND_ESCUDO + messages
-                    let (vx, vy) = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
+                    let (vx, vy) = state
+                        .users
+                        .get(&victim_id)
+                        .map(|v| (v.pos_x, v.pos_y))
+                        .unwrap_or((0, 0));
                     let snd = binary_packets::write_play_wave(37, vx as i16, vy as i16); // SND_ESCUDO
                     state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &snd);
 
-                    let pkt_atk = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::BlockedWithShieldOther);
+                    let pkt_atk = binary_packets::write_multi_msg_simple(
+                        crate::protocol::packets::MultiMessageID::BlockedWithShieldOther,
+                    );
                     state.send_bytes(conn_id, &pkt_atk);
-                    let pkt_vic = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::BlockedWithShieldUser);
+                    let pkt_vic = binary_packets::write_multi_msg_simple(
+                        crate::protocol::packets::MultiMessageID::BlockedWithShieldUser,
+                    );
                     state.send_bytes(victim_id, &pkt_vic);
 
                     // VB6: SubirSkill Defensa on block success
@@ -653,9 +869,16 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
             let pkt = binary_packets::write_multi_user_attacked_swing(char_index.0 as i16);
             state.send_bytes(victim_id, &pkt);
-            let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
+            let pkt = binary_packets::write_multi_msg_simple(
+                crate::protocol::packets::MultiMessageID::UserSwing,
+            );
             state.send_bytes(conn_id, &pkt);
-            state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", v_char_index.0 as i16, 255);
+            state.send_chat_over_head_to(
+                SendTarget::ToArea { map, x, y },
+                "\u{00A1}Fallo!",
+                v_char_index.0 as i16,
+                255,
+            );
 
             // VB6: SubirSkill (attacker skill on miss)
             if let Some(u) = state.users.get_mut(&conn_id) {
@@ -679,12 +902,22 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         // VB6: DoDesequipar — requires Bandido class + pickpocket gloves (ring=873) + unarmed
         {
-            let (has_gloves, is_unarmed, wrestling_sk, attacker_level, is_bandido) = state.users.get(&conn_id)
+            let (has_gloves, is_unarmed, wrestling_sk, attacker_level, is_bandido) = state
+                .users
+                .get(&conn_id)
                 .map(|u| {
                     let ring_idx = if u.equip.ring > 0 && u.equip.ring <= MAX_INVENTORY_SLOTS {
                         u.inventory[u.equip.ring - 1].obj_index
-                    } else { 0 };
-                    (ring_idx == GUANTE_HURTO, u.equip.weapon == 0, u.skills[20], u.level, u.class == PlayerClass::Bandido)
+                    } else {
+                        0
+                    };
+                    (
+                        ring_idx == GUANTE_HURTO,
+                        u.equip.weapon == 0,
+                        u.skills[20],
+                        u.level,
+                        u.class == PlayerClass::Bandido,
+                    )
                 })
                 .unwrap_or((false, false, 0, 0, false));
 
@@ -698,19 +931,34 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     // Send CP to area to update victim appearance
                     if let Some(v) = state.users.get(&victim_id) {
                         let cp = binary_packets::write_character_change(
-                            v.char_index.0 as i16, v.body as i16, v.head as i16, v.heading as u8,
-                            v.weapon_anim as i16, v.shield_anim as i16, v.casco_anim as i16, 0, 0,
+                            v.char_index.0 as i16,
+                            v.body as i16,
+                            v.head as i16,
+                            v.heading as u8,
+                            v.weapon_anim as i16,
+                            v.shield_anim as i16,
+                            v.casco_anim as i16,
+                            0,
+                            0,
                         );
                         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
                     }
-                    state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
+                    state.send_console(
+                        conn_id,
+                        &format!("Has desarmado a {}!", victim_name),
+                        font_index::FIGHT,
+                    );
                     state.send_console(victim_id, "Te han quitado un equipo!", font_index::FIGHT);
                 }
             }
 
             // VB6: DoHandInmo — Thief only + gloves, paralyze for half duration
             if has_gloves && class == PlayerClass::Ladron {
-                let v_paralyzed = state.users.get(&victim_id).map(|u| u.paralyzed).unwrap_or(true);
+                let v_paralyzed = state
+                    .users
+                    .get(&victim_id)
+                    .map(|u| u.paralyzed)
+                    .unwrap_or(true);
                 if !v_paralyzed {
                     // VB6: prob = Wrestling / 4
                     let prob = wrestling_sk / 4;
@@ -719,15 +967,21 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                         if let Some(victim) = state.users.get_mut(&victim_id) {
                             victim.paralyzed = true;
                             victim.counter_paralisis = half_para;
+                            victim.paralyzed_by = Some(conn_id);
                         }
                         let para_secs = (half_para as f32 * 0.04) as i16;
                         let pkt = binary_packets::write_paralize_ok(para_secs);
                         state.send_bytes(victim_id, &pkt);
                         if let Some(u) = state.users.get(&victim_id) {
-                            let pu = binary_packets::write_pos_update(u.pos_x as i16, u.pos_y as i16);
+                            let pu =
+                                binary_packets::write_pos_update(u.pos_x as i16, u.pos_y as i16);
                             state.send_bytes(victim_id, &pu);
                         }
-                        state.send_console(conn_id, &format!("Has paralizado a {}!", victim_name), font_index::FIGHT);
+                        state.send_console(
+                            conn_id,
+                            &format!("Has paralizado a {}!", victim_name),
+                            font_index::FIGHT,
+                        );
                         state.send_console(victim_id, "Has sido paralizado!", font_index::FIGHT);
                     }
                 }
@@ -754,12 +1008,21 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         let (ring_idx, ring_guante, ring_min, ring_max) = get_ring_info(state, conn_id);
         let mut damage = calcular_dano(
-            weapon.obj_index, weapon.is_proyectil,
-            weapon.min_hit, weapon.max_hit,
-            weapon.has_ammo, weapon.ammo_min_hit, weapon.ammo_max_hit,
-            min_hit, max_hit,
-            strength, class_mod_damage,
-            ring_idx, ring_guante, ring_min, ring_max,
+            weapon.obj_index,
+            weapon.is_proyectil,
+            weapon.min_hit,
+            weapon.max_hit,
+            weapon.has_ammo,
+            weapon.ammo_min_hit,
+            weapon.ammo_max_hit,
+            min_hit,
+            max_hit,
+            strength,
+            class_mod_damage,
+            ring_idx,
+            ring_guante,
+            ring_min,
+            ring_max,
         );
 
         // VB6: EspadaMataDragonesIndex (402) — always deals 1 damage to players
@@ -780,43 +1043,61 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         }
 
         // VB6: if damage < 0 then damage = 1
-        if damage < 0 { damage = 1; }
+        if damage < 0 {
+            damage = 1;
+        }
 
         // Send hit messages
-        let n4_pkt = binary_packets::write_multi_user_hitted_by_user(char_index.0 as i16, lugar as u8, damage as i16);
+        let n4_pkt = binary_packets::write_multi_user_hitted_by_user(
+            char_index.0 as i16,
+            lugar as u8,
+            damage as i16,
+        );
         state.send_bytes(victim_id, &n4_pkt);
-        let n5_pkt = binary_packets::write_multi_user_hitted_user(v_char_index.0 as i16, lugar as u8, damage as i16);
+        let n5_pkt = binary_packets::write_multi_user_hitted_user(
+            v_char_index.0 as i16,
+            lugar as u8,
+            damage as i16,
+        );
         state.send_bytes(conn_id, &n5_pkt);
 
         // VB6: floating yellow damage number
-        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), v_char_index.0 as i16, 65535);
+        state.send_chat_over_head_to(
+            SendTarget::ToArea { map, x, y },
+            &format!("-{}", damage),
+            v_char_index.0 as i16,
+            65535,
+        );
 
         // Apply damage to victim
         if let Some(victim) = state.users.get_mut(&victim_id) {
             victim.min_hp = victim.min_hp.saturating_sub(damage as i32);
         }
 
-        // VB6: Any PvP hit cancels victim meditation unconditionally
-        {
-            let victim_meditating = state.users.get(&victim_id).map(|u| u.meditating).unwrap_or(false);
-            if victim_meditating {
-                if let Some(victim) = state.users.get_mut(&victim_id) {
-                    victim.meditating = false;
-                }
-                state.send_bytes(victim_id, &binary_packets::write_meditate_toggle());
-                if let Some(v) = state.users.get(&victim_id) {
-                    let fx_clear = binary_packets::write_create_fx(v.char_index.0 as i16, 0, 0);
-                    state.send_data_bytes(
-                        SendTarget::ToArea { map: v.pos_map, x: v.pos_x, y: v.pos_y },
-                        &fx_clear,
-                    );
-                }
+        // VB6 13.3 parity: send meditation cancel packets if victim was meditating when targeted
+        // (victim.meditating was already set to false earlier, before the hit/miss roll)
+        if v_meditating {
+            state.send_bytes(victim_id, &binary_packets::write_meditate_toggle());
+            if let Some(v) = state.users.get(&victim_id) {
+                let fx_clear = binary_packets::write_create_fx(v.char_index.0 as i16, 0, 0);
+                state.send_data_bytes(
+                    SendTarget::ToArea {
+                        map: v.pos_map,
+                        x: v.pos_x,
+                        y: v.pos_y,
+                    },
+                    &fx_clear,
+                );
             }
         }
 
         // VB6: Weapon poison application (60% chance if weapon has Envenena=1)
-        if weapon.envenena && rand_range(1, 100) <= 60 {
-            let already_poisoned = state.users.get(&victim_id).map(|u| u.poisoned).unwrap_or(true);
+        if weapon.envenena && rand_range(1, 100) < 60 {
+            let already_poisoned = state
+                .users
+                .get(&victim_id)
+                .map(|u| u.poisoned)
+                .unwrap_or(true);
             if !already_poisoned {
                 if let Some(victim) = state.users.get_mut(&victim_id) {
                     victim.poisoned = true;
@@ -852,13 +1133,25 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     if let Some(victim) = state.users.get_mut(&victim_id) {
                         victim.min_hp = victim.min_hp.saturating_sub(stab_dmg as i32);
                     }
-                    state.send_console(conn_id, &format!("Has apuñalado a {} por {}", victim_name, stab_dmg), font_index::FIGHT);
-                    state.send_console(victim_id, &format!("Te ha apuñalado {} por {}", attacker_name, stab_dmg), font_index::FIGHT);
+                    state.send_console(
+                        conn_id,
+                        &format!("Has apuñalado a {} por {}", victim_name, stab_dmg),
+                        font_index::FIGHT,
+                    );
+                    state.send_console(
+                        victim_id,
+                        &format!("Te ha apuñalado {} por {}", attacker_name, stab_dmg),
+                        font_index::FIGHT,
+                    );
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         try_level_skill_with_hit(u, 8, true); // Apuñalar
                     }
                 } else {
-                    state.send_console(conn_id, "\u{00A1}No has logrado apuñalar a tu enemigo!", font_index::FIGHT);
+                    state.send_console(
+                        conn_id,
+                        "\u{00A1}No has logrado apuñalar a tu enemigo!",
+                        font_index::FIGHT,
+                    );
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         try_level_skill_with_hit(u, 8, false);
                     }
@@ -866,36 +1159,67 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             }
 
             // Early death check — stop further damage if victim already dead after backstab
-            if state.users.get(&victim_id).map(|u| u.min_hp <= 0).unwrap_or(false) {
+            if state
+                .users
+                .get(&victim_id)
+                .map(|u| u.min_hp <= 0)
+                .unwrap_or(false)
+            {
                 // Skip remaining special attacks (crit + cut) — victim is already dead
             } else {
-
-            // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
-            let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
-            if let Some(crit_dmg) = do_golpe_critico(class, weapon.obj_index, wrestling_sk, damage) {
-                if let Some(victim) = state.users.get_mut(&victim_id) {
-                    victim.min_hp = victim.min_hp.saturating_sub(crit_dmg as i32);
-                }
-                state.send_console(conn_id, &format!("Has golpeado críticamente a {} por {}.", victim_name, crit_dmg), font_index::FIGHT);
-                state.send_console(victim_id, &format!("{} te ha golpeado críticamente por {}.", attacker_name, crit_dmg), font_index::FIGHT);
-            }
-
-            // Early death check — stop further damage if victim already dead after crit
-            if !state.users.get(&victim_id).map(|u| u.min_hp <= 0).unwrap_or(false) {
-
-            // VB6: DoAcuchillar (Pirate throat cut — projectile PvP + melee NPC)
-            // In PvP: only on projectile attacks (VB6 SistemaCombate.bas:1272)
-            if weapon.is_proyectil && puede_acuchillar(class, weapon.acuchilla) {
-                if let Some(cut_dmg) = do_acuchillar(damage) {
+                // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
+                let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
+                if let Some(crit_dmg) =
+                    do_golpe_critico(class, weapon.obj_index, wrestling_sk, damage)
+                {
                     if let Some(victim) = state.users.get_mut(&victim_id) {
-                        victim.min_hp = victim.min_hp.saturating_sub(cut_dmg as i32);
+                        victim.min_hp = victim.min_hp.saturating_sub(crit_dmg as i32);
                     }
-                    state.send_console(conn_id, &format!("Has acuchillado a {} por {}", victim_name, cut_dmg), font_index::FIGHT);
-                    state.send_console(victim_id, &format!("{} te ha acuchillado por {}", attacker_name, cut_dmg), font_index::FIGHT);
+                    state.send_console(
+                        conn_id,
+                        &format!(
+                            "Has golpeado críticamente a {} por {}.",
+                            victim_name, crit_dmg
+                        ),
+                        font_index::FIGHT,
+                    );
+                    state.send_console(
+                        victim_id,
+                        &format!(
+                            "{} te ha golpeado críticamente por {}.",
+                            attacker_name, crit_dmg
+                        ),
+                        font_index::FIGHT,
+                    );
                 }
-            }
 
-            } // end early death check after crit
+                // Early death check — stop further damage if victim already dead after crit
+                if !state
+                    .users
+                    .get(&victim_id)
+                    .map(|u| u.min_hp <= 0)
+                    .unwrap_or(false)
+                {
+                    // VB6: DoAcuchillar (Pirate throat cut — projectile PvP + melee NPC)
+                    // In PvP: only on projectile attacks (VB6 SistemaCombate.bas:1272)
+                    if weapon.is_proyectil && puede_acuchillar(class, weapon.acuchilla) {
+                        if let Some(cut_dmg) = do_acuchillar(damage) {
+                            if let Some(victim) = state.users.get_mut(&victim_id) {
+                                victim.min_hp = victim.min_hp.saturating_sub(cut_dmg as i32);
+                            }
+                            state.send_console(
+                                conn_id,
+                                &format!("Has acuchillado a {} por {}", victim_name, cut_dmg),
+                                font_index::FIGHT,
+                            );
+                            state.send_console(
+                                victim_id,
+                                &format!("{} te ha acuchillado por {}", attacker_name, cut_dmg),
+                                font_index::FIGHT,
+                            );
+                        }
+                    }
+                } // end early death check after crit
             } // end early death check after backstab
         }
 
@@ -904,6 +1228,29 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         // Update victim HP
         send_stats_hp(state, victim_id).await;
+
+        // VB6 13.3: PvP hit reputation update
+        // Attack citizen: rep_bandido += 100, rep_noble halved
+        // Attack criminal: rep_noble += 5
+        // ZONAPELEA: skip all reputation changes when both players are in CombatZone
+        if !both_in_arena {
+            let victim_is_criminal = state
+                .users
+                .get(&victim_id)
+                .map(|u| u.criminal)
+                .unwrap_or(false);
+            if victim_is_criminal {
+                if let Some(attacker) = state.users.get_mut(&conn_id) {
+                    attacker.rep_noble += 5;
+                }
+            } else {
+                if let Some(attacker) = state.users.get_mut(&conn_id) {
+                    attacker.rep_bandido += 100;
+                    attacker.rep_noble = (attacker.rep_noble as f32 * 0.5) as i32;
+                }
+            }
+            recalc_criminal(state, conn_id);
+        }
 
         // Check death
         let v_hp = state.users.get(&victim_id).map(|u| u.min_hp).unwrap_or(0);
@@ -918,179 +1265,33 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         }
 
         // Check for NPC on target tile
-        let target_npc = state.world.grid(map)
+        let target_npc = state
+            .world
+            .grid(map)
             .and_then(|g| g.tile(target_x, target_y))
             .map(|t| t.npc_index)
             .unwrap_or(0);
 
         if target_npc > 0 {
-            user_attack_npc(state, conn_id, target_npc as usize, map, x, y,
-                            strength, agility, level, min_hit, max_hit,
-                            skill_armas, &attacker_name, class).await;
+            user_attack_npc(
+                state,
+                conn_id,
+                target_npc as usize,
+                map,
+                x,
+                y,
+                strength,
+                agility,
+                level,
+                min_hit,
+                max_hit,
+                skill_armas,
+                &attacker_name,
+                class,
+            )
+            .await;
         }
     }
-}
-
-// =====================================================================
-// PvP armor absorption (VB6: UserDañoUser)
-// =====================================================================
-
-/// VB6: PvP armor absorption — separate from NPC combat.
-/// Head hits use helmet only, body hits use armor + shield.
-/// Returns (head_defense, body_defense).
-fn calc_pvp_armor_absorption(state: &GameState, victim_id: ConnectionId, lugar: i32) -> (i32, i32) {
-    let user = match state.users.get(&victim_id) {
-        Some(u) => u,
-        None => return (0, 0),
-    };
-
-    match lugar {
-        BODY_PART_HEAD => {
-            // Helmet absorbs head hits
-            let helmet_def = if user.equip.helmet > 0 && user.equip.helmet <= MAX_INVENTORY_SLOTS {
-                let obj_idx = user.inventory[user.equip.helmet - 1].obj_index;
-                match state.get_object(obj_idx) {
-                    Some(obj) if obj.min_def > 0 || obj.max_def > 0 => {
-                        rand_range(obj.min_def.max(0), obj.max_def.max(1))
-                    }
-                    _ => 0,
-                }
-            } else {
-                0
-            };
-            (helmet_def, 0)
-        }
-        _ => {
-            // Body hits — armor + shield defense combined
-            let mut min_def = 0i32;
-            let mut max_def = 0i32;
-
-            // Armor
-            if user.equip.armor > 0 && user.equip.armor <= MAX_INVENTORY_SLOTS {
-                let obj_idx = user.inventory[user.equip.armor - 1].obj_index;
-                if let Some(obj) = state.get_object(obj_idx) {
-                    min_def += obj.min_def;
-                    max_def += obj.max_def;
-                }
-            }
-
-            // Shield (also absorbs body hits in VB6)
-            if user.equip.shield > 0 && user.equip.shield <= MAX_INVENTORY_SLOTS {
-                let obj_idx = user.inventory[user.equip.shield - 1].obj_index;
-                if let Some(obj) = state.get_object(obj_idx) {
-                    min_def += obj.min_def;
-                    max_def += obj.max_def;
-                }
-            }
-
-            let body_def = if max_def > 0 {
-                rand_range(min_def.max(0), max_def.max(1))
-            } else {
-                0
-            };
-            (0, body_def)
-        }
-    }
-}
-
-// =====================================================================
-// Legacy API compatibility (used by npcs.rs)
-// =====================================================================
-
-/// Calculate attack power for NPC combat — uses balance class modifiers.
-pub(super) fn calc_attack_power(skill: i32, agility: i32, level: i32) -> f64 {
-    // Legacy — called from npcs.rs where we don't know the weapon type yet
-    // Returns approximate value without class modifier (mod=1.0)
-    poder_ataque_arma(skill, agility, level, 1.0) as f64
-}
-
-/// Calculate attack power with balance modifier.
-pub(super) fn calc_attack_power_with_balance(skill: i32, agility: i32, level: i32, class_mod: f32) -> f64 {
-    poder_ataque_arma(skill, agility, level, class_mod) as f64
-}
-
-/// Calculate defense/evasion power (legacy API for npcs.rs).
-pub(super) fn calc_defense_power(tacticas: i32, agility: i32, level: i32) -> f64 {
-    poder_evasion(tacticas, agility, level, 1.0) as f64
-}
-
-/// Get armor absorption for NPC combat (unchanged from before).
-pub(super) fn calc_armor_absorption(state: &GameState, conn_id: ConnectionId, body_part: i32) -> i32 {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return 0,
-    };
-
-    let armor_slot = if body_part == 1 {
-        user.equip.helmet
-    } else {
-        user.equip.armor
-    };
-
-    if armor_slot == 0 || armor_slot > MAX_INVENTORY_SLOTS {
-        return 0;
-    }
-
-    let obj_index = user.inventory[armor_slot - 1].obj_index;
-    if obj_index <= 0 {
-        return 0;
-    }
-
-    match state.get_object(obj_index) {
-        Some(obj) if obj.min_def > 0 || obj.max_def > 0 => {
-            rand_range(obj.min_def.max(0), obj.max_def.max(1))
-        }
-        _ => 0,
-    }
-}
-
-/// Get armor absorption with weapon penetration (for NPC combat).
-pub(super) fn calc_armor_absorption_with_penetration(state: &GameState, conn_id: ConnectionId, body_part: i32, refuerzo: i32) -> i32 {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return 0,
-    };
-
-    let armor_slot = if body_part == 1 {
-        user.equip.helmet
-    } else {
-        user.equip.armor
-    };
-
-    if armor_slot == 0 || armor_slot > MAX_INVENTORY_SLOTS {
-        return 0;
-    }
-
-    let obj_index = user.inventory[armor_slot - 1].obj_index;
-    if obj_index <= 0 {
-        return 0;
-    }
-
-    let armor_def = match state.get_object(obj_index) {
-        Some(obj) if obj.min_def > 0 || obj.max_def > 0 => {
-            rand_range(obj.min_def.max(0), obj.max_def.max(1))
-        }
-        _ => 0,
-    };
-
-    let shield_def = if user.equip.shield > 0 && user.equip.shield <= MAX_INVENTORY_SLOTS {
-        let shield_idx = user.inventory[user.equip.shield - 1].obj_index;
-        match state.get_object(shield_idx) {
-            Some(obj) if obj.min_def > 0 || obj.max_def > 0 => {
-                rand_range(obj.min_def.max(0), obj.max_def.max(1))
-            }
-            _ => 0,
-        }
-    } else {
-        0
-    };
-
-    (armor_def + shield_def - refuerzo).max(0)
-}
-
-/// Class-based damage modifier from balance data.
-pub(super) fn class_damage_modifier_from_balance(state: &GameState, class: PlayerClass) -> f64 {
-    state.game_data.balance.class_mod_dano_armas_e(class) as f64
 }
 
 // =====================================================================
@@ -1098,17 +1299,29 @@ pub(super) fn class_damage_modifier_from_balance(state: &GameState, class: Playe
 // =====================================================================
 
 /// Handle player death.
-pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, killer_id: Option<ConnectionId>) {
+pub(super) async fn user_die(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    killer_id: Option<ConnectionId>,
+) {
     let user_data = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.char_name.clone(), u.level),
+        Some(u) => (
+            u.pos_map,
+            u.pos_x,
+            u.pos_y,
+            u.char_index,
+            u.char_name.clone(),
+            u.level,
+        ),
         None => return,
     };
     let (map, x, y, char_index, victim_name, victim_level) = user_data;
 
     // Cancel active trade on death (VB6: FinComerciarUsu)
-    let trade_partner = state.users.get(&conn_id).and_then(|u| {
-        if u.trading { u.trade_partner } else { None }
-    });
+    let trade_partner = state
+        .users
+        .get(&conn_id)
+        .and_then(|u| if u.trading { u.trade_partner } else { None });
     if let Some(partner) = trade_partner {
         super::commerce::cancel_trade(state, conn_id, partner).await;
     }
@@ -1119,7 +1332,12 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     }
 
     // VB6: "¡Aaaahhhh!" floating text in red (vbRed=255) above dying character
-    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Aaaahhhh!", char_index.0 as i16, 255);
+    state.send_chat_over_head_to(
+        SendTarget::ToArea { map, x, y },
+        "\u{00A1}Aaaahhhh!",
+        char_index.0 as i16,
+        255,
+    );
 
     // Mark as dead, change body to dead model
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -1129,6 +1347,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         // Clear status effects
         user.paralyzed = false;
         user.immobilized = false;
+        user.paralyzed_by = None;
         user.invisible = false;
         user.meditating = false;
         user.resting = false;
@@ -1158,7 +1377,11 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     }
 
     // Clear duel state on death
-    let duel_partner = state.users.get(&conn_id).map(|u| u.atacable_por).unwrap_or(0);
+    let duel_partner = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.atacable_por)
+        .unwrap_or(0);
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.atacable_por = 0;
         user.duel_pending = 0;
@@ -1180,14 +1403,25 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     }
 
     // VB6: Kill all pets on death (Modulo_UsUaRiOs.bas:1576-1585)
-    let pets = state.users.get(&conn_id).map(|u| u.mascotas_index).unwrap_or([0; 3]);
+    let pets = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.mascotas_index)
+        .unwrap_or([0; 3]);
     for i in 0..3 {
         let pet_idx = pets[i];
         if pet_idx > 0 {
             // Kill pet NPC — send removal to area first
             if let Some(n) = state.get_npc(pet_idx) {
                 let bp = binary_packets::write_character_remove(n.char_index.0 as i16);
-                state.send_data_bytes(SendTarget::ToArea { map: n.map, x: n.x, y: n.y }, &bp);
+                state.send_data_bytes(
+                    SendTarget::ToArea {
+                        map: n.map,
+                        x: n.x,
+                        y: n.y,
+                    },
+                    &bp,
+                );
             }
             state.kill_npc(pet_idx);
         }
@@ -1227,7 +1461,10 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                 if slot.obj_index > 0 && slot.amount > 0 {
                     if is_newbie {
                         // Newbie: only drop non-newbie items
-                        let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
+                        let is_newbie_item = state
+                            .game_data
+                            .objects
+                            .get((slot.obj_index - 1) as usize)
                             .map(|o| o.newbie)
                             .unwrap_or(false);
                         if !is_newbie_item {
@@ -1245,7 +1482,10 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
             for slot in user.inventory.iter_mut() {
                 if slot.obj_index > 0 {
                     if is_newbie {
-                        let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
+                        let is_newbie_item = state
+                            .game_data
+                            .objects
+                            .get((slot.obj_index - 1) as usize)
                             .map(|o| o.newbie)
                             .unwrap_or(false);
                         if !is_newbie_item {
@@ -1261,7 +1501,17 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
             }
         }
 
-        let offsets = [(0,0),(1,0),(0,1),(-1,0),(0,-1),(1,1),(-1,1),(1,-1),(-1,-1)];
+        let offsets = [
+            (0, 0),
+            (1, 0),
+            (0, 1),
+            (-1, 0),
+            (0, -1),
+            (1, 1),
+            (-1, 1),
+            (1, -1),
+            (-1, -1),
+        ];
         let mut off_idx = 0;
         let (drop_grid_w, drop_grid_h) = state.grid_dimensions(map);
         for (obj_idx, amount) in items_to_drop {
@@ -1273,8 +1523,12 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                     let (ox, oy) = offsets[idx];
                     let tx = x + ox as i32;
                     let ty = y + oy as i32;
-                    if tx < 1 || tx > drop_grid_w || ty < 1 || ty > drop_grid_h { continue; }
-                    let tile_free = state.world.grid(map)
+                    if tx < 1 || tx > drop_grid_w || ty < 1 || ty > drop_grid_h {
+                        continue;
+                    }
+                    let tile_free = state
+                        .world
+                        .grid(map)
                         .and_then(|g| g.tile(tx, ty))
                         .map(|t| t.ground_item.obj_index == 0)
                         .unwrap_or(false);
@@ -1286,25 +1540,33 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                                 tile.ground_item.amount = amount;
                             }
                         }
-                        let ho_pkt = binary_packets::write_object_create(tx as i16, ty as i16, grh as i16);
+                        let ho_pkt =
+                            binary_packets::write_object_create(tx as i16, ty as i16, grh as i16);
                         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
                         off_idx = (idx + 1) % offsets.len();
                         placed = true;
                         break;
                     }
                 }
-                if !placed { continue; }
+                if !placed {
+                    continue;
+                }
             }
         }
     }
 
     send_full_inventory(state, conn_id).await;
 
-    let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::NPCKillUser);
+    let pkt = binary_packets::write_multi_msg_simple(
+        crate::protocol::packets::MultiMessageID::NPCKillUser,
+    );
     state.send_bytes(conn_id, &pkt);
     send_stats_hp(state, conn_id).await;
 
-    let map_is_pk = state.game_data.maps.get(map as usize)
+    let map_is_pk = state
+        .game_data
+        .maps
+        .get(map as usize)
         .and_then(|m| m.as_ref())
         .map(|m| m.info.pk)
         .unwrap_or(false);
@@ -1318,70 +1580,165 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
 
     let heading = state.users.get(&conn_id).map(|u| u.heading).unwrap_or(2);
     let cp_pkt = binary_packets::write_character_change(
-        char_index.0 as i16, DEAD_BODY_NEUTRAL as i16, DEAD_HEAD_NEUTRAL as i16,
-        heading as u8, 0, 0, 0, 0, 0,
+        char_index.0 as i16,
+        DEAD_BODY_NEUTRAL as i16,
+        DEAD_HEAD_NEUTRAL as i16,
+        heading as u8,
+        0,
+        0,
+        0,
+        0,
+        0,
     );
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_pkt);
 
     if let Some(user) = state.users.get(&conn_id) {
         let au_pkt = binary_packets::write_aura_update(
             user.char_index.0 as i16,
-            user.aura_a as i16, user.aura_w as i16,
-            user.aura_e as i16, user.aura_r as i16, user.aura_c as i16,
+            user.aura_a as i16,
+            user.aura_w as i16,
+            user.aura_e as i16,
+            user.aura_r as i16,
+            user.aura_c as i16,
         );
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &au_pkt);
     }
 
     // Award experience to killer
     if let Some(killer) = killer_id {
-        let exp_gain = (victim_level as i64) * state.multiplicador_exp as i64;
-        let killer_name = state.users.get(&killer).map(|u| u.char_name.clone()).unwrap_or_default();
+        let exp_gain = (victim_level as i64) * 2;
+        let killer_name = state
+            .users
+            .get(&killer)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
 
         if let Some(k) = state.users.get_mut(&killer) {
             k.exp += exp_gain;
         }
 
-        // Criminal/citizen reputation tracking on PvP kill
-        let victim_criminal = state.users.get(&conn_id).map(|u| u.criminal).unwrap_or(false);
+        // VB6 13.3: ZONAPELEA — both players in CombatZone suppresses criminal penalty on kill.
+        let victim_in_arena_kill =
+            get_map_tile_trigger(state, map, x, y) == crate::data::maps::Trigger::CombatZone;
+        let killer_arena_pos = state
+            .users
+            .get(&killer)
+            .map(|k| (k.pos_map, k.pos_x, k.pos_y))
+            .unwrap_or((0, 0, 0));
+        let killer_in_arena_kill = get_map_tile_trigger(
+            state,
+            killer_arena_pos.0,
+            killer_arena_pos.1,
+            killer_arena_pos.2,
+        ) == crate::data::maps::Trigger::CombatZone;
+        let both_in_arena_kill = victim_in_arena_kill && killer_in_arena_kill;
+
+        // VB6 13.3: PvP kill reputation update
+        // Kill citizen: rep_asesino += 2000
+        // Kill criminal: rep_noble += 500
+        // Also update kill counters (criminales_matados / ciudadanos_matados)
+        // ZONAPELEA: skip all reputation and kill-counter changes when both players are in CombatZone
+        let victim_criminal = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.criminal)
+            .unwrap_or(false);
         let victim_name_upper = victim_name.to_uppercase();
-        if victim_criminal {
-            let last = state.users.get(&killer).map(|k| k.last_crim_matado.clone()).unwrap_or_default();
-            if last != victim_name_upper {
-                if let Some(k) = state.users.get_mut(&killer) {
-                    k.last_crim_matado = victim_name_upper;
-                    if k.criminales_matados < 65000 {
-                        k.criminales_matados += 1;
+        if !both_in_arena_kill {
+            if victim_criminal {
+                let last = state
+                    .users
+                    .get(&killer)
+                    .map(|k| k.last_crim_matado.clone())
+                    .unwrap_or_default();
+                if last != victim_name_upper {
+                    if let Some(k) = state.users.get_mut(&killer) {
+                        k.last_crim_matado = victim_name_upper;
+                        if k.criminales_matados < 65000 {
+                            k.criminales_matados += 1;
+                        }
                     }
                 }
-            }
-        } else {
-            let last = state.users.get(&killer).map(|k| k.last_ciud_matado.clone()).unwrap_or_default();
-            if last != victim_name_upper {
                 if let Some(k) = state.users.get_mut(&killer) {
-                    k.last_ciud_matado = victim_name_upper;
-                    if k.ciudadanos_matados < 65000 {
-                        k.ciudadanos_matados += 1;
-                    }
-                    k.criminal = true;
+                    k.rep_noble += 500;
                 }
             } else {
+                let last = state
+                    .users
+                    .get(&killer)
+                    .map(|k| k.last_ciud_matado.clone())
+                    .unwrap_or_default();
+                if last != victim_name_upper {
+                    if let Some(k) = state.users.get_mut(&killer) {
+                        k.last_ciud_matado = victim_name_upper;
+                        if k.ciudadanos_matados < 65000 {
+                            k.ciudadanos_matados += 1;
+                        }
+                    }
+                }
                 if let Some(k) = state.users.get_mut(&killer) {
-                    k.criminal = true;
+                    k.rep_asesino += 2000;
                 }
             }
-            // Broadcast appearance change (criminal status)
-            let (km, kx, ky) = state.users.get(&killer)
-                .map(|u| (u.pos_map, u.pos_x, u.pos_y))
-                .unwrap_or((0, 0, 0));
-            if km > 0 {
-                if let Some(k) = state.users.get(&killer) {
-                    let cp = binary_packets::write_character_change(
-                        k.char_index.0 as i16, k.body as i16, k.head as i16,
-                        k.heading as u8, k.weapon_anim as i16, k.shield_anim as i16,
-                        k.casco_anim as i16, 0, 0,
-                    );
-                    state.send_data_bytes(SendTarget::ToArea { map: km, x: kx, y: ky }, &cp);
+        }
+        // VB6 M26: Guild war kill — increment killer guild's puntos_clan when killing an enemy guild member.
+        // Only if both players are in different guilds and those guilds are at war.
+        {
+            let killer_guild = state.users.get(&killer).map(|u| u.guild_index).unwrap_or(0);
+            let victim_guild = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.guild_index)
+                .unwrap_or(0);
+            if killer_guild > 0 && victim_guild > 0 && killer_guild != victim_guild {
+                let relation = crate::game::handlers::guilds_handler::get_guild_relation(
+                    state,
+                    killer_guild,
+                    victim_guild,
+                );
+                if relation == crate::game::handlers::guilds_handler::GUILD_REL_WAR {
+                    // Guilds are at war — award kill point
+                    let pool = state.pool.clone();
+                    tokio::spawn(async move {
+                        if let Some(mut gi) =
+                            crate::db::guilds::load_guild(&pool, killer_guild).await
+                        {
+                            gi.puntos_clan += 1;
+                            let _ = crate::db::guilds::save_guild(&pool, &gi).await;
+                        }
+                    });
                 }
+            }
+        }
+
+        recalc_criminal(state, killer);
+        // Broadcast appearance change (criminal status may have changed)
+        let (km, kx, ky) = state
+            .users
+            .get(&killer)
+            .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+            .unwrap_or((0, 0, 0));
+        if km > 0 {
+            if let Some(k) = state.users.get(&killer) {
+                let cp = binary_packets::write_character_change(
+                    k.char_index.0 as i16,
+                    k.body as i16,
+                    k.head as i16,
+                    k.heading as u8,
+                    k.weapon_anim as i16,
+                    k.shield_anim as i16,
+                    k.casco_anim as i16,
+                    0,
+                    0,
+                );
+                state.send_data_bytes(
+                    SendTarget::ToArea {
+                        map: km,
+                        x: kx,
+                        y: ky,
+                    },
+                    &cp,
+                );
             }
         }
 
@@ -1390,13 +1747,44 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         send_stats_exp(state, killer).await;
         check_user_level(state, killer).await;
 
-        info!("[COMBAT] '{}' killed '{}' (+{} exp)", killer_name, victim_name, exp_gain);
+        info!(
+            "[COMBAT] '{}' killed '{}' (+{} exp)",
+            killer_name, victim_name, exp_gain
+        );
+
+        // VB6 13.3 parity: party death XP penalty — all party members lose ELV * 10 * CantMiembros
+        let victim_party_idx = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.party_index)
+            .unwrap_or(0);
+        if victim_party_idx > 0 {
+            if let Some(Some(party)) = state.parties.get(victim_party_idx as usize) {
+                let member_count = party.members.len() as i64;
+                let member_ids: Vec<ConnectionId> = party.members.clone();
+                for member_id in member_ids {
+                    let penalty = state
+                        .users
+                        .get(&member_id)
+                        .map(|u| (u.level as i64) * -10 * member_count)
+                        .unwrap_or(0);
+                    if penalty < 0 {
+                        if let Some(m) = state.users.get_mut(&member_id) {
+                            m.exp = (m.exp + penalty).max(0);
+                        }
+                        send_stats_exp(state, member_id).await;
+                    }
+                }
+            }
+        }
     }
 
     // Zone exit point: if the player died inside a zone with a defined exit point,
     // warp their ghost to that exit instead of leaving them at the death tile.
     // VB6 parity: zones with salida_map > 0 expel dead players to the exit coords.
-    let zone_exit = state.game_data.maps
+    let zone_exit = state
+        .game_data
+        .maps
         .get(map as usize)
         .and_then(|m| m.as_ref())
         .and_then(|game_map| game_map.get_zone_at(x - 1, y - 1))
@@ -1404,7 +1792,10 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         .map(|z| (z.salida_map, z.salida_x, z.salida_y));
 
     if let Some((exit_map, exit_x, exit_y)) = zone_exit {
-        info!("[COMBAT] '{}' died in zone with exit — warping to map {} ({},{})", victim_name, exit_map, exit_x, exit_y);
+        info!(
+            "[COMBAT] '{}' died in zone with exit — warping to map {} ({},{})",
+            victim_name, exit_map, exit_x, exit_y
+        );
         warp_user(state, conn_id, exit_map, exit_x, exit_y).await;
     }
 }

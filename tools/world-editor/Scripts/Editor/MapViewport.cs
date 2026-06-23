@@ -11,6 +11,10 @@ public partial class MapViewport : Control
 
     // Injected dependencies
     public MapData? Map;
+    /// <summary>Reference to the humo config panel so the fog paint tool
+    /// can read the current brush radius. Set by EditorMain after both
+    /// are constructed.</summary>
+    public HumoConfigPanel? HumoPanelRef;
     public GrhData[]? Grhs;
     public TextureManager? Textures;
     public EditorState? State;
@@ -20,6 +24,25 @@ public partial class MapViewport : Control
     public Action? OnPendingAccept;   // Fire when user clicks ✓ on pending placement
     public Action? OnPendingCancel;   // Fire when user clicks ✗ on pending placement
     public Action? OnSelectionCompleted; // Fire when a drag-selection is released
+    public Action? OnLightEditRequested; // Fire when double-click on light with Light tool
+    /// <summary>Fires when user double-clicks on an advanced light with Luz+ tool.
+    /// Payload is the index into Map.LightData.Lights. EditorMain wires this to
+    /// LightToolPanel.SelectedLightIndex + RefreshFromMap().</summary>
+    public Action<int>? OnAdvancedLightSelected;
+    /// <summary>Fires whenever Map.LightData.Lights is mutated by a click
+    /// (place / delete). EditorMain wires this to LightToolPanel.RefreshFromMap
+    /// + viewport dirty mark.</summary>
+    public Action? OnAdvancedLightsChanged;
+
+    /// <summary>Tracks which advanced light is currently selected (for the
+    /// selection-highlight gizmo in _Draw). Synced from the LightToolPanel
+    /// via SetSelectedAdvancedLight().</summary>
+    private int _selectedAdvancedLightIndex = -1;
+    public void SetSelectedAdvancedLight(int index)
+    {
+        _selectedAdvancedLightIndex = index;
+        QueueRedraw();
+    }
     public int[]? ObjGrhs;
     public int[]? NpcBodies;
     public int[]? NpcHeads;
@@ -65,6 +88,14 @@ public partial class MapViewport : Control
     private Vector2 _handClickScreenPos;
     private const float HandPanThreshold = 5f;
 
+    // Keyboard panning (WASD / Arrow keys)
+    private bool _keyUp, _keyDown, _keyLeft, _keyRight;
+    private const float KeyPanSpeed = 500f; // pixels per second
+
+    // Auto-scroll when dragging selection near viewport edge
+    private const float EdgePanMargin = 40f;  // pixels from edge to start panning
+    private const float EdgePanSpeed = 400f;  // pixels per second
+
     // Move tool: live snapshot system
     private MapTile[,]? _moveSnapshot;   // Full map state before drag started
     private MapTile[,]? _moveBuffer;     // Tiles being moved (selection copy)
@@ -73,23 +104,191 @@ public partial class MapViewport : Control
 
     private ParticleOverlay? _particleOverlay;
 
+    // CPU per-tile lighting for tile draw modulation (doesn't affect overlays/UI)
+    private readonly WalkModeLightSystem _cpuLights = new();
+    private bool _cpuLightsDirty = true;
+
+    // Weather FX driven by the currently selected zone in ZonePanel
+    public ZonePanel? ZonePanelRef;  // set by EditorMain after creation
+    private readonly WeatherFx _weather = new();
+    // World-space per-zone fog shader — one ColorRect per zone with niebla,
+    // positioned at the zone's world rect and transformed by the camera.
+    private readonly ZoneFogRenderer _zoneFog = new();
+    // Advanced-light renderer — uses Godot's native PointLight2D /
+    // DirectionalLight2D + LightOccluder2D with a CanvasModulate for
+    // ambient darkness. Consumes Map.LightData.Lights and generates
+    // occluders from L2/L3 tile data.
+    private readonly LightRenderer _lightRenderer = new();
+
     public override void _Ready()
     {
         _particleOverlay = new ParticleOverlay { Viewport = this };
-        _particleOverlay.Material = new CanvasItemMaterial
-        {
-            BlendMode = CanvasItemMaterial.BlendModeEnum.Add
-        };
+        _particleOverlay.Material = AdditiveBlendMaterial();
         _particleOverlay.ZIndex = 1;
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
+
+        _zoneFog.AttachTo(this);
+        _lightRenderer.AttachTo(this);
+    }
+
+    /// <summary>Request a CPU per-tile lighting rebuild on the next draw.</summary>
+    public void MarkLightmapDirty()
+    {
+        _cpuLightsDirty = true;
+    }
+
+    /// <summary>Additive blend material for particle overlays — matches game client exactly.</summary>
+    internal static CanvasItemMaterial AdditiveBlendMaterial() =>
+        new() { BlendMode = CanvasItemMaterial.BlendModeEnum.Add };
+
+    private static bool HasAnyLight(MapData map)
+    {
+        for (int y = 1; y <= map.Height; y++)
+            for (int x = 1; x <= map.Width; x++)
+                if (map.Tiles[x, y].HasLight) return true;
+        return false;
     }
 
     private double _animTime; // ms, for tile animations
 
+    // Particle cursor preview: a live-simulated stream shown at the hovered tile
+    private EditorParticleStream? _particlePreviewStream;
+    private int _particlePreviewGroup = -1;
+
     public override void _Process(double delta)
     {
         _animTime += delta * 1000.0;
+
+        // Step the particle simulation so streams animate (rain falls, fire flickers, etc.)
+        if (Particles != null && State != null && State.ShowParticles)
+            Particles.Update((float)delta);
+
+        // Particle cursor preview: simulate a live stream at the hovered tile
+        if (Particles != null && State != null && State.ActiveTool == EditorTool.Particle
+            && State.SelectedParticleGroup > 0)
+        {
+            int pg = State.SelectedParticleGroup;
+            if (pg != _particlePreviewGroup || _particlePreviewStream == null)
+            {
+                _particlePreviewGroup = pg;
+                _particlePreviewStream = null;
+                if (pg >= 1 && pg < Particles.Defs.Length)
+                {
+                    var def = Particles.Defs[pg];
+                    if (def != null && def.NumParticles > 0)
+                    {
+                        _particlePreviewStream = new EditorParticleStream
+                        {
+                            DefIndex = pg,
+                            Particles = new EditorParticle[def.NumParticles],
+                            Active = true
+                        };
+                        for (int i = 0; i < def.NumParticles; i++)
+                            _particlePreviewStream.Particles[i] = new EditorParticle();
+                    }
+                }
+            }
+            if (_particlePreviewStream != null && pg >= 1 && pg < Particles.Defs.Length)
+                ParticleEngine.UpdateSingleStream(_particlePreviewStream, Particles.Defs[pg], (float)(delta * 1000.0));
+        }
+        else
+        {
+            _particlePreviewStream = null;
+            _particlePreviewGroup = -1;
+        }
+
+        // Tick weather simulation (zone-driven, draw happens in _Draw)
+        // Set flags BEFORE Update so Update spawns the right particles this same frame.
+        // Priority: hovered tile's zone > selected zone in the sidebar.
+        // This makes fog visible immediately when mousing over a zone's area,
+        // instead of only when a zone is explicitly selected.
+        ZoneInfo? weatherZone = null;
+        if (ZoneData != null && State != null && State.HoverValid && Map != null
+            && Map.InBounds(State.HoverX, State.HoverY))
+        {
+            weatherZone = ZoneData.GetZoneAt(State.HoverX, State.HoverY);
+        }
+        if (weatherZone == null && ZonePanelRef != null && ZoneData != null)
+        {
+            int selId = ZonePanelRef.SelectedZoneId;
+            if (selId >= 0)
+                weatherZone = ZoneData.Zones.Find(z => z.Id == selId);
+        }
+        _weather.Lluvia = weatherZone?.Lluvia ?? false;
+        _weather.Nieve  = weatherZone?.Nieve  ?? false;
+        _weather.Update((float)delta, Size);
+
+        // World-space fog: render ALL zones with niebla at once, each anchored
+        // to its own world rect. Visible from anywhere on the map (not tied to
+        // hover/selection) — the fog is ambient to the zone area.
+        if (State != null && State.ShowFog)
+        {
+            var zones = ZoneData != null
+                ? (System.Collections.Generic.IReadOnlyList<ZoneInfo>)ZoneData.Zones
+                : System.Array.Empty<ZoneInfo>();
+            Vector2 playerWorldPx = new Vector2(-1e6f, -1e6f);
+            if (State.HoverValid && Map != null && Map.InBounds(State.HoverX, State.HoverY))
+            {
+                playerWorldPx = new Vector2(
+                    (State.HoverX - 0.5f) * 32f,
+                    (State.HoverY - 0.5f) * 32f);
+            }
+            // Camera transform: tile (1,1) at world (0,0) is drawn at screen
+            // position State.CameraOffset when zoom=1, scaled by zoom otherwise.
+            // So panel pixel (0,0) corresponds to world pixel (-CameraOffset/zoom).
+            float z = Mathf.Max(0.01f, State.Zoom);
+            var worldOrigin = -State.CameraOffset / z;
+            var worldSize = Size / z;
+            _zoneFog.Update(Size, worldOrigin, worldSize, zones, Map, playerWorldPx);
+        }
+
+        // Advanced lights: same camera transform but gated on State.ShowLights,
+        // NOT State.ShowFog. The two systems are independent — hiding the fog
+        // overlay should not also hide the lights.
+        if (State != null && State.ShowLights)
+        {
+            float z = Mathf.Max(0.01f, State.Zoom);
+            var worldOrigin = -State.CameraOffset / z;
+            var worldSize = Size / z;
+            // Character occluder at feet in DrawTileGrh coordinates:
+            // center X = (tileX + 0.5) * 32, bottom Y = (tileY + 1) * 32.
+            Vector2? charPx = State.HoverValid && Map != null && Map.InBounds(State.HoverX, State.HoverY)
+                ? new Vector2((State.HoverX + 0.5f) * 32f, (State.HoverY + 1f) * 32f)
+                : (Vector2?)null;
+            _lightRenderer.Update(Size, worldOrigin, worldSize, Map, (float)delta, charPx);
+        }
+        else
+        {
+            _lightRenderer.SetVisible(false);
+        }
+
+        // Keyboard panning (WASD / Arrow keys)
+        // Pressing W = view moves UP on map = tiles with lower Y become visible
+        // = world content scrolls DOWN on screen = CameraOffset.Y increases
+        if (State != null && (_keyUp || _keyDown || _keyLeft || _keyRight))
+        {
+            float step = KeyPanSpeed * (float)delta;
+            if (_keyUp)    State.CameraOffset += new Vector2(0, step);
+            if (_keyDown)  State.CameraOffset -= new Vector2(0, step);
+            if (_keyLeft)  State.CameraOffset += new Vector2(step, 0);
+            if (_keyRight) State.CameraOffset -= new Vector2(step, 0);
+        }
+
+        // Auto-scroll when dragging selection near viewport edge
+        if (State != null && (_isSelecting || _isResizingSelection || _isMovingSelection || _isDragging))
+        {
+            var mousePos = GetLocalMousePosition();
+            float step = EdgePanSpeed * (float)delta;
+            if (mousePos.Y < EdgePanMargin)          State.CameraOffset += new Vector2(0, step);
+            if (mousePos.Y > Size.Y - EdgePanMargin) State.CameraOffset -= new Vector2(0, step);
+            if (mousePos.X < EdgePanMargin)          State.CameraOffset += new Vector2(step, 0);
+            if (mousePos.X > Size.X - EdgePanMargin) State.CameraOffset -= new Vector2(step, 0);
+
+            // Update drag target tile while auto-scrolling
+            if (_isSelecting)
+                _dragCurrent = ClampToMap(ScreenToTile(GetGlobalMousePosition()));
+        }
 
         // Animate marching ants for selection
         if (State != null && (State.HasSelection || _isSelecting))
@@ -105,6 +304,13 @@ public partial class MapViewport : Control
         DrawRect(new Rect2(Vector2.Zero, Size), EditorTheme.BG_DARK);
 
         if (Map == null || Grhs == null || Textures == null || State == null) return;
+
+        // CPU per-tile lighting: recalculate when dirty
+        if (State.ShowLights && _cpuLightsDirty)
+        {
+            _cpuLights.Recalculate(Map, ZoneData);
+            _cpuLightsDirty = false;
+        }
 
         DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
@@ -139,21 +345,30 @@ public partial class MapViewport : Control
         if (State.ShowLayer1)
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
-                    DrawTileGrh(Map.Tiles[x, y].Layer1, x, y);
+                {
+                    Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                    DrawTileGrh(Map.Tiles[x, y].Layer1, x, y, modulate: tl);
+                }
 
         // Layer 2: Mask
         if (State.ShowLayer2)
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer2 != 0)
-                        DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true);
+                    {
+                        Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                        DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true, modulate: tl);
+                    }
 
         // Layer 3: Objects/trees
         if (State.ShowLayer3)
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer3 != 0)
-                        DrawTileGrh(Map.Tiles[x, y].Layer3, x, y, center: true);
+                    {
+                        Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                        DrawTileGrh(Map.Tiles[x, y].Layer3, x, y, center: true, modulate: tl);
+                    }
 
         // Objects on map
         if (State.ShowObjects && ObjGrhs != null)
@@ -162,7 +377,10 @@ public partial class MapViewport : Control
                 {
                     int objIdx = Map.Tiles[x, y].ObjIndex;
                     if (objIdx > 0 && objIdx < ObjGrhs.Length && ObjGrhs[objIdx] > 0)
-                        DrawTileGrh(ObjGrhs[objIdx], x, y, center: true);
+                    {
+                        Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                        DrawTileGrh(ObjGrhs[objIdx], x, y, center: true, modulate: tl);
+                    }
                 }
 
         // NPCs on map — always draw all (sparse, no LOD skip)
@@ -175,8 +393,9 @@ public partial class MapViewport : Control
                     int bodyIdx = NpcBodies[npcIdx];
                     if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) continue;
                     int bodyGrh = NpcBodyGrhs[bodyIdx];
+                    Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
                     if (bodyGrh > 0)
-                        DrawTileGrh(bodyGrh, x, y, center: true, animate: false);
+                        DrawTileGrh(bodyGrh, x, y, center: true, modulate: tl, animate: false);
                     if (NpcHeads != null && HeadGrhs != null &&
                         NpcHeadOfsX != null && NpcHeadOfsY != null &&
                         npcIdx < NpcHeads.Length)
@@ -189,7 +408,7 @@ public partial class MapViewport : Control
                             {
                                 int ofsX = bodyIdx < NpcHeadOfsX.Length ? NpcHeadOfsX[bodyIdx] : 0;
                                 int ofsY = bodyIdx < NpcHeadOfsY.Length ? NpcHeadOfsY[bodyIdx] : 0;
-                                DrawTileGrhOffset(headGrh, x, y, ofsX, ofsY, animate: false);
+                                DrawTileGrhOffset(headGrh, x, y, ofsX, ofsY, animate: false, modulate: tl);
                             }
                         }
                     }
@@ -200,8 +419,12 @@ public partial class MapViewport : Control
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer4 != 0)
-                        DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true,
-                            modulate: new Color(1, 1, 1, 0.7f));
+                    {
+                        Color roofMod = State.ShowLights
+                            ? _cpuLights.GetTileLight(x, y) with { A = 0.7f }
+                            : new Color(1, 1, 1, 0.7f);
+                        DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true, modulate: roofMod);
+                    }
 
         // Paint tool: ghost preview at cursor position (Sims-style)
         DrawPaintPreview();
@@ -238,6 +461,9 @@ public partial class MapViewport : Control
             if (State.ShowParticles)
                 _particleOverlay.QueueRedraw();
         }
+
+        // Weather FX: flags are set in _Process before Update; just draw here.
+        _weather.Draw(this, Size);
     }
 
     /// <summary>
@@ -679,6 +905,38 @@ public partial class MapViewport : Control
                 DrawArc(center, radius, 0, MathF.Tau, 32,
                     new Color(lightCol.R, lightCol.G, lightCol.B, 0.4f), 1.5f);
         }
+        else if (State.ActiveTool == EditorTool.Particle && State.SelectedParticleGroup > 0)
+        {
+            // Particles now drawn on the additive ParticleOverlay (DrawParticlesOn).
+            // Only the label + tile outline are drawn here in _Draw.
+            var font = ThemeDB.Singleton.FallbackFont;
+            DrawString(font, new Vector2(hx * TileSize + 2, hy * TileSize + TileSize - 3),
+                $"P{State.SelectedParticleGroup}", HorizontalAlignment.Left, -1, 9,
+                new Color(0.3f, 1f, 0.9f, 0.9f));
+            DrawRect(new Rect2(hx * TileSize, hy * TileSize, TileSize, TileSize),
+                new Color(0.3f, 1f, 0.9f, 0.3f), false, 1f);
+        }
+        else if (State.ActiveTool == EditorTool.Trigger)
+        {
+            // Show a preview of the trigger color that will be painted
+            short trigType = State.SelectedTriggerType;
+            var (trigColor, trigName) = trigType switch
+            {
+                1 => (new Color(0.5f, 0.5f, 0.5f, 0.45f), "Indoor"),
+                3 => (new Color(0.8f, 0.2f, 0.2f, 0.45f), "InvPos"),
+                4 => (new Color(0, 0.7f, 1, 0.45f), "Safe"),
+                5 => (new Color(0.8f, 0.8f, 0, 0.45f), "AntiBl"),
+                6 => (new Color(1, 0, 0, 0.4f), "Combat"),
+                0 => (new Color(0.3f, 0.3f, 0.3f, 0.35f), "Borrar"),
+                _ => (new Color(1, 1, 0, 0.4f), $"T{trigType}"),
+            };
+            DrawRect(new Rect2(hx * TileSize + 1, hy * TileSize + 1, TileSize - 2, TileSize - 2), trigColor);
+            DrawRect(new Rect2(hx * TileSize + 0.5f, hy * TileSize + 0.5f, TileSize - 1, TileSize - 1),
+                trigColor with { A = 0.85f }, false, 2f);
+            DrawOverlayPill(hx * TileSize + 1, hy * TileSize + 1,
+                trigName, trigColor with { A = 0.75f },
+                new Color(trigColor.R, trigColor.G, trigColor.B, 0.95f), 6);
+        }
     }
 
     private void DrawOverlays(int mapW, int mapH)
@@ -809,25 +1067,115 @@ public partial class MapViewport : Control
                             new Color(0.5f, 1f, 0.5f, 0.95f), 7);
                     }
 
-        // ── Lights ──
-        if (State.ShowLights && !skipDetailedOverlays)
+        // ── Light source markers ──
+        // The actual lighting is rendered via the GPU shader (identical to game).
+        // These markers only show WHERE light sources exist so you can find them.
+        // Only drawn when the Light tool is active or ShowLights is off (for debug).
+        bool showLightMarkers = State.ActiveTool == EditorTool.Light || State.ShowLights;
+        if (showLightMarkers && !skipDetailedOverlays)
             for (int y = ovMinY; y <= ovMaxY; y++)
                 for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].HasLight)
                     {
                         ref var tile = ref Map.Tiles[x, y];
                         var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
-                        float radius = tile.LightRange * TileSize * 0.5f;
                         var lightCol = new Color(tile.LightR / 255f, tile.LightG / 255f, tile.LightB / 255f);
-                        DrawCircle(center, Math.Max(radius, TileSize * 0.4f),
-                            new Color(lightCol.R, lightCol.G, lightCol.B, 0.12f));
-                        // Glow dot
-                        DrawCircle(center, 5f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.6f));
-                        DrawCircle(center, 3f, new Color(1f, 1f, 1f, 0.8f));
-                        if (radius > TileSize * 0.5f)
-                            DrawArc(center, radius, 0, MathF.Tau, 32,
-                                new Color(lightCol.R, lightCol.G, lightCol.B, 0.25f), 1f);
+                        // Tiny bright dot at the light source (helps you locate it)
+                        DrawCircle(center, 4f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.9f));
+                        DrawCircle(center, 2f, new Color(1f, 1f, 1f, 0.95f));
                     }
+
+        // ── Advanced Light (MapLight) gizmos ──
+        // Drawn when the LightAdvanced tool is active OR when ShowLights is on
+        // while another tool is selected (so you can see where they are).
+        bool showAdvancedLights = State.ActiveTool == EditorTool.LightAdvanced
+                                   || (State.ShowLights && State.ActiveTool != EditorTool.LightAdvanced);
+        if (showAdvancedLights && !skipDetailedOverlays && Map.LightData.Lights.Count > 0)
+        {
+            for (int i = 0; i < Map.LightData.Lights.Count; i++)
+            {
+                var ml = Map.LightData.Lights[i];
+                var center = new Vector2(
+                    (ml.X + 0.5f) * TileSize,
+                    (ml.Y + 0.5f) * TileSize);
+                var col = new Color(ml.R / 255f, ml.G / 255f, ml.B / 255f);
+                bool isSelected = State.ActiveTool == EditorTool.LightAdvanced
+                                  && i == _selectedAdvancedLightIndex;
+
+                // Radius circle outline (shows how far the light reaches)
+                float radiusPx = ml.Radius * TileSize;
+                DrawArc(center, radiusPx, 0f, Mathf.Tau,
+                    32, new Color(col.R, col.G, col.B, isSelected ? 0.7f : 0.3f), 1.5f);
+
+                // Type-specific icon at the light's center
+                switch (ml.Type)
+                {
+                    case LightType.Omni:
+                        // Round dot with glow halo — the simplest "bulb" icon
+                        DrawCircle(center, 8f, new Color(col.R, col.G, col.B, 0.35f));
+                        DrawCircle(center, 5f, new Color(col.R, col.G, col.B, 0.95f));
+                        DrawCircle(center, 2.5f, new Color(1f, 1f, 1f, 0.95f));
+                        break;
+
+                    case LightType.Spot:
+                    {
+                        // Cone / lamp icon: short rectangle at base, triangle
+                        // fanning out in the direction vector.
+                        float dirRad = Mathf.DegToRad(ml.DirectionDeg);
+                        var dir = new Vector2(Mathf.Cos(dirRad), Mathf.Sin(dirRad));
+                        var perp = new Vector2(-dir.Y, dir.X);
+
+                        // Cone triangle showing the light's direction + angle
+                        float coneRad = Mathf.DegToRad(ml.ConeDegrees * 0.5f);
+                        var coneLeft = new Vector2(
+                            Mathf.Cos(dirRad - coneRad), Mathf.Sin(dirRad - coneRad));
+                        var coneRight = new Vector2(
+                            Mathf.Cos(dirRad + coneRad), Mathf.Sin(dirRad + coneRad));
+                        float coneLen = TileSize * 1.4f;
+                        var tipL = center + coneLeft * coneLen;
+                        var tipR = center + coneRight * coneLen;
+                        DrawColoredPolygon(
+                            new[] { center, tipL, tipR },
+                            new Color(col.R, col.G, col.B, 0.35f));
+
+                        // Lamp body at the origin (small rectangle)
+                        var bodyCorners = new[]
+                        {
+                            center + perp * 5f - dir * 3f,
+                            center - perp * 5f - dir * 3f,
+                            center - perp * 5f + dir * 3f,
+                            center + perp * 5f + dir * 3f,
+                        };
+                        DrawColoredPolygon(bodyCorners, new Color(col.R, col.G, col.B, 0.9f));
+                        DrawCircle(center, 2f, new Color(1f, 1f, 1f, 0.95f));
+                        break;
+                    }
+
+                    case LightType.Directional:
+                    {
+                        // Sun/moon icon with rays pointing in the direction
+                        DrawCircle(center, 6f, new Color(col.R, col.G, col.B, 0.9f));
+                        DrawCircle(center, 3f, new Color(1f, 1f, 1f, 0.95f));
+                        float dirRad = Mathf.DegToRad(ml.DirectionDeg);
+                        for (int k = 0; k < 8; k++)
+                        {
+                            float a = dirRad + k * Mathf.Tau / 8f;
+                            var from = center + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 9f;
+                            var to = center + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 14f;
+                            DrawLine(from, to, new Color(col.R, col.G, col.B, 0.8f), 1.5f);
+                        }
+                        break;
+                    }
+                }
+
+                // Selection highlight: bright ring around the selected light.
+                if (isSelected)
+                {
+                    DrawArc(center, 14f, 0f, Mathf.Tau, 24,
+                        new Color(1f, 1f, 0f, 0.9f), 2f);
+                }
+            }
+        }
 
         // ── Particle indicators (diamond + pill) ──
         if (State.ShowParticles && !skipDetailedOverlays)
@@ -1129,38 +1477,56 @@ public partial class MapViewport : Control
 
     public void DrawParticlesOn(CanvasItem canvas)
     {
-        if (Particles == null || Grhs == null || Textures == null || State == null) return;
+        if (Grhs == null || Textures == null || State == null) return;
         canvas.DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
-        foreach (var stream in Particles.Streams)
-        {
-            if (!stream.Active) continue;
-            float streamX = stream.MapX * TileSize + TileSize / 2f;
-            float streamY = stream.MapY * TileSize + TileSize / 2f;
-
-            foreach (var p in stream.Particles)
+        // Map particles (already placed on tiles)
+        if (Particles != null)
+            foreach (var stream in Particles.Streams)
             {
-                if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
-                var grh = Grhs[p.GrhIndex];
-                if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
-                {
-                    int frameIdx = grh.Frames[0];
-                    if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
-                    grh = Grhs[frameIdx];
-                }
-                if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
-                var texture = Textures.GetTexture(grh.FileNum);
-                if (texture == null) continue;
-
-                var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-                float drawX = streamX + p.X - grh.PixelWidth / 2f;
-                float drawY = streamY + p.Y - grh.PixelHeight / 2f;
-                var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
-                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
-                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+                if (!stream.Active) continue;
+                float streamX = stream.MapX * TileSize + TileSize / 2f;
+                float streamY = stream.MapY * TileSize + TileSize / 2f;
+                DrawParticleStream(canvas, stream, streamX, streamY);
             }
+
+        // Cursor preview particles (live-simulated at hovered tile)
+        if (_particlePreviewStream != null && State.HoverX > 0 && State.HoverY > 0)
+        {
+            float previewX = (State.HoverX + 0.5f) * TileSize;
+            float previewY = (State.HoverY + 0.5f) * TileSize;
+            DrawParticleStream(canvas, _particlePreviewStream, previewX, previewY, alphaScale: 0.7f);
         }
+
         canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+    }
+
+    private void DrawParticleStream(CanvasItem canvas, EditorParticleStream stream,
+        float centerX, float centerY, float alphaScale = 1f)
+    {
+        if (Grhs == null || Textures == null) return;
+        foreach (var p in stream.Particles)
+        {
+            if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
+            var grh = Grhs[p.GrhIndex];
+            if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+            {
+                int frame = grh.Speed > 0 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
+                int frameIdx = grh.Frames[frame];
+                if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
+                grh = Grhs[frameIdx];
+            }
+            if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
+            var texture = Textures.GetTexture(grh.FileNum);
+            if (texture == null) continue;
+
+            var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+            float drawX = centerX + p.X - grh.PixelWidth / 2f;
+            float drawY = centerY + p.Y - grh.PixelHeight / 2f;
+            var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+            var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha * alphaScale);
+            canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+        }
     }
 
     #endregion
@@ -1175,6 +1541,21 @@ public partial class MapViewport : Control
         {
             if (ek.Keycode == Key.Space)
                 _spaceHeld = ek.Pressed;
+
+            // WASD / Arrow keys for map panning
+            // Always process key-up to avoid stuck keys; only set on key-down when no modifier/textfield
+            bool canPanPress = !ek.CtrlPressed && !ek.AltPressed
+                && GetViewport().GuiGetFocusOwner() is not LineEdit and not TextEdit;
+            if (!ek.Pressed || canPanPress)
+            {
+                switch (ek.Keycode)
+                {
+                    case Key.W: case Key.Up:    _keyUp    = ek.Pressed; break;
+                    case Key.S: case Key.Down:  _keyDown  = ek.Pressed; break;
+                    case Key.A: case Key.Left:  _keyLeft  = ek.Pressed; break;
+                    case Key.D: case Key.Right: _keyRight = ek.Pressed; break;
+                }
+            }
         }
         else if (@event is InputEventMouseButton mb)
         {
@@ -1344,13 +1725,47 @@ public partial class MapViewport : Control
             return;
         }
 
-        // Right click: light tool erases, otherwise mosaic drag or eyedrop
+        // Right click: light/particle/trigger tool erases, otherwise mosaic drag or eyedrop
         if (mb.ButtonIndex == MouseButton.Right)
         {
             if (mb.Pressed && State?.ActiveTool == EditorTool.Light)
             {
                 var tile = ScreenToTile(mb.Position);
                 EraseLightAt(tile.X, tile.Y);
+                return;
+            }
+            if (mb.Pressed && State?.ActiveTool == EditorTool.LightAdvanced)
+            {
+                var tile = ScreenToTile(mb.Position);
+                EraseAdvancedLightAt(tile.X, tile.Y);
+                return;
+            }
+            if (mb.Pressed && State?.ActiveTool == EditorTool.Particle)
+            {
+                var tile = ScreenToTile(mb.Position);
+                EraseParticleAt(tile.X, tile.Y);
+                return;
+            }
+            if (mb.Pressed && State?.ActiveTool == EditorTool.Fog)
+            {
+                var tile = ScreenToTile(mb.Position);
+                EraseFogAt(tile.X, tile.Y);
+                return;
+            }
+            if (State?.ActiveTool == EditorTool.Trigger)
+            {
+                if (mb.Pressed)
+                {
+                    _isPainting = true;
+                    _paintedThisStroke.Clear();
+                    Undo?.BeginBatch("Erase Trigger");
+                    var tile = ScreenToTile(mb.Position);
+                    EraseTriggerAt(tile.X, tile.Y);
+                }
+                else
+                {
+                    if (_isPainting) { _isPainting = false; Undo?.EndBatch(); }
+                }
                 return;
             }
             if (mb.Pressed && !_isPainting)
@@ -1366,13 +1781,22 @@ public partial class MapViewport : Control
                 else
                 {
                     var tile = ScreenToTile(mb.Position);
-                    EyedropAt(tile.X, tile.Y);
+                    // Right-click grab: pick entity or layer graphic to move it
+                    PickStartAt(tile.X, tile.Y);
+                    if (State?.Pick.HasPick != true)
+                        EyedropAt(tile.X, tile.Y); // fallback to eyedrop if nothing to pick
                 }
             }
             else if (!mb.Pressed)
             {
                 if (_mosaicHandleDrag) { _mosaicHandleDrag = false; QueueRedraw(); }
                 if (_isPanning) _isPanning = false;
+                // Drop picked entity on right-click release
+                if (State?.Pick.HasPick == true)
+                {
+                    var tile = ScreenToTile(mb.Position);
+                    PickDropAt(tile.X, tile.Y);
+                }
             }
             return;
         }
@@ -1426,7 +1850,7 @@ public partial class MapViewport : Control
 
             if (mb.Pressed)
             {
-                // Double-click: follow exits (any tool)
+                // Double-click: follow exits, or edit light when Light tool is active
                 if (mb.DoubleClick && Map!.InBounds(tile.X, tile.Y))
                 {
                     ref var t = ref Map.Tiles[tile.X, tile.Y];
@@ -1434,6 +1858,27 @@ public partial class MapViewport : Control
                     {
                         State!.RequestExitFollow(t.ExitMap, t.ExitX, t.ExitY);
                         return;
+                    }
+                    // Double-click on existing light with Light tool → load into editor
+                    if (State.ActiveTool == EditorTool.Light && t.HasLight)
+                    {
+                        State.LightR = t.LightR;
+                        State.LightG = t.LightG;
+                        State.LightB = t.LightB;
+                        State.LightRange = t.LightRange;
+                        OnLightEditRequested?.Invoke();
+                        return;
+                    }
+                    // Double-click with Luz+ tool → select an existing MapLight
+                    // at this tile so the sidebar panel starts editing it.
+                    if (State.ActiveTool == EditorTool.LightAdvanced)
+                    {
+                        int idx = FindAdvancedLightAt(tile.X, tile.Y);
+                        if (idx >= 0)
+                        {
+                            OnAdvancedLightSelected?.Invoke(idx);
+                            return;
+                        }
                     }
                 }
 
@@ -1574,11 +2019,30 @@ public partial class MapViewport : Control
                         Undo?.BeginBatch("Place Light");
                         PlaceLightAt(tile.X, tile.Y);
                         break;
+                    case EditorTool.LightAdvanced:
+                        PlaceAdvancedLightAt(tile.X, tile.Y);
+                        break;
+                    case EditorTool.Particle:
+                        _isPainting = true;
+                        _paintedThisStroke.Clear();
+                        Undo?.BeginBatch("Paint Particle");
+                        PlaceParticleAt(tile.X, tile.Y);
+                        break;
+                    case EditorTool.Fog:
+                        _isPainting = true;
+                        _paintedThisStroke.Clear();
+                        PaintFogAt(tile.X, tile.Y);
+                        break;
                     case EditorTool.Exit:
-                    case EditorTool.Trigger:
                         State.ShowTileProperties = true;
                         State.PropTileX = tile.X;
                         State.PropTileY = tile.Y;
+                        break;
+                    case EditorTool.Trigger:
+                        _isPainting = true;
+                        _paintedThisStroke.Clear();
+                        Undo?.BeginBatch("Paint Trigger");
+                        PaintTriggerAt(tile.X, tile.Y);
                         break;
                 }
             }
@@ -1704,6 +2168,18 @@ public partial class MapViewport : Control
             var tile = ScreenToTile(mm.Position);
             if (State!.ActiveTool == EditorTool.Light)
                 PlaceLightAt(tile.X, tile.Y);
+            else if (State.ActiveTool == EditorTool.Particle)
+                PlaceParticleAt(tile.X, tile.Y);
+            else if (State.ActiveTool == EditorTool.Fog)
+                PaintFogAt(tile.X, tile.Y);
+            else if (State.ActiveTool == EditorTool.Trigger)
+            {
+                // Left-click drag paints; right-click drag erases (determined by which button started _isPainting)
+                if (Input.IsMouseButtonPressed(MouseButton.Left))
+                    PaintTriggerAt(tile.X, tile.Y);
+                else
+                    EraseTriggerAt(tile.X, tile.Y);
+            }
             else if (State.ActiveTool == EditorTool.Paint || State.ActiveTool == EditorTool.Block)
                 ApplyToolAt(tile.X, tile.Y);
             else
@@ -1759,8 +2235,8 @@ public partial class MapViewport : Control
 
         // (auto-align mosaic removed — it caused the offset to jump while painting)
 
-        // Redraw on hover for paint preview and pending placement
-        if (State.ActiveTool == EditorTool.Paint || State.Pending.Active)
+        // Redraw on hover for paint preview, trigger preview, and pending placement
+        if (State.ActiveTool == EditorTool.Paint || State.ActiveTool == EditorTool.Trigger || State.Pending.Active)
             QueueRedraw();
     }
 
@@ -1770,7 +2246,7 @@ public partial class MapViewport : Control
 
     /// <summary>
     /// Detect what entity is at tile (x,y) and start dragging it.
-    /// Priority: NPC > Object > Layer3 > Layer4.
+    /// Priority: NPC > Object > Particle > L3 > L4 > L2.
     /// </summary>
     private void PickStartAt(int tx, int ty)
     {
@@ -1790,6 +2266,8 @@ public partial class MapViewport : Control
             pick.Target = PickTarget.Layer3;
         else if (tile.Layer4 != 0)
             pick.Target = PickTarget.Layer4;
+        else if (tile.Layer2 != 0)
+            pick.Target = PickTarget.Layer2;
         else
             return; // nothing to pick
 
@@ -1821,6 +2299,10 @@ public partial class MapViewport : Control
 
         switch (pick.Target)
         {
+            case PickTarget.Layer2:
+                Map.Tiles[tx, ty].Layer2 = Map.Tiles[sx, sy].Layer2;
+                Map.Tiles[sx, sy].Layer2 = 0;
+                break;
             case PickTarget.Layer3:
                 Map.Tiles[tx, ty].Layer3 = Map.Tiles[sx, sy].Layer3;
                 Map.Tiles[sx, sy].Layer3 = 0;
@@ -1869,6 +2351,7 @@ public partial class MapViewport : Control
 
         return pick.Target switch
         {
+            PickTarget.Layer2 => tile.Layer2,
             PickTarget.Layer3 => tile.Layer3,
             PickTarget.Layer4 => tile.Layer4,
             PickTarget.Npc => GetNpcBodyGrh(tile.NpcIndex),
@@ -1915,6 +2398,58 @@ public partial class MapViewport : Control
         Map.Tiles[x, y].LightB = (short)State.LightB;
         Map.Tiles[x, y].LightRange = (short)State.LightRange;
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        _cpuLightsDirty = true;
+        QueueRedraw();
+    }
+
+    /// <summary>Fill a rectangular area with the current light settings.
+    /// Used to quickly illuminate an entire zone or selection.</summary>
+    public void FillLightInRect(int x1, int y1, int x2, int y2)
+    {
+        if (Map == null || State == null) return;
+        int minX = Math.Min(x1, x2), maxX = Math.Max(x1, x2);
+        int minY = Math.Min(y1, y2), maxY = Math.Max(y1, y2);
+
+        Undo?.BeginBatch($"Fill Light ({minX},{minY})→({maxX},{maxY})");
+        int count = 0;
+        for (int y = minY; y <= maxY; y++)
+            for (int x = minX; x <= maxX; x++)
+            {
+                if (!Map.InBounds(x, y)) continue;
+                var before = Map.Tiles[x, y];
+                Map.Tiles[x, y].LightR = (short)State.LightR;
+                Map.Tiles[x, y].LightG = (short)State.LightG;
+                Map.Tiles[x, y].LightB = (short)State.LightB;
+                Map.Tiles[x, y].LightRange = (short)State.LightRange;
+                Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+                count++;
+            }
+        Undo?.EndBatch();
+        _cpuLightsDirty = true;
+        QueueRedraw();
+    }
+
+    /// <summary>Clear all lights in a rectangular area.</summary>
+    public void ClearLightInRect(int x1, int y1, int x2, int y2)
+    {
+        if (Map == null) return;
+        int minX = Math.Min(x1, x2), maxX = Math.Max(x1, x2);
+        int minY = Math.Min(y1, y2), maxY = Math.Max(y1, y2);
+
+        Undo?.BeginBatch($"Clear Lights ({minX},{minY})→({maxX},{maxY})");
+        for (int y = minY; y <= maxY; y++)
+            for (int x = minX; x <= maxX; x++)
+            {
+                if (!Map.InBounds(x, y) || !Map.Tiles[x, y].HasLight) continue;
+                var before = Map.Tiles[x, y];
+                Map.Tiles[x, y].LightR = 0;
+                Map.Tiles[x, y].LightG = 0;
+                Map.Tiles[x, y].LightB = 0;
+                Map.Tiles[x, y].LightRange = 0;
+                Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+            }
+        Undo?.EndBatch();
+        _cpuLightsDirty = true;
         QueueRedraw();
     }
 
@@ -1931,6 +2466,303 @@ public partial class MapViewport : Control
         Undo?.BeginBatch("Erase Light");
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
         Undo?.EndBatch();
+        _cpuLightsDirty = true;
+        QueueRedraw();
+    }
+
+    /// <summary>Paint a particle group on a tile using current editor particle selection.</summary>
+    private void PlaceParticleAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y) || State == null) return;
+        int key = y * 10000 + x;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].ParticleGroup = (short)State.SelectedParticleGroup;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        Particles?.BuildStreamsFromMap(Map);
+        QueueRedraw();
+    }
+
+    /// <summary>Fires after any fog paint/erase so external panels (like the
+    /// Humo layers sidebar) can refresh their tile-count labels in real time.</summary>
+    public System.Action? OnFogPainted;
+
+    /// <summary>Paint a fog tile — adds it to the currently active layer
+    /// (auto-creating one from the default style if none exists).</summary>
+    private void PaintFogAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y) || State == null) return;
+
+        // Cloud stamp mode: stamp a saved cloud pattern at the click anchor.
+        // The cloud's RelativeTiles are offsets from (0,0); we add (x,y) to
+        // each. Stamp uses the cloud's own style — a fresh layer is created
+        // if the active one's style doesn't match.
+        var stamp = HumoPanelRef?.GetActiveStampCloud();
+        if (stamp != null)
+        {
+            StampCloudAt(x, y, stamp);
+            return;
+        }
+
+        // Auto-create a default layer if none exists yet
+        if (Map.PaintedFogLayers.Count == 0)
+        {
+            Map.PaintedFogLayers.Add(new PaintedFogLayer
+            {
+                Name = "Humo",
+                RandomSeed = PaintedFogLayer.NewRandomSeed(),
+            });
+            Map.ActiveFogLayerIndex = 0;
+        }
+        if (Map.ActiveFogLayerIndex < 0 || Map.ActiveFogLayerIndex >= Map.PaintedFogLayers.Count)
+            Map.ActiveFogLayerIndex = 0;
+
+        var layer = Map.PaintedFogLayers[Map.ActiveFogLayerIndex];
+        int radius = HumoPanelRef?.BrushRadius ?? 0;
+
+        bool anyAdded = false;
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                if (radius > 0 && dx * dx + dy * dy > radius * radius) continue;
+                int tx = x + dx, ty = y + dy;
+                if (!Map.InBounds(tx, ty)) continue;
+                int key = ty * 10000 + tx;
+                if (_paintedThisStroke.Contains(key)) continue;
+                _paintedThisStroke.Add(key);
+                if (layer.Tiles.Add(new Godot.Vector2I(tx, ty))) anyAdded = true;
+            }
+        }
+
+        if (anyAdded)
+        {
+            _zoneFog.MarkDirty();
+            OnFogPainted?.Invoke();
+        }
+        QueueRedraw();
+    }
+
+    /// <summary>Stamp a cloud prefab at (x,y). Looks for an existing layer
+    /// with the same style+name; if not found, creates a new one. Adds all
+    /// of the cloud's relative tiles to that layer.</summary>
+    private void StampCloudAt(int x, int y, CloudPrefab cloud)
+    {
+        if (Map == null) return;
+
+        // Find or create a layer with the cloud's style + name.
+        PaintedFogLayer? target = null;
+        foreach (var l in Map.PaintedFogLayers)
+        {
+            if (l.Name == cloud.Name && l.Density == cloud.Density
+                && l.R == cloud.R && l.G == cloud.G && l.B == cloud.B
+                && l.Size == cloud.Size && l.SpeedX == cloud.SpeedX && l.SpeedY == cloud.SpeedY)
+            {
+                target = l;
+                break;
+            }
+        }
+        if (target == null)
+        {
+            target = new PaintedFogLayer
+            {
+                Name = cloud.Name,
+                Density = cloud.Density,
+                R = cloud.R, G = cloud.G, B = cloud.B,
+                SpeedX = cloud.SpeedX, SpeedY = cloud.SpeedY, Size = cloud.Size,
+                // Fresh random seed so each cloud-stamp layer drifts and
+                // patterns differently from the others on the map.
+                RandomSeed = PaintedFogLayer.NewRandomSeed(),
+            };
+            Map.PaintedFogLayers.Add(target);
+            Map.ActiveFogLayerIndex = Map.PaintedFogLayers.Count - 1;
+        }
+
+        // Pick a random orientation if enabled. 4 cardinal rotations ×
+        // optional horizontal flip = 8 variants. Integer-coord-safe so
+        // tiles always land on the grid.
+        bool randomize = HumoPanelRef?.RandomRotateStamps ?? false;
+        int rot = randomize ? GD.RandRange(0, 3) : 0; // 0=0° 1=90° 2=180° 3=270°
+        bool flipX = randomize && GD.Randi() % 2 == 0;
+
+        bool anyAdded = false;
+        foreach (var off in cloud.RelativeTiles)
+        {
+            // Apply flip first, then rotate around origin.
+            int rdx = flipX ? -off.X : off.X;
+            int rdy = off.Y;
+            int rotDx, rotDy;
+            switch (rot)
+            {
+                case 1: rotDx = -rdy; rotDy = rdx; break;   //  90° CW
+                case 2: rotDx = -rdx; rotDy = -rdy; break;  // 180°
+                case 3: rotDx = rdy;  rotDy = -rdx; break;  // 270° CW
+                default: rotDx = rdx; rotDy = rdy; break;   //   0°
+            }
+            int tx = x + rotDx, ty = y + rotDy;
+            if (!Map.InBounds(tx, ty)) continue;
+            int key = ty * 10000 + tx;
+            if (_paintedThisStroke.Contains(key)) continue;
+            _paintedThisStroke.Add(key);
+            if (target.Tiles.Add(new Godot.Vector2I(tx, ty))) anyAdded = true;
+        }
+
+        if (anyAdded)
+        {
+            _zoneFog.MarkDirty();
+            OnFogPainted?.Invoke();
+        }
+        QueueRedraw();
+    }
+
+    /// <summary>Erase fog from a tile (and circle brush around it) —
+    /// removes from ALL layers so you don't need to know which layer
+    /// painted the tile. Circular brush matches the paint brush radius.</summary>
+    private void EraseFogAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        int radius = HumoPanelRef?.BrushRadius ?? 0;
+        bool removed = false;
+
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                if (radius > 0 && dx * dx + dy * dy > radius * radius) continue;
+                int tx = x + dx, ty = y + dy;
+                if (!Map.InBounds(tx, ty)) continue;
+                var tile = new Godot.Vector2I(tx, ty);
+                foreach (var layer in Map.PaintedFogLayers)
+                {
+                    if (layer.Tiles.Remove(tile)) removed = true;
+                }
+            }
+        }
+
+        if (removed)
+        {
+            _zoneFog.MarkDirty();
+            OnFogPainted?.Invoke();
+        }
+        QueueRedraw();
+    }
+
+    /// <summary>Exposed so external systems (layer paint, zone edits, map load)
+    /// can invalidate the fog mask after modifying the map.</summary>
+    public void MarkFogMaskDirty() => _zoneFog.MarkDirty();
+
+    /// <summary>Exposed so external systems can invalidate the advanced-light
+    /// pool + occluders after a MapLight list mutation or L2/L3 tile change.</summary>
+    public void MarkLightsDirty() => _lightRenderer.MarkDirty();
+
+    /// <summary>Forward the current GRH table + TextureManager to the
+    /// LightRenderer so it can compute pixel-accurate occluder polygons
+    /// from each Layer3 sprite's alpha mask. Called from EditorMain
+    /// whenever the graphics resources are (re)loaded.</summary>
+    public void SyncLightRendererGraphics()
+    {
+        _lightRenderer.SetGraphicsResources(Grhs, Textures);
+    }
+
+    /// <summary>Place a new advanced MapLight at the clicked tile. Seeds the
+    /// new light from the last-placed style (if any) or from the default
+    /// LightAsset "Antorcha" preset. Selects it in the panel.</summary>
+    private void PlaceAdvancedLightAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        var last = Map.LightData.Lights.Count > 0
+            ? Map.LightData.Lights[^1]
+            : null;
+        var nl = new MapLight
+        {
+            X = x,
+            Y = y,
+            Type = last?.Type ?? LightType.Omni,
+            R = last?.R ?? 255,
+            G = last?.G ?? 180,
+            B = last?.B ?? 80,
+            Energy = last?.Energy ?? 1.2f,
+            Radius = last?.Radius ?? 5.0f,
+            DirectionDeg = last?.DirectionDeg ?? 0f,
+            ConeDegrees = last?.ConeDegrees ?? 60f,
+            FlickerPct = last?.FlickerPct ?? 35,
+            PulseHz = last?.PulseHz ?? 0f,
+            ShadowsEnabled = last?.ShadowsEnabled ?? true,
+            Name = last?.Name ?? "",
+        };
+        Map.LightData.Lights.Add(nl);
+        _lightRenderer.MarkDirty();
+        OnAdvancedLightsChanged?.Invoke();
+        OnAdvancedLightSelected?.Invoke(Map.LightData.Lights.Count - 1);
+        QueueRedraw();
+    }
+
+    /// <summary>Remove any advanced light at this tile (right-click erase).</summary>
+    private void EraseAdvancedLightAt(int x, int y)
+    {
+        if (Map == null) return;
+        int idx = FindAdvancedLightAt(x, y);
+        if (idx < 0) return;
+        Map.LightData.Lights.RemoveAt(idx);
+        _lightRenderer.MarkDirty();
+        OnAdvancedLightsChanged?.Invoke();
+        QueueRedraw();
+    }
+
+    /// <summary>Find the index of the first advanced light at tile (x,y),
+    /// or -1 if none. Used for double-click-to-select and erase.</summary>
+    private int FindAdvancedLightAt(int x, int y)
+    {
+        if (Map == null) return -1;
+        for (int i = 0; i < Map.LightData.Lights.Count; i++)
+        {
+            var l = Map.LightData.Lights[i];
+            if (l.X == x && l.Y == y) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>Erase the particle group from a tile (right-click).</summary>
+    private void EraseParticleAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        if (Map.Tiles[x, y].ParticleGroup == 0) return;
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].ParticleGroup = 0;
+        Undo?.BeginBatch("Erase Particle");
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        Undo?.EndBatch();
+        Particles?.BuildStreamsFromMap(Map);
+        QueueRedraw();
+    }
+
+    /// <summary>Paint the selected trigger type onto a tile.</summary>
+    private void PaintTriggerAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y) || State == null) return;
+        long key = (long)x << 32 | (uint)y;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+        short newTrigger = State.SelectedTriggerType;
+        if (Map.Tiles[x, y].Trigger == newTrigger) return;
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].Trigger = newTrigger;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        QueueRedraw();
+    }
+
+    /// <summary>Erase the trigger from a tile (right-click drag).</summary>
+    private void EraseTriggerAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        long key = (long)x << 32 | (uint)y;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+        if (Map.Tiles[x, y].Trigger == 0) return;
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].Trigger = 0;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
         QueueRedraw();
     }
 
@@ -2053,6 +2885,10 @@ public partial class MapViewport : Control
             case 3: tile.Layer3 = grhIdx; break;
             case 4: tile.Layer4 = grhIdx; break;
         }
+        // Layer 2/3/4 content occludes fog — mask needs to rebuild
+        if (layer >= 2) _zoneFog.MarkDirty();
+        // Layer 2/3 also casts shadows for advanced lights → rebuild occluders
+        if (layer == 2 || layer == 3) _lightRenderer.MarkDirty();
     }
 
     private int GetLayerGrh(ref MapTile tile, int layer)

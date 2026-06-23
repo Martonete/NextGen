@@ -16,7 +16,6 @@ public partial class TutorialPanel : Control
     private string _dataPath = "";
 
     // Controls
-    private ColorRect? _overlay;
     private Control? _panel;
     private Label? _titleLabel;
     private Label? _bodyLabel;
@@ -28,6 +27,8 @@ public partial class TutorialPanel : Control
     // State
     private int _currentStep;
     private bool _completed;
+    private bool _dragging;
+    private Vector2 _dragOffset;
 
     // Tutorial step data
     private static readonly (string title, string body)[] Steps = new[]
@@ -100,19 +101,19 @@ public partial class TutorialPanel : Control
         Visible = false;
         ZIndex = 150; // Above game, below loading screen
 
-        // Semi-transparent overlay
-        _overlay = new ColorRect();
-        _overlay.Color = new Color(0, 0, 0, 0.5f);
-        _overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _overlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
-        _overlay.MouseFilter = MouseFilterEnum.Stop;
-        AddChild(_overlay);
+        // Cover full viewport so centering logic works correctly
+        SetAnchorsPreset(LayoutPreset.FullRect);
+        MouseFilter = MouseFilterEnum.Ignore;
 
-        // Central panel with NinePatch frame
+        // Central panel with NinePatch frame — anchored to center of parent
         _panel = new Control();
-        _panel.Position = new Vector2(150, 100);
-        _panel.Size = new Vector2(500, 400);
-        _panel.CustomMinimumSize = new Vector2(500, 400);
+        _panel.SetAnchorsPreset(LayoutPreset.Center);
+        _panel.OffsetLeft = -180;   // -360/2
+        _panel.OffsetTop = -150;    // -300/2
+        _panel.OffsetRight = 180;   // +360/2
+        _panel.OffsetBottom = 150;  // +300/2
+        _panel.Size = new Vector2(360, 300);
+        _panel.CustomMinimumSize = new Vector2(360, 300);
         _panel.ClipContents = true;
         _panel.MouseFilter = MouseFilterEnum.Stop;
 
@@ -135,6 +136,15 @@ public partial class TutorialPanel : Control
         var titleLabel = RpgTheme.CreateTitleLabel("Tutorial", 18);
         titleBg.AddChild(titleLabel);
         RpgTheme.FillParent(titleLabel);
+
+        // Close X button (top-right)
+        var closeBtn = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(28, 28));
+        closeBtn.Pressed += CompleteTutorial;
+        _panel.AddChild(closeBtn);
+        closeBtn.AnchorLeft = 1.0f; closeBtn.AnchorRight = 1.0f;
+        closeBtn.AnchorTop = 0.0f;  closeBtn.AnchorBottom = 0.0f;
+        closeBtn.OffsetLeft = -38;   closeBtn.OffsetTop = 13;
+        closeBtn.OffsetRight = -8;   closeBtn.OffsetBottom = 36;
 
         AddChild(_panel);
 
@@ -192,15 +202,61 @@ public partial class TutorialPanel : Control
         bottomBar.AddChild(_skipBtn);
     }
 
+    public override void _Input(InputEvent @event)
+    {
+        if (!Visible || _panel == null) return;
+
+        // Drag handling only — buttons are handled by Godot GUI system first
+        if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+        {
+            if (mb.Pressed)
+            {
+                // Only drag from the title bar area (top 48px of the panel)
+                var titleRect = new Rect2(_panel.GlobalPosition, new Vector2(_panel.Size.X, 48));
+                if (titleRect.HasPoint(mb.GlobalPosition))
+                {
+                    _dragging = true;
+                    _dragOffset = mb.GlobalPosition - _panel.GlobalPosition;
+                    GetViewport().SetInputAsHandled();
+                }
+            }
+            else
+            {
+                _dragging = false;
+            }
+        }
+        else if (@event is InputEventMouseMotion mm && _dragging)
+        {
+            _panel.GlobalPosition = mm.GlobalPosition - _dragOffset;
+            GetViewport().SetInputAsHandled();
+        }
+    }
+
     /// <summary>
     /// Show the tutorial from the beginning.
     /// </summary>
+    public override void _UnhandledInput(InputEvent @event)
+    {
+        if (!Visible || _panel == null) return;
+
+        // Consume any click over the panel that wasn't handled by a button
+        if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left && mb.Pressed)
+        {
+            var panelRect = new Rect2(_panel.GlobalPosition, _panel.Size);
+            if (panelRect.HasPoint(mb.GlobalPosition))
+            {
+                GetViewport().SetInputAsHandled();
+            }
+        }
+    }
+
     public void Open()
     {
-        if (_completed) return; // Already completed, don't show again
+        if (_completed) return;
         _currentStep = 0;
         RefreshStep();
         Visible = true;
+        // _panel is centered via anchors (LayoutPreset.Center + offsets), no manual calc needed
     }
 
     /// <summary>

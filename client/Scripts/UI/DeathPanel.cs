@@ -1,6 +1,7 @@
 using Godot;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.UI;
 
@@ -43,12 +44,14 @@ public partial class DeathPanel : Control
     private int _hoveredBtn = 0; // 0=none, 1=continuar, 2=regresar
 
     private string _dataPath = "";
+    private IResourceProvider? _resources;
 
-    public void Init(GameState state, AoTcpClient tcp, string dataPath)
+    public void Init(GameState state, AoTcpClient tcp, string dataPath, IResourceProvider? resources = null)
     {
         _state = state;
         _tcp = tcp;
         _dataPath = dataPath;
+        _resources = resources;
         LoadTextures();
     }
 
@@ -62,22 +65,28 @@ public partial class DeathPanel : Control
 
     private void LoadTextures()
     {
-        string basePath = System.IO.Path.Combine(_dataPath, "Graficos", "Principal");
-        _bgTexture = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_Main.jpg"));
-        _continuarHover = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_ContinuarI.jpg"));
-        _continuarNormal = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_ContinuarA.jpg"));
-        _regresarHover = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_RegresarI.jpg"));
-        _regresarNormal = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_RegresarA.jpg"));
+        _bgTexture = LoadJpg("Graficos/Principal/cartelMuerte_Main.jpg");
+        _continuarHover = LoadJpg("Graficos/Principal/cartelMuerte_ContinuarI.jpg");
+        _continuarNormal = LoadJpg("Graficos/Principal/cartelMuerte_ContinuarA.jpg");
+        _regresarHover = LoadJpg("Graficos/Principal/cartelMuerte_RegresarI.jpg");
+        _regresarNormal = LoadJpg("Graficos/Principal/cartelMuerte_RegresarA.jpg");
         QueueRedraw();
     }
 
-    private static Texture2D? LoadJpg(string path)
+    private Texture2D? LoadJpg(string relativePath)
     {
+        if (_resources != null)
+        {
+            var img = _resources.ReadImage(relativePath);
+            if (img == null) return null;
+            return ImageTexture.CreateFromImage(img);
+        }
+        string path = System.IO.Path.Combine(_dataPath, relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar));
         if (!System.IO.File.Exists(path)) return null;
-        var img = new Image();
-        var err = img.Load(path);
+        var fsImg = new Image();
+        var err = fsImg.Load(path);
         if (err != Error.Ok) return null;
-        return ImageTexture.CreateFromImage(img);
+        return ImageTexture.CreateFromImage(fsImg);
     }
 
     public new void Show()

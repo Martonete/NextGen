@@ -1,8 +1,8 @@
 // Password hashing with Argon2.
 
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 
 /// Hash a plaintext password with Argon2id.
 pub fn hash_password(password: &str) -> Result<String, String> {

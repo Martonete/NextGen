@@ -174,6 +174,12 @@ public class ParticleEngine
         }
     }
 
+    /// <summary>
+    /// Public entry point for updating a single standalone stream (e.g. a preview panel).
+    /// </summary>
+    public static void UpdateSingleStream(EditorParticleStream stream, ParticleStreamDef def, float deltaMs)
+        => UpdateStream(stream, def, deltaMs);
+
     private static void UpdateStream(EditorParticleStream stream, ParticleStreamDef def, float deltaMs)
     {
         const float EngineBaseSpeed = 0.0172f;

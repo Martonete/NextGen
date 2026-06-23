@@ -282,10 +282,11 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinMenuData(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
         string name = bq.ReadString();
         byte priv = bq.ReadByte();
-        // TODO: show right-click context menu when implemented
+        _state.MenuTargetName = name;
+        _state.MenuTargetPriv = priv;
+        _state.ShowContextMenu = true;
     }
 
     /// <summary>
@@ -294,9 +295,9 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinSelectData(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
-        // TODO: show selection dialog when implemented
+        _state.SelectListData = data;
+        _state.ShowSelectList = true;
     }
 
     /// <summary>
@@ -305,9 +306,9 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinMiniTopData(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
-        // TODO: show mini ranking when implemented
+        _state.MiniTopData = data;
+        _state.ShowMiniTop = true;
     }
 
     /// <summary>

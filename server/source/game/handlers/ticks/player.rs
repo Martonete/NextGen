@@ -1,27 +1,22 @@
 //! Player passive tick handlers: meditation, HP/mana/stamina regen, hunger/thirst,
 //! poison, buff expiry, cooldowns, auto-save.
 
-use tracing::{info, error};
-use crate::net::ConnectionId;
-use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, SendTarget, UserState};
 use crate::db::charfile;
-use crate::protocol::{binary_packets, font_index};
 use crate::game::handlers::common::*;
-use crate::game::handlers::world;
-use crate::game::handlers::{
-    user_die, revive_user, warp_user,
-};
 use crate::game::handlers::skills::try_level_skill_with_hit;
+use crate::game::handlers::{revive_user, user_die, warp_user};
+use crate::game::types::{GameState, SendTarget, UserState};
+use crate::net::ConnectionId;
+use crate::protocol::{binary_packets, font_index};
 
 // =====================================================================
 // Meditation FX constants (VB6: Declares.bas)
 // =====================================================================
-const FXMEDITARCHICO: i16 = 4;       // level < 13
-const FXMEDITARMEDIANO: i16 = 5;     // level 13-24
-const FXMEDITARGRANDE: i16 = 6;      // level 25-34
-const FXMEDITARXGRANDE: i16 = 16;    // level 35-41
-const FXMEDITARXXGRANDE: i16 = 34;   // level >= 42
+const FXMEDITARCHICO: i16 = 4; // level < 13
+const FXMEDITARMEDIANO: i16 = 5; // level 13-24
+const FXMEDITARGRANDE: i16 = 6; // level 25-34
+const FXMEDITARXGRANDE: i16 = 16; // level 35-41
+const FXMEDITARXXGRANDE: i16 = 34; // level >= 42
 
 // =====================================================================
 // Passive regeneration / drain system
@@ -30,24 +25,30 @@ const FXMEDITARXXGRANDE: i16 = 34;   // level >= 42
 // VB6 original values are in ticks (~100ms each): IntervaloHambre=6500, IntervaloSed=6000,
 // IntervaloVeneno=500, SanaIntervaloSinDescansar=1600, SanaIntervaloDescansar=100,
 // StaminaIntervaloSinDescansar=10, StaminaIntervaloDescansar=5.
-// Converted: VB6_ticks / 10 = seconds.
-const HUNGER_INTERVAL: i32 = 650;  // VB6: 6500 ticks = ~650 seconds (~10.8 min)
-const THIRST_INTERVAL: i32 = 600;  // VB6: 6000 ticks = ~600 seconds (~10 min)
-const HUNGER_DRAIN: i32 = 10;      // VB6: 10 per interval
-const THIRST_DRAIN: i32 = 10;      // VB6: 10 per interval
-const STAMINA_INTERVAL: i32 = 1;   // VB6: 10 ticks = ~1 second (standing)
-const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s (resting, we use 1s min)
-const HP_REGEN_INTERVAL: i32 = 160; // VB6: SanaIntervaloSinDescansar=1600 ticks (~160s)
-const HP_REGEN_INTERVAL_REST: i32 = 10; // VB6: SanaIntervaloDescansar=100 ticks (~10s)
-const POISON_INTERVAL: i32 = 25;    // VB6: IntervaloVeneno=500 ticks × 50ms = 25s
-const COLD_LAVA_INTERVAL: i32 = 2;  // VB6: IntervaloFrio=15 ticks (~2s at 1s tick)
+// Converted: VB6_ticks * 50ms = seconds (VB6 tick = 50ms = 1/20s).
+const HUNGER_INTERVAL: i32 = 325; // VB6: 6500 ticks × 50ms = 325s (~5.4 min)
+const THIRST_INTERVAL: i32 = 300; // VB6: 6000 ticks × 50ms = 300s (~5 min)
+const HUNGER_DRAIN: i32 = 10; // VB6: 10 per interval
+const THIRST_DRAIN: i32 = 10; // VB6: 10 per interval
+const STAMINA_INTERVAL: i32 = 1; // VB6: 10 ticks = ~1 second (standing)
+const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s — compensated by 2x regen amount per tick
+const HP_REGEN_INTERVAL: i32 = 80; // VB6: SanaIntervaloSinDescansar=1600 ticks × 50ms = 80s
+const HP_REGEN_INTERVAL_REST: i32 = 5; // VB6: SanaIntervaloDescansar=100 ticks × 50ms = 5s
+const POISON_INTERVAL: i32 = 25; // VB6: IntervaloVeneno=500 ticks × 50ms = 25s
+const COLD_LAVA_INTERVAL: i32 = 2; // VB6: IntervaloFrio=15 ticks (~2s at 1s tick)
 
 pub(crate) fn meditation_fx_for_level(level: i32) -> i16 {
-    if level < 13 { FXMEDITARCHICO }
-    else if level < 25 { FXMEDITARMEDIANO }
-    else if level < 35 { FXMEDITARGRANDE }
-    else if level < 42 { FXMEDITARXGRANDE }
-    else { FXMEDITARXXGRANDE }
+    if level < 13 {
+        FXMEDITARCHICO
+    } else if level < 25 {
+        FXMEDITARMEDIANO
+    } else if level < 35 {
+        FXMEDITARGRANDE
+    } else if level < 42 {
+        FXMEDITARXGRANDE
+    } else {
+        FXMEDITARXXGRANDE
+    }
 }
 
 /// ME / /MEDITAR — Toggle meditation on/off.
@@ -59,8 +60,16 @@ pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
     let (dead, max_mana, min_mana, privileges, meditating, char_index, map, x, y, level) =
         match state.users.get(&conn_id) {
             Some(u) if u.logged => (
-                u.dead, u.max_mana, u.min_mana, u.privileges, u.meditating,
-                u.char_index, u.pos_map, u.pos_x, u.pos_y, u.level,
+                u.dead,
+                u.max_mana,
+                u.min_mana,
+                u.privileges,
+                u.meditating,
+                u.char_index,
+                u.pos_map,
+                u.pos_x,
+                u.pos_y,
+                u.level,
             ),
             _ => return,
         };
@@ -126,35 +135,102 @@ pub async fn tick_player_passive(state: &mut GameState) {
     // Collect logged user connections
     let user_ids: Vec<ConnectionId> = state.users.keys().copied().collect();
 
+    // VB6 M21: Idle timeout — kick players who haven't sent a packet in IdleLimit seconds.
+    // VB6 IdleLimit = 300 seconds (5 minutes). GMs are exempt.
+    const IDLE_LIMIT_SECS: u32 = 300;
+    let mut idle_kick: Vec<ConnectionId> = Vec::new();
+    for &cid in &user_ids {
+        if let Some(u) = state.users.get_mut(&cid) {
+            if u.logged && u.privileges == 0 {
+                u.idle_count += 1;
+                if u.idle_count >= IDLE_LIMIT_SECS {
+                    idle_kick.push(cid);
+                }
+            }
+        }
+    }
+    for cid in idle_kick {
+        // VB6: cancel active trade before kicking idle player
+        let trade_partner = state.users.get(&cid).and_then(|u| u.trade_partner);
+        if let Some(partner) = trade_partner {
+            if let Some(pu) = state.users.get_mut(&partner) {
+                pu.trading = false;
+                pu.trade_partner = None;
+            }
+        }
+        if let Some(u) = state.users.get_mut(&cid) {
+            u.trading = false;
+            u.trade_partner = None;
+        }
+        state.send_console(
+            cid,
+            "Has sido desconectado por inactividad.",
+            crate::protocol::font_index::INFO,
+        );
+        state.security_kick_queue.push(cid);
+    }
+
     for conn_id in user_ids {
         let user_data = match state.users.get(&conn_id) {
             Some(u) if u.logged && !u.dead => Some((
                 u.poisoned,
                 u.meditating,
-                u.min_hp, u.max_hp,
-                u.min_mana, u.max_mana,
-                u.min_sta, u.max_sta,
-                u.min_agua, u.max_agua,
-                u.min_ham, u.max_ham,
-                u.counter_hunger, u.counter_thirst,
-                u.counter_stamina, u.counter_poison,
+                u.min_hp,
+                u.max_hp,
+                u.min_mana,
+                u.max_mana,
+                u.min_sta,
+                u.max_sta,
+                u.min_agua,
+                u.max_agua,
+                u.min_ham,
+                u.max_ham,
+                u.counter_hunger,
+                u.counter_thirst,
+                u.counter_stamina,
+                u.counter_poison,
                 u.skills[6], // SK7 = Meditar skill
                 u.privileges,
                 u.resting,
                 u.mimetizado,
                 u.invisible,
-                u.pos_map, u.pos_x, u.pos_y,
+                u.pos_map,
+                u.pos_x,
+                u.pos_y,
                 u.equip.armor,
                 u.char_index.0,
             )),
             _ => None,
         };
 
-        let (poisoned, meditating, min_hp, max_hp, min_mana, max_mana,
-             min_sta, max_sta, min_agua, _max_agua, min_ham, _max_ham,
-             cnt_hunger, cnt_thirst, cnt_sta, cnt_poison,
-             meditate_skill, privileges, resting, _mimetizado, _invisible,
-             pos_map, pos_x, pos_y, equip_armor, _char_idx) = match user_data {
+        let (
+            poisoned,
+            meditating,
+            min_hp,
+            max_hp,
+            min_mana,
+            max_mana,
+            min_sta,
+            max_sta,
+            min_agua,
+            _max_agua,
+            min_ham,
+            _max_ham,
+            cnt_hunger,
+            cnt_thirst,
+            cnt_sta,
+            cnt_poison,
+            meditate_skill,
+            privileges,
+            resting,
+            _mimetizado,
+            _invisible,
+            pos_map,
+            pos_x,
+            pos_y,
+            equip_armor,
+            _char_idx,
+        ) = match user_data {
             Some(d) => d,
             None => continue,
         };
@@ -196,7 +272,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
         // VB6: regen = RandomNumber(1, Porcentaje(MaxSta, 5)) = 1 to 5% of max STA
         // Blocked when hungry or thirsty, blocked when naked (desnudo = no armor)
         let desnudo = equip_armor == 0;
-        let sta_interval = if resting { STAMINA_INTERVAL_REST } else { STAMINA_INTERVAL };
+        let sta_interval = if resting {
+            STAMINA_INTERVAL_REST
+        } else {
+            STAMINA_INTERVAL
+        };
         if min_sta < max_sta && min_ham > 0 && min_agua > 0 && !desnudo {
             if cnt_sta >= sta_interval {
                 let five_pct = ((max_sta as f64 * 5.0) / 100.0).max(1.0) as i32;
@@ -229,7 +309,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.min_hp = new_hp;
                 }
                 // VB6: "Estás envenenado, si no te curas morirás." (FONTTYPE_VENENO)
-                state.send_console(conn_id, "Estás envenenado, si no te curas morirás.", font_index::VENENO);
+                state.send_console(
+                    conn_id,
+                    "Estás envenenado, si no te curas morirás.",
+                    font_index::VENENO,
+                );
                 send_stats_hp(state, conn_id).await;
 
                 // VB6: FXSANGRE (blood FX 14) on poison tick if not meditating/navigating
@@ -237,10 +321,16 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     if let Some(u) = state.users.get(&conn_id) {
                         if !u.navigating {
                             let fx_pkt = binary_packets::write_create_fx(
-                                u.char_index.0 as i16, 14, 0, // FXSANGRE = 14
+                                u.char_index.0 as i16,
+                                14,
+                                0, // FXSANGRE = 14
                             );
                             state.send_data_bytes(
-                                SendTarget::ToArea { map: u.pos_map, x: u.pos_x, y: u.pos_y },
+                                SendTarget::ToArea {
+                                    map: u.pos_map,
+                                    x: u.pos_x,
+                                    y: u.pos_y,
+                                },
                                 &fx_pkt,
                             );
                         }
@@ -260,20 +350,31 @@ pub async fn tick_player_passive(state: &mut GameState) {
         // --- Cold damage (VB6: EfectoFrio) ---
         // VB6: Only when naked (no armor). On snow terrain: 5% MaxHP damage. Elsewhere: 5% MaxSTA drain.
         if is_player && desnudo {
-            let cnt_frio = state.users.get(&conn_id).map(|u| u.counter_frio).unwrap_or(0);
+            let cnt_frio = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.counter_frio)
+                .unwrap_or(0);
             if cnt_frio >= COLD_LAVA_INTERVAL {
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.counter_frio = 0;
                 }
                 // Check terrain type from map info
-                let is_snow = state.game_data.maps.get(pos_map as usize)
+                let is_snow = state
+                    .game_data
+                    .maps
+                    .get(pos_map as usize)
                     .and_then(|m| m.as_ref())
                     .map(|m| m.info.terreno.eq_ignore_ascii_case("NIEVE"))
                     .unwrap_or(false);
                 if is_snow {
                     let dmg = ((max_hp as f64 * 5.0) / 100.0) as i32;
                     let new_hp = min_hp - dmg;
-                    state.send_console(conn_id, "¡¡Estás muriendo de frío, abrigate o morirás!!", font_index::INFO);
+                    state.send_console(
+                        conn_id,
+                        "¡¡Estás muriendo de frío, abrigate o morirás!!",
+                        font_index::INFO,
+                    );
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         u.min_hp = new_hp;
                     }
@@ -300,20 +401,32 @@ pub async fn tick_player_passive(state: &mut GameState) {
         // --- Lava damage (VB6: EfectoLava) ---
         // VB6: If standing on lava tile (graphic[0] in 5837-5852), 5% MaxHP damage.
         if is_player {
-            let on_lava = state.game_data.maps.get(pos_map as usize)
+            let on_lava = state
+                .game_data
+                .maps
+                .get(pos_map as usize)
                 .and_then(|m| m.as_ref())
                 .and_then(|m| {
-                    m.tiles.get((pos_x - 1) as usize, (pos_y - 1) as usize)
+                    m.tiles
+                        .get((pos_x - 1) as usize, (pos_y - 1) as usize)
                         .map(|t| t.graphic[0])
                 })
                 .map(|g| g >= 5837 && g <= 5852)
                 .unwrap_or(false);
             if on_lava {
-                let cnt_lava = state.users.get(&conn_id).map(|u| u.counter_lava).unwrap_or(0);
+                let cnt_lava = state
+                    .users
+                    .get(&conn_id)
+                    .map(|u| u.counter_lava)
+                    .unwrap_or(0);
                 if cnt_lava >= COLD_LAVA_INTERVAL {
                     let dmg = ((max_hp as f64 * 5.0) / 100.0) as i32;
                     let new_hp = min_hp - dmg;
-                    state.send_console(conn_id, "¡¡Quitate de la lava, te estás quemando!!", font_index::INFO);
+                    state.send_console(
+                        conn_id,
+                        "¡¡Quitate de la lava, te estás quemando!!",
+                        font_index::INFO,
+                    );
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         u.counter_lava = 0;
                         u.min_hp = new_hp;
@@ -337,9 +450,17 @@ pub async fn tick_player_passive(state: &mut GameState) {
         // VB6: regen = RandomNumber(2, Porcentaje(MaxSta, 5)) — note: uses MaxSta not MaxHp (VB6 bug we replicate)
         // Interval: SanaIntervaloSinDescansar=1600 ticks (~160s), SanaIntervaloDescansar=100 ticks (~10s)
         // Blocked when hungry or thirsty, only for non-GMs
-        let hp_interval = if resting { HP_REGEN_INTERVAL_REST } else { HP_REGEN_INTERVAL };
+        let hp_interval = if resting {
+            HP_REGEN_INTERVAL_REST
+        } else {
+            HP_REGEN_INTERVAL
+        };
         if is_player && min_hp > 0 && min_hp < max_hp && min_ham > 0 && min_agua > 0 {
-            let hp_counter = state.users.get(&conn_id).map(|u| u.counter_hp_regen).unwrap_or(0);
+            let hp_counter = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.counter_hp_regen)
+                .unwrap_or(0);
             if hp_counter >= hp_interval {
                 let five_pct = ((max_sta as f64 * 5.0) / 100.0).max(2.0) as i32;
                 let regen = rand_range(2, five_pct);
@@ -357,7 +478,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
         }
 
         // --- Blindness countdown ---
-        let blind_counter = state.users.get(&conn_id).map(|u| (u.blind, u.counter_blind)).unwrap_or((false, 0));
+        let blind_counter = state
+            .users
+            .get(&conn_id)
+            .map(|u| (u.blind, u.counter_blind))
+            .unwrap_or((false, 0));
         if blind_counter.0 {
             if blind_counter.1 > 0 {
                 if let Some(u) = state.users.get_mut(&conn_id) {
@@ -373,7 +498,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
         }
 
         // --- Stun countdown ---
-        let stun_data = state.users.get(&conn_id).map(|u| (u.stunned, u.counter_stun)).unwrap_or((false, 0));
+        let stun_data = state
+            .users
+            .get(&conn_id)
+            .map(|u| (u.stunned, u.counter_stun))
+            .unwrap_or((false, 0));
         if stun_data.0 {
             if stun_data.1 > 0 {
                 if let Some(u) = state.users.get_mut(&conn_id) {
@@ -389,7 +518,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
         }
 
         // --- Buff duration (DuracionPociones) ---
-        let duracion = state.users.get(&conn_id).map(|u| u.duracion_efecto).unwrap_or(0);
+        let duracion = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.duracion_efecto)
+            .unwrap_or(0);
         if duracion > 0 {
             if let Some(u) = state.users.get_mut(&conn_id) {
                 u.duracion_efecto -= 1;
@@ -402,7 +535,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
         }
 
         // --- Remo potion cooldown ---
-        let remo = state.users.get(&conn_id).map(|u| u.counter_remo).unwrap_or(0);
+        let remo = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.counter_remo)
+            .unwrap_or(0);
         if remo > 0 {
             if let Some(u) = state.users.get_mut(&conn_id) {
                 u.counter_remo -= 1;
@@ -410,7 +547,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
         }
 
         // --- Silence timer (mute countdown) ---
-        let silence = state.users.get(&conn_id).map(|u| (u.silenced, u.silence_timer)).unwrap_or((false, 0));
+        let silence = state
+            .users
+            .get(&conn_id)
+            .map(|u| (u.silenced, u.silence_timer))
+            .unwrap_or((false, 0));
         if silence.0 && silence.1 > 0 {
             if let Some(u) = state.users.get_mut(&conn_id) {
                 u.silence_timer -= 1;
@@ -419,7 +560,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.silence_timer = 0;
                 }
             }
-            let unmuted = state.users.get(&conn_id).map(|u| !u.silenced).unwrap_or(false);
+            let unmuted = state
+                .users
+                .get(&conn_id)
+                .map(|u| !u.silenced)
+                .unwrap_or(false);
             if unmuted {
                 state.send_msg_id(conn_id, 946, "");
             }
@@ -431,7 +576,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
             if let Some(u) = state.users.get_mut(&conn_id) {
                 u.jail_timer -= 1;
             }
-            let released = state.users.get(&conn_id).map(|u| u.jail_timer <= 0).unwrap_or(false);
+            let released = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.jail_timer <= 0)
+                .unwrap_or(false);
             if released {
                 // Release from jail — warp to Libertad (map 28, 50, 50)
                 state.send_msg_id(conn_id, 444, "");
@@ -440,19 +589,31 @@ pub async fn tick_player_passive(state: &mut GameState) {
         }
 
         // --- Delayed resurrection countdown ---
-        let seg_revivir = state.users.get(&conn_id).map(|u| u.segundos_para_revivir).unwrap_or(0);
+        let seg_revivir = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.segundos_para_revivir)
+            .unwrap_or(0);
         if seg_revivir > 0 {
             if let Some(u) = state.users.get_mut(&conn_id) {
                 u.segundos_para_revivir -= 1;
             }
-            let ready = state.users.get(&conn_id).map(|u| u.segundos_para_revivir <= 0).unwrap_or(false);
+            let ready = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.segundos_para_revivir <= 0)
+                .unwrap_or(false);
             if ready {
                 revive_user(state, conn_id).await;
             }
         }
 
         // --- Resurrection cooldown ---
-        let time_rev = state.users.get(&conn_id).map(|u| u.time_revivir).unwrap_or(0);
+        let time_rev = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.time_revivir)
+            .unwrap_or(0);
         if time_rev > 0 {
             if let Some(u) = state.users.get_mut(&conn_id) {
                 u.time_revivir -= 1;
@@ -465,7 +626,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
         // VB6 runs at ~100ms tick; our passive tick runs every 1s, so roll 10x per call.
         if meditating && min_mana < max_mana {
             // VB6: 2-second concentration delay — skip regen while warming up
-            let warmup = state.users.get(&conn_id).map(|u| u.meditation_start_tick).unwrap_or(0);
+            let warmup = state
+                .users
+                .get(&conn_id)
+                .map(|u| u.meditation_start_tick)
+                .unwrap_or(0);
             if warmup <= 0 {
                 // VB6: Skill-based "1 in N" chance per tick (lower N = better)
                 let suerte = match meditate_skill {
@@ -499,8 +664,14 @@ pub async fn tick_player_passive(state: &mut GameState) {
                         }
                         did_regen = true;
                         // Break early if mana is full
-                        let full = state.users.get(&conn_id).map(|u| u.min_mana >= u.max_mana).unwrap_or(true);
-                        if full { break; }
+                        let full = state
+                            .users
+                            .get(&conn_id)
+                            .map(|u| u.min_mana >= u.max_mana)
+                            .unwrap_or(true);
+                        if full {
+                            break;
+                        }
                     } else {
                         // MED3: Skill up attempt on failed regen proc
                         if let Some(u) = state.users.get_mut(&conn_id) {
@@ -514,7 +685,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 }
 
                 // Stop meditation when full — clear FX + notify
-                let stopped = state.users.get(&conn_id).map(|u| !u.meditating).unwrap_or(false);
+                let stopped = state
+                    .users
+                    .get(&conn_id)
+                    .map(|u| !u.meditating)
+                    .unwrap_or(false);
                 if stopped {
                     state.send_msg_id(conn_id, 829, ""); // Has terminado de meditar
                     state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
@@ -522,7 +697,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     if let Some(u) = state.users.get(&conn_id) {
                         let fx_clear = binary_packets::write_create_fx(u.char_index.0 as i16, 0, 0);
                         state.send_data_bytes(
-                            SendTarget::ToArea { map: u.pos_map, x: u.pos_x, y: u.pos_y },
+                            SendTarget::ToArea {
+                                map: u.pos_map,
+                                x: u.pos_x,
+                                y: u.pos_y,
+                            },
                             &fx_clear,
                         );
                     }
@@ -537,6 +716,33 @@ pub async fn tick_player_passive(state: &mut GameState) {
         state.auto_save_counter = 60;
         auto_save_all_users(state).await;
     }
+
+    // --- Guild election timeout: expire elections older than 24 hours ---
+    let expired_elections: Vec<i32> = state
+        .guild_elections
+        .iter()
+        .filter(|(_, e)| e.started_at.elapsed().as_secs() > 86400)
+        .map(|(&idx, _)| idx)
+        .collect();
+    for guild_idx in expired_elections {
+        state.guild_elections.remove(&guild_idx);
+        // Notify online guild members
+        let msg = "Las elecciones del clan han expirado sin resultado.";
+        let member_conns: Vec<crate::net::ConnectionId> = state
+            .users
+            .values()
+            .filter(|u| u.logged && u.guild_index == guild_idx)
+            .map(|u| u.conn_id)
+            .collect();
+        for mc in member_conns {
+            state.send_console(mc, msg, crate::protocol::font_index::GUILD);
+        }
+        // Clear DB flag
+        if let Some(mut gi) = crate::db::guilds::load_guild(&state.pool, guild_idx).await {
+            gi.elecciones_abiertas = false;
+            crate::db::guilds::save_guild(&state.pool, &gi).await;
+        }
+    }
 }
 
 /// Save all logged-in users to DB (periodic auto-save).
@@ -545,9 +751,14 @@ pub async fn auto_save_all_users(state: &GameState) {
     let pool = state.pool.clone();
     let mut saved = 0;
     for (_conn_id, user) in state.users.iter() {
-        if !user.logged || user.char_name.is_empty() { continue; }
+        if !user.logged || user.char_name.is_empty() {
+            continue;
+        }
         let data = build_char_save_data(user);
-        if charfile::save_charfile(&pool, &user.char_name, &data).await.is_ok() {
+        if charfile::save_charfile(&pool, &user.char_name, &data)
+            .await
+            .is_ok()
+        {
             saved += 1;
         }
     }
@@ -558,16 +769,20 @@ pub async fn auto_save_all_users(state: &GameState) {
 
 /// Build CharSaveData from a UserState (used by auto-save and disconnect save).
 pub fn build_char_save_data(user: &UserState) -> charfile::CharSaveData {
-    let inv: Vec<(i32, i32, bool)> = user.inventory.iter()
+    let inv: Vec<(i32, i32, bool)> = user
+        .inventory
+        .iter()
         .map(|s| (s.obj_index, s.amount, s.equipped))
         .collect();
-    let bank: Vec<(i32, i32)> = user.bank.iter()
-        .map(|s| (s.obj_index, s.amount))
-        .collect();
+    let bank: Vec<(i32, i32)> = user.bank.iter().map(|s| (s.obj_index, s.amount)).collect();
     charfile::CharSaveData {
         // VB6: When navigating, save the REAL head (old_head), not 0.
         // The boat body is transient — on login we reconstruct it from BarcoSlot.
-        head: if user.navigating { user.old_head } else { user.head },
+        head: if user.navigating {
+            user.old_head
+        } else {
+            user.head
+        },
         body: user.body,
         heading: user.heading,
         weapon: user.equip.weapon as i32,
@@ -625,9 +840,15 @@ pub fn build_char_save_data(user: &UserState) -> charfile::CharSaveData {
         reenlistadas: user.reenlistadas,
         description: user.desc.clone(),
         pet_count: user.nro_mascotas,
-        pet_types: (0..3).filter_map(|i| {
-            if user.mascotas_type[i] > 0 { Some(user.mascotas_type[i]) } else { None }
-        }).collect(),
+        pet_types: (0..3)
+            .filter_map(|i| {
+                if user.mascotas_type[i] > 0 {
+                    Some(user.mascotas_type[i])
+                } else {
+                    None
+                }
+            })
+            .collect(),
         // VB6 13.3 fields
         exp_skills: user.exp_skills,
         usuarios_matados: user.usuarios_matados,
@@ -659,4 +880,3 @@ pub fn build_char_save_data(user: &UserState) -> charfile::CharSaveData {
 // =====================================================================
 // World cleanup system (ModuloLimpieza.bas)
 // =====================================================================
-
