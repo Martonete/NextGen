@@ -818,7 +818,15 @@ pub fn build_char_save_data(user: &UserState) -> charfile::CharSaveData {
         levitando: user.levitando,
         montado_body: user.montado_body,
         privileges: user.saved_privileges,
-        attributes: user.attributes,
+        // VB6 parity + anti-exploit: while an attribute buff/debuff is active
+        // (`tomo_pocion`), `attributes` holds the temporary modified values. Persist the
+        // pre-buff baseline (`attributes_backup`) instead, otherwise buffing + relogging
+        // would bake the inflated values in permanently.
+        attributes: if user.tomo_pocion {
+            user.attributes_backup
+        } else {
+            user.attributes
+        },
         skills: user.skills,
         spells: user.spells,
         inventory: inv,

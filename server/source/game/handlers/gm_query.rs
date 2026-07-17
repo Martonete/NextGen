@@ -450,14 +450,23 @@ pub(super) async fn handle_slash_mod(
     }
 
     // VB6: ReadField(1, rData, 32) and ReadField(2, rData, 32) — space-delimited
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let trimmed = args.trim();
+    let upper = trimmed.to_uppercase();
+    let mod_args = if upper == "YO" {
+        ""
+    } else if upper.starts_with("YO ") {
+        trimmed[2..].trim_start()
+    } else {
+        trimmed
+    };
+
+    let parts: Vec<&str> = mod_args.splitn(2, ' ').collect();
     if parts.len() < 2 {
         return;
     }
-    let stat = parts[0].to_uppercase();
+    let stat = normalize_mod_stat(parts[0]);
     let value_str = parts[1];
     let value: i64 = value_str.parse().unwrap_or(0);
-
     // Apply to self — /MOD only affects the invoker
     let target = conn_id;
     apply_mod_self(state, conn_id, target, &stat, value, value_str).await;
@@ -477,7 +486,7 @@ pub(super) async fn handle_slash_smod(state: &mut GameState, conn_id: Connection
         return;
     }
     let target_name = parts[0].replace('+', " ");
-    let stat = parts[1].to_uppercase();
+    let stat = normalize_mod_stat(parts[1]);
     let value: i64 = parts.get(2).and_then(|v| v.parse().ok()).unwrap_or(0);
 
     let target_upper = target_name.to_uppercase();
@@ -495,6 +504,14 @@ pub(super) async fn handle_slash_smod(state: &mut GameState, conn_id: Connection
     };
 
     apply_mod_other(state, conn_id, target_conn, &stat, value).await;
+}
+
+fn normalize_mod_stat(raw: &str) -> String {
+    match raw.trim().to_uppercase().as_str() {
+        "XP" | "EXPERIENCIA" => "EXP".to_string(),
+        "GOLD" | "GLD" => "ORO".to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// /MOD apply — self-modification only. VB6: TCP_HandleData3.bas:1725-1877
@@ -518,7 +535,8 @@ pub(super) async fn apply_mod_self(
             if value <= 0 {
                 return;
             }
-            let pkt = binary_packets::write_create_fx(char_index as i16, value as i16, 0);
+            let pkt =
+                binary_packets::write_char_particle_create(char_index as i16, value as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
         }
         "AURA" => {
@@ -561,6 +579,13 @@ pub(super) async fn apply_mod_self(
             }
             check_user_level(state, target).await;
             send_stats_exp(state, target).await;
+            if let Some(user) = state.users.get(&target) {
+                state.send_console(
+                    conn_id,
+                    &format!("EXP actual: {} | Nivel: {}", user.exp, user.level),
+                    font_index::INFO,
+                );
+            }
             state.send_msg_id(conn_id, 572, &value.to_string());
         }
         "BODY" => {
@@ -729,6 +754,61 @@ pub(super) async fn apply_mod_self(
     }
 }
 
+/// /AURA <id> - apply an aura to the current character. Use 0 to clear it.
+pub(super) async fn handle_slash_aura(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let can_use = matches!(
+        state.users.get(&conn_id),
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS
+    );
+    if !can_use {
+        return;
+    }
+
+    let aura_arg = args.trim().trim_matches('"');
+    let aura_id = match aura_arg.parse::<i32>() {
+        Ok(value) if value >= 0 => value,
+        _ => {
+            state.send_console(conn_id, "Uso: /AURA <numero>. /AURA 0 la quita.", font_index::INFO);
+            return;
+        }
+    };
+
+    let (char_index, map, x, y, aura_a, aura_w, aura_e, aura_r, aura_c) =
+        match state.users.get_mut(&conn_id) {
+            Some(user) => {
+                user.aura_a = aura_id;
+                (
+                    user.char_index.0 as i16,
+                    user.pos_map,
+                    user.pos_x,
+                    user.pos_y,
+                    user.aura_a as i16,
+                    user.aura_w as i16,
+                    user.aura_e as i16,
+                    user.aura_r as i16,
+                    user.aura_c as i16,
+                )
+            }
+            None => return,
+        };
+
+    let pkt = binary_packets::write_aura_update(
+        char_index,
+        aura_a,
+        aura_w,
+        aura_e,
+        aura_r,
+        aura_c,
+    );
+    info!(
+        "[GM] /AURA conn={:?} char={} aura={} map={} ({},{})",
+        conn_id, char_index, aura_id, map, x, y
+    );
+    state.send_data_bytes(SendTarget::ToIndex(conn_id), &pkt);
+    state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id, map, x, y }, &pkt);
+    state.send_console(conn_id, &format!("Aura aplicada: {}", aura_id), font_index::INFO);
+}
+
 /// /SMOD apply — modify another player. VB6: TCP_HandleData3.bas:2051-2163
 /// Only supports: PART, ORO, EXP, BODY, HEAD, CRI, CIU, LEVEL, CLASE, STA, MP, HP.
 /// All modifications are broadcast to admins via ||591 packets.
@@ -759,7 +839,8 @@ pub(super) async fn apply_mod_other(
             if value <= 0 {
                 return;
             }
-            let pkt = binary_packets::write_create_fx(char_index as i16, value as i16, 0);
+            let pkt =
+                binary_packets::write_char_particle_create(char_index as i16, value as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
         }
         "ORO" => {
@@ -779,6 +860,16 @@ pub(super) async fn apply_mod_other(
             }
             check_user_level(state, target).await;
             send_stats_exp(state, target).await;
+            if let Some(user) = state.users.get(&target) {
+                state.send_console(
+                    gm_conn,
+                    &format!(
+                        "{} EXP actual: {} | Nivel: {}",
+                        target_name, user.exp, user.level
+                    ),
+                    font_index::INFO,
+                );
+            }
             state.send_msg_id_to(
                 SendTarget::ToAdmins,
                 591,

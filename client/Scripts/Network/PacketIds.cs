@@ -316,6 +316,9 @@ public static class ServerPacketId
     /// Arrow — projectile arrow (FLECHI). ID 108.
     public const byte Arrow = 108;
 
+    /// SpellBeam — cosmetic light beam from caster to target on spell cast. ID 198.
+    public const byte SpellBeam = 198;
+
     /// NavigateBroadcast — broadcast navigation state for a char (NVG). ID 109.
     public const byte NavigateBroadcast = 109;
 

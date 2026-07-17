@@ -738,7 +738,8 @@ async fn resolve_ranged_attack_user(
     );
 
     // VB6: Arrow poison (60% chance if ammo has Envenena=1) — SistemaCombate.bas UserEnvenena
-    if arrow_envenena && rand_range(1, 100) <= 60 {
+    // VB6 uses `< 60` (59% effective), matching the melee weapon poison path.
+    if arrow_envenena && rand_range(1, 100) < 60 {
         let already_poisoned = state
             .users
             .get(&victim_id)

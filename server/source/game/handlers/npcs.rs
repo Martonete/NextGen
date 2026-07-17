@@ -2,7 +2,7 @@
 //! Extracted from mod.rs to reduce file size.
 
 use super::common::*;
-use super::skills::try_level_skill_with_hit;
+use super::skills::{skill_id, try_level_skill_with_hit};
 use super::{
     calc_armor_absorption_with_penetration, calcular_dano, check_user_level, do_acuchillar,
     do_apunalar, do_golpe_critico, es_pretoriano, get_ring_info, get_weapon_info, party_share_exp,
@@ -230,26 +230,34 @@ pub(super) async fn user_attack_npc(
                 .class_mod_ataque_proyectiles_e(class);
             (
                 poder_ataque_proyectil(
-                    state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0),
+                    state
+                        .users
+                        .get(&conn_id)
+                        .map(|u| u.skills[(skill_id::PROYECTILES - 1) as usize])
+                        .unwrap_or(0),
                     agility,
                     level,
                     mod_atk,
                 ),
-                5usize,
+                skill_id::PROYECTILES as usize,
             )
         } else {
             let mod_atk = state.game_data.balance.class_mod_ataque_armas_e(class);
             (
                 poder_ataque_arma(skill_armas, agility, level, mod_atk),
-                1usize,
+                skill_id::ARMAS as usize,
             )
         }
     } else {
         let mod_atk = state.game_data.balance.class_mod_ataque_wrestling_e(class);
-        let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
+        let wrestling_sk = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.skills[(skill_id::WRESTERLING - 1) as usize])
+            .unwrap_or(0);
         (
             poder_ataque_wrestling(wrestling_sk, agility, level, mod_atk),
-            20usize,
+            skill_id::WRESTERLING as usize,
         )
     };
 
@@ -439,7 +447,11 @@ pub(super) async fn user_attack_npc(
         .map(|n| n.min_hp > 0)
         .unwrap_or(false);
     if npc_still_alive {
-        let apunalar_sk = state.users.get(&conn_id).map(|u| u.skills[8]).unwrap_or(0);
+        let apunalar_sk = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.skills[(skill_id::APUNALAR - 1) as usize])
+            .unwrap_or(0);
 
         // VB6: DoApuñalar — backstab (NPC target gets 2x damage)
         if puede_apunalar(class, weapon_info.apunala, apunalar_sk) {
@@ -461,7 +473,7 @@ pub(super) async fn user_attack_npc(
                     font_index::FIGHT,
                 );
                 if let Some(u) = state.users.get_mut(&conn_id) {
-                    try_level_skill_with_hit(u, 8, true);
+                    try_level_skill_with_hit(u, skill_id::APUNALAR as usize, true);
                 }
             } else {
                 state.send_console(
@@ -470,13 +482,17 @@ pub(super) async fn user_attack_npc(
                     font_index::FIGHT,
                 );
                 if let Some(u) = state.users.get_mut(&conn_id) {
-                    try_level_skill_with_hit(u, 8, false);
+                    try_level_skill_with_hit(u, skill_id::APUNALAR as usize, false);
                 }
             }
         }
 
         // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
-        let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
+        let wrestling_sk = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.skills[(skill_id::WRESTERLING - 1) as usize])
+            .unwrap_or(0);
         if let Some(crit_dmg) =
             do_golpe_critico(class, weapon_info.obj_index, wrestling_sk, damage as i64)
         {

@@ -223,6 +223,9 @@ public class ZoneFogRenderer
 
     private void EnsureHumoPool(int count)
     {
+        if (_parent == null || _shader == null || _noiseTexture == null || _canvasTexture == null)
+            return;
+
         while (_humoSprites.Count < count)
         {
             var mat = new ShaderMaterial { Shader = _shader };
@@ -235,7 +238,7 @@ public class ZoneFogRenderer
                 Visible = false,
                 TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             };
-            _parent?.AddChild(sprite);
+            _parent.AddChild(sprite);
             _humoSprites.Add(sprite);
             _humoMaskImages.Add(null!);
             _humoMaskTextures.Add(null);
@@ -258,6 +261,7 @@ public class ZoneFogRenderer
                 _humoMaskImages[i] = img;
                 _humoMaskTextures[i] = null;
             }
+            if (img == null) continue;
             img.Fill(Colors.Black);
 
             foreach (var t in layer.Tiles)

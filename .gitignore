@@ -31,6 +31,8 @@ resources/output/
 
 # Junk — never track these
 .agents/
+.codex-backups/
+.codex-work/
 13.3-argentum/
 argentum-online-worldeditor/
 FACTION_SYSTEM_RESEARCH.md

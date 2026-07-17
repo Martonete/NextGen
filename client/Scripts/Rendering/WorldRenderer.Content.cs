@@ -39,14 +39,14 @@ public partial class WorldRenderer
             {
                 // Opt 4: use pre-computed screen X for this column
                 Vector2 tilePos = new Vector2(_screenXCache[x - _frameMinX], tileScreenY);
-                ref var tile = ref _state.MapData.Tiles[x, y];
+                if (!TryResolveTile(x, y, out var tile)) continue;
 
                 // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
                     && objGrh != tile.Layer3)
                 {
-                    // Opt 5: use pre-computed color constant
-                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: objColor);
+                    var light = GetContentLightColor(x, y);
+                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: MultiplyColor(objColor, light));
                 }
 
                 // Characters/NPCs — only within viewport bounds (no large buffer)
@@ -103,8 +103,8 @@ public partial class WorldRenderer
                         float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
                         l3Alpha = treeAlpha + (1f - treeAlpha) * t;
                     }
-                    // Opt 5: use pre-computed full-alpha color when tree is fully opaque
                     Color l3Color = l3Alpha < 1f ? new Color(treeBright, treeBright, treeBright, l3Alpha) : treeFullColor;
+                    l3Color = MultiplyColor(l3Color, GetContentLightColor(x, y));
                     DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: l3Color);
                 }
             }
@@ -149,8 +149,133 @@ public partial class WorldRenderer
             }
         }
 
+        // Spell travel beams — cosmetic crackling energy bolt from caster to target.
+        if (_state.ActiveBeams.Count > 0)
+            DrawSpellBeamsTo(canvas);
+
         // Status overlay (VB6: drawCounters — paralysis/invisibility bars + status icons)
         DrawStatusOverlayTo(canvas);
+    }
+
+    // ── Spell travel beam (crackling energy bolt caster→target) ─────────────
+    // Immediate-mode port of the multi-layer glow + electric-jitter beam:
+    //   • 3 stacked polylines (wide soft halo → colored mid → white-hot core)
+    //   • the polyline is broken into jittered segments so it reads as a
+    //     crackling arc, not a ruler-straight laser
+    //   • time phases: strike (snap in) → flash (impact overshoot) → hold → fade
+    //   • a small muzzle glow disc at the caster origin
+    private const float BeamFlashTime = 0.05f;    // fraction: brief impact overshoot on appear
+    private const float BeamFadeStart = 0.78f;    // fraction: hold, then fade over the last ~22%
+    private const float BeamSegmentLen = 16f;     // px between jitter vertices
+    private const float BeamMaxJitter = 4f;       // px perpendicular wobble (subtle, magical)
+
+    private void DrawSpellBeamsTo(CanvasItem canvas)
+    {
+        float originX = _frameUserX * TileSize - ResolutionManager.HalfRenderTilesX * TileSize - _framePixelOffsetX;
+        float originY = _frameUserY * TileSize - ResolutionManager.HalfRenderTilesY * TileSize - _framePixelOffsetY;
+        const float anchorY = -22f; // chest height above tile center
+
+        for (int i = 0; i < _state!.ActiveBeams.Count; i++)
+        {
+            var beam = _state.ActiveBeams[i];
+            if (!_state.Characters.TryGetValue(beam.CasterCharIndex, out var caster)) continue;
+            if (!_state.Characters.TryGetValue(beam.TargetCharIndex, out var target)) continue;
+
+            Vector2 from = new Vector2(
+                caster.PosX * TileSize + 16f + (float)Math.Round(caster.MoveOffsetX) - originX,
+                caster.PosY * TileSize + 16f + (float)Math.Round(caster.MoveOffsetY) - originY + anchorY);
+            Vector2 to = new Vector2(
+                target.PosX * TileSize + 16f + (float)Math.Round(target.MoveOffsetX) - originX,
+                target.PosY * TileSize + 16f + (float)Math.Round(target.MoveOffsetY) - originY + anchorY);
+
+            float life = Math.Clamp(beam.ElapsedMs / beam.DurationMs, 0f, 1f);
+
+            // --- Time phases: the bolt strikes instantly (full length at once),
+            // flashes briefly, holds for most of its life, then fades out. ---
+            float intensity; // overall alpha multiplier
+            float widthMul;  // width overshoot on the appear flash
+            if (life <= BeamFlashTime)
+            {
+                float f = life / BeamFlashTime;
+                intensity = 1f;
+                widthMul = Mathf.Lerp(1.6f, 1f, f); // brief spark on impact, then settle
+            }
+            else if (life <= BeamFadeStart)
+            {
+                intensity = 1f; widthMul = 1f;      // hold (~1s)
+            }
+            else
+            {
+                intensity = 1f - (life - BeamFadeStart) / (1f - BeamFadeStart);
+                widthMul = 1f;                       // fade out
+            }
+            if (intensity <= 0f) continue;
+
+            // --- Build the jittered polyline (full length: instant impact) ---
+            // Re-roll the wobble a few times per second so it shimmers like a live bolt.
+            int jitterSeed = beam.JitterSeed + (int)(beam.ElapsedMs / 45f);
+            var pts = BuildBeamPolyline(from, to, 1f, jitterSeed);
+            if (pts.Length < 2) continue;
+
+            // --- Thin magical bolt: faint aura halo → colored glow → white-hot core ---
+            // Very narrow, with a barely-there halo so the bright core reads as
+            // the bolt itself and the glow is just a subtle shimmer around it.
+            Color halo = new Color(0.75f, 0.85f, 1f, 0.07f * intensity); // faint arcane aura
+            Color mid = new Color(0.75f, 0.85f, 1f, 0.4f * intensity);
+            Color core = new Color(1f, 1f, 1f, intensity);
+            canvas.DrawPolyline(pts, halo, 3f * widthMul, true);
+            canvas.DrawPolyline(pts, mid, 1.3f * widthMul, true);
+            canvas.DrawPolyline(pts, core, 0.6f * widthMul, true);
+
+            // --- Small muzzle glow at the caster origin ---
+            float glow = intensity;
+            canvas.DrawCircle(from, 3.5f * widthMul, new Color(0.7f, 0.85f, 1f, 0.1f * glow));
+            canvas.DrawCircle(from, 1.8f * widthMul, new Color(0.9f, 0.95f, 1f, 0.35f * glow));
+            canvas.DrawCircle(from, 1f, new Color(1f, 1f, 1f, 0.85f * glow));
+        }
+    }
+
+    // Break the caster→target segment into vertices offset perpendicular to the
+    // line by a deterministic (per-seed) random amount, tapered to zero at both
+    // ends so the bolt still terminates exactly on caster and target.
+    private static Vector2[] BuildBeamPolyline(Vector2 from, Vector2 to, float drawT, int seed)
+    {
+        Vector2 full = to - from;
+        float len = full.Length();
+        if (len < 0.001f) return System.Array.Empty<Vector2>();
+
+        Vector2 dir = full / len;
+        Vector2 normal = new Vector2(-dir.Y, dir.X);
+        float drawnLen = len * Math.Clamp(drawT, 0f, 1f);
+        int segments = Math.Max(2, (int)MathF.Ceiling(len / BeamSegmentLen));
+
+        var rng = new System.Random(seed);
+        var pts = new System.Collections.Generic.List<Vector2>(segments + 2);
+        pts.Add(from);
+        for (int i = 1; i < segments; i++)
+        {
+            float along = len * i / segments;
+            if (along > drawnLen) break;
+            float jitter = (float)(rng.NextDouble() * 2.0 - 1.0) * BeamMaxJitter;
+            // Taper wobble to zero near both endpoints.
+            float edge = Math.Min(along, len - along) / (BeamSegmentLen * 1.5f);
+            jitter *= Math.Clamp(edge, 0f, 1f);
+            pts.Add(from + dir * along + normal * jitter);
+        }
+        pts.Add(from + dir * drawnLen);
+        return pts.ToArray();
+    }
+
+    private Color GetContentLightColor(int x, int y)
+    {
+        if (_state == null || !(_state.Config?.ShowLights ?? true))
+            return Colors.White;
+        return LightSystem.GetTileLight(_state, x, y);
+    }
+
+    private static Color MultiplyColor(Color color, Color light)
+    {
+        return new Color(color.R * light.R, color.G * light.G, color.B * light.B, color.A);
     }
 
     // Pre-computed status overlay colors
@@ -336,7 +461,7 @@ public partial class WorldRenderer
             float sy = _screenYCache[y - _frameMinY];
             for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
-                ref var tile = ref _state.MapData.Tiles[x, y];
+                if (!TryResolveTile(x, y, out var tile)) continue;
                 if (tile.Layer1 <= 0) continue;
                 if (IsWaterGrh(tile.Layer1)) continue; // skip water
 
@@ -360,7 +485,7 @@ public partial class WorldRenderer
             float sy = _screenYCache[y - _frameMinY];
             for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
-                ref var tile = ref _state.MapData.Tiles[x, y];
+                if (!TryResolveTile(x, y, out var tile)) continue;
                 if (tile.Layer2 <= 0) continue;
 
                 // Opt 4: use pre-computed screen coords
@@ -429,11 +554,11 @@ public partial class WorldRenderer
 
         foreach (var (grhIndex, frame, pos, color) in _pendingMapParticleDraws)
         {
-            CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
+            CharRenderer.DrawEffectGrh(canvas, _data, grhIndex, frame, pos, color);
         }
         foreach (var (grhIndex, frame, pos, color) in _pendingCharParticleDraws)
         {
-            CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
+            CharRenderer.DrawEffectGrh(canvas, _data, grhIndex, frame, pos, color);
         }
     }
 

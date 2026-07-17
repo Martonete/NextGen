@@ -508,7 +508,11 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
     }
 
     // VB6: SendUserAura — broadcast aura change when equipment with aura is changed
-    if aura_changed {
+    let visual_equip_changed = matches!(
+        obj_data.obj_type,
+        ObjType::Weapon | ObjType::Armor | ObjType::Shield | ObjType::Helmet | ObjType::Tool
+    );
+    if aura_changed || visual_equip_changed {
         if let Some(user) = state.users.get(&conn_id) {
             let pkt_au = crate::game::handlers::common::build_aura_binary(user);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au);

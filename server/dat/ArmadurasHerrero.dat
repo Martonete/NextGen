@@ -1,186 +1,101 @@
 [INIT]
-NumArmaduras=61
+NumArmaduras=33
 
-
-[Armadura1] ' Casco de hierro
-Index=132
-
-[Armadura2] ' Casco de hierro completo
-Index=131
-
-[Armadura3] ' Casco de plata
-Index=405
-
-[Armadura4] ' Escudo de tortuga
+[Armadura1] ' ESCUDO DE TORTUGA
 Index=404
 
-[Armadura5] ' Escudo de hierro
+[Armadura2] ' ESCUDO DE HIERRO
 Index=128
 
-[Armadura6] ' Escudo de plata
-Index=130
-
-[Armadura7] ' Escudo Real
-Index=1038
-
-[Armadura8] ' Escudo imperial
+[Armadura3] ' ESCUDO IMPERIAL
 Index=133
 
-[Armadura9] ' Escudo Legionario
-Index=1037
+[Armadura4] ' ESCUDO DE LEON
+Index=902
 
-[Armadura10] ' Escudo infernal
-Index=708
+[Armadura5] ' ESCUDO ESPECTRAL
+Index=876
 
-[Armadura11] ' Manto de Noble
-Index=484
+[Armadura6] ' ESCUDO DEL AURA
+Index=874
 
-[Armadura12] ' Cota de Mallas
+[Armadura7] ' ESCUDO CLERICAL
+Index=1084
+
+[Armadura8] ' ESCUDO NOCTURNO
+Index=873
+
+[Armadura9] ' ESCUDO GOTICO
+Index=1085
+
+[Armadura10] ' CASCO DE HIERRO
+Index=132
+
+[Armadura11] ' CASCO DE PLATA 
+Index=405
+
+[Armadura12] ' CASCO TEMPLARIO
+Index=1027
+
+[Armadura13] ' CASCO DE ACERO
+Index=900
+
+[Armadura14] ' YELMO LIRICO
+Index=1089
+
+[Armadura15] ' CASCO IMPERIAL
+Index=870
+
+[Armadura16] ' CORONA OSCURA
+Index=869
+
+[Armadura17] ' CASCO MALIGNO
+Index=1090
+
+[Armadura18] ' COTA DE MALLAS
 Index=359
 
-[Armadura13] ' Cota de Mallas (Mujer)
-Index=499
-
-[Armadura14] ' Cota de Mallas (E/G)
+[Armadura19] ' COTA DE MALLAS BAJOS
 Index=667
 
-[Armadura15] ' Cota de Mallas Larga (E/G)
-Index=975
-
-[Armadura16] ' Armadura de Campeón
-Index=903
-
-[Armadura17] ' Armadura placas
-Index=195
-
-[Armadura18] ' Armadura placas + 1
-Index=390
-
-[Armadura19] ' Armadura placas + 2
-Index=391
-
-[Armadura20] ' Armadura placas enanos
-Index=243
-
-[Armadura21] ' Armadura placas enanos + 1
-Index=392
-
-[Armadura22] ' Armadura placas enanos + 2
-Index=393
-
-[Armadura23] ' Armadura de Placas Rojas
-Index=493
-
-[Armadura24] ' Armadura de Placas Azul
-Index=489
-
-[Armadura25] ' Armadura de Placas de Gala
-Index=497
-
-[Armadura26] ' Trampa Visual (H/E/EO-M)
-Index=503
-
-[Armadura27] ' Placas Combinadas (H/E/EO-M)
-Index=904
-
-[Armadura28] ' Suprema Armadura Dorada (H/E/EO-M)
-Index=905
-
-[Armadura29] ' Armadura de las Sombras
-Index=356
-
-[Armadura30] ' Armadura de Elite (E/G)
-Index=672
-
-[Armadura31] ' Armadura Bruñida (E/G)
-Index=500
-
-[Armadura32] ' Armadura Pesada de Hierro y Bronce (E/G)
-Index=976
-
-[Armadura33] ' Cienaga
-Index=496
-
-[Armadura34] ' Escarlata
-Index=495
-
-[Armadura35] ' Dama de las tinieblas
-Index=487
-
-[Armadura36] ' Armadura Legendaria
+[Armadura20] ' ARMADURA LEGENDARIA
 Index=485
 
-[Armadura37] ' Armadura de Dragón (Hombre)
+[Armadura21] ' ARMADURA LEGENDARIA BAJOS
+Index=672
+
+[Armadura22] ' ARMADURA DE DRAGON
 Index=481
 
-[Armadura38] ' Armadura de Dragón (Mujer)
-Index=482
-
-[Armadura39] ' Armadura de Dragón (Enano/Enana)
+[Armadura23] ' ARMADURA DE DRAGON BAJOS
 Index=483
 
-[Armadura40] ' Manto del Dragón (H/E/EO)
-Index=906
+[Armadura24] ' CORAZA CLERICAL
+Index=1081
 
-[Armadura41] ' Anillo Mágico
-Index=697
+[Armadura25] ' ARMADURA NOCTURNA
+Index=889
 
-[Armadura42] ' Anillo de resistencia Mágica
+[Armadura26] ' ARMADURA NOCTURNA BAJOS
+Index=931
+
+[Armadura27] ' ESCENSIA MAGICA
 Index=698
 
-[Armadura43] ' Anillo de Disolución Mágica
-Index=699
+[Armadura28] ' ZAFIRO
+Index=1041
 
-[Armadura44] ' Armadura Real
-Index=521
+[Armadura29] ' ANILLO NEUTRO
+Index=861
 
-[Armadura45] ' Armadura Real (E/G)
-Index=492
+[Armadura30] ' Armadura de cazador
+Index=360
 
-[Armadura46] ' Armadura de Gran Sacerdote Imperial
-Index=680
+[Armadura31] ' Armadura de cazador BAJOS
+Index=648
 
-[Armadura47] ' Armadura de Gran Sacerdotisa Imperial (H/E/EO-M)
-Index=520
+[Armadura32] 'PANTANO ALTOS
+Index=921
 
-[Armadura48] ' Armadura Nobilísima
-Index=629
-
-[Armadura49] ' Armadura Nobilísima (E/G)
-Index=681
-
-[Armadura50] ' Armadura de Ilustre Caballero
-Index=691
-
-[Armadura51] ' Armadura de Ilustre Caballero (E/G)
-Index=694
-
-[Armadura52] ' Armadura de las Sombras (E/G)
-Index=854
-
-[Armadura53] ' Armadura Magna (H/E/EO-M)
-Index=693
-
-[Armadura54] ' Armadura Legionaria
-Index=369
-
-[Armadura55] ' Armadura Legionaria (E/G)
-Index=379
-
-[Armadura56] ' Armadura de Gran Sacerdote Demoníaco
-Index=684
-
-[Armadura57] ' Armadura Lóbrega
-Index=683
-
-[Armadura58] ' Armadura Lóbrega (H/E/EO-M)
-Index=635
-
-[Armadura59] ' Armadura Lóbrega (E/G)
-Index=685
-
-[Armadura60] ' Armadura de Pequeño Pandemonium (E/G)
-Index=695
-
-[Armadura61] ' Armadura Infame
-Index=701
+[Armadura33] 'Pantano Bajos
+Index=922

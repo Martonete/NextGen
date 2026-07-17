@@ -890,8 +890,10 @@ public partial class WalkModePanel : Control
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
-        var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-        var dst = new Rect2(x, y, grh.PixelWidth, grh.PixelHeight);
+        if (!TryGetSafeGrhRegion(grh, texture, out var src, out int drawW, out int drawH))
+            return;
+
+        var dst = new Rect2(x, y, drawW, drawH);
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
@@ -920,8 +922,10 @@ public partial class WalkModePanel : Control
         if (grh.TileHeight != 1f && grh.TileHeight > 0)
             drawY -= (int)(grh.TileHeight * TileSize) - TileSize;
 
-        var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-        var dst = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), grh.PixelWidth, grh.PixelHeight);
+        if (!TryGetSafeGrhRegion(grh, texture, out var src, out int drawW, out int drawH))
+            return;
+
+        var dst = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), drawW, drawH);
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
@@ -944,8 +948,10 @@ public partial class WalkModePanel : Control
         if (grh.TileHeight != 1f && grh.TileHeight > 0)
             drawY -= (int)(grh.TileHeight * TileSize) - TileSize;
 
-        var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-        var dst = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), grh.PixelWidth, grh.PixelHeight);
+        if (!TryGetSafeGrhRegion(grh, texture, out var src, out int drawW, out int drawH))
+            return;
+
+        var dst = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), drawW, drawH);
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
@@ -985,14 +991,34 @@ public partial class WalkModePanel : Control
                 var texture = Textures.GetTexture(grh.FileNum);
                 if (texture == null) continue;
 
-                var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+                if (!TryGetSafeGrhRegion(grh, texture, out var srcRect, out int drawW, out int drawH))
+                    continue;
+
                 float drawX = streamX + p.X - grh.PixelWidth / 2f;
                 float drawY = streamY + p.Y - grh.PixelHeight / 2f;
-                var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+                var destRect = new Rect2(drawX, drawY, drawW, drawH);
                 var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
                 canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
             }
         }
+    }
+
+    private static bool TryGetSafeGrhRegion(GrhData grh, Texture2D texture, out Rect2 srcRect, out int width, out int height)
+    {
+        srcRect = default;
+        width = 0;
+        height = 0;
+
+        if (grh.SX < 0 || grh.SY < 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0)
+            return false;
+
+        width = Math.Min(grh.PixelWidth, texture.GetWidth() - grh.SX);
+        height = Math.Min(grh.PixelHeight, texture.GetHeight() - grh.SY);
+        if (width <= 0 || height <= 0)
+            return false;
+
+        srcRect = new Rect2(grh.SX, grh.SY, width, height);
+        return true;
     }
 
     private static bool HasAnyLight(MapData map)

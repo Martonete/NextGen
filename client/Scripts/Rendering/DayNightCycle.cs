@@ -22,26 +22,44 @@ public partial class DayNightCycle : ColorRect
     private int _currentHour = 12; // Default: noon
     private bool _enabled = true;
 
-    // Transition speed (alpha units per second)
+    // Which reference tint we're transitioning toward — drives color, not just alpha,
+    // so evening reads as a warm dusk instead of "a bit less night-blue".
+    private Color _targetTint = DayTint;
+    private Color _currentTint = DayTint;
+
+    // Transition speed (alpha/color units per second)
     private const float TransitionSpeed = 0.15f;
 
-    // Hour-to-darkness mapping:
-    // 0-5: full night (dark), 6-8: dawn (transition), 9-17: day (bright),
-    // 18-19: dusk (transition), 20-23: night (dark)
+    // Hour-to-darkness mapping (realistic curve):
+    // 0-4: deep night, 5-7: dawn (warming up from dark), 8-16: full day,
+    // 17-19: golden hour / dusk (warm, moderately dark), 20-23: night.
     private static readonly float[] HourAlpha = new float[24]
     {
-        0.55f, 0.55f, 0.55f, 0.50f, 0.45f, 0.35f, // 00-05: night → pre-dawn
-        0.25f, 0.15f, 0.05f,                         // 06-08: dawn
-        0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f,  // 09-14: full day
-        0.00f, 0.00f, 0.00f,                         // 15-17: afternoon
-        0.10f, 0.25f,                                 // 18-19: dusk
-        0.40f, 0.50f, 0.55f, 0.55f,                  // 20-23: night
+        0.60f, 0.62f, 0.60f, 0.55f, 0.48f,           // 00-04: deep night
+        0.38f, 0.24f, 0.10f,                            // 05-07: dawn brightening
+        0.05f, 0.03f, 0.02f, 0.02f, 0.02f,             // 08-12: day (faint warm haze, not a flat 0)
+        0.02f, 0.03f, 0.05f, 0.10f,                     // 13-16: afternoon, warming toward dusk
+        0.22f, 0.34f, 0.30f,                            // 17-19: golden hour peak → fading dusk
+        0.42f, 0.50f, 0.58f, 0.60f,                     // 20-23: night falling
     };
 
-    // Night tint color (dark blue for moonlight feel)
-    private static readonly Color NightTint = new Color(0.05f, 0.05f, 0.15f, 1f);
-    // Day color (transparent — no overlay)
-    private static readonly Color DayTint = new Color(0f, 0f, 0f, 1f);
+    // Which tint applies at each hour: 0=day (warm haze), 1=evening (golden dusk), 2=night (cool violet-blue).
+    private static readonly byte[] HourTintKind = new byte[24]
+    {
+        2, 2, 2, 2, 2,       // 00-04: night
+        1, 1, 1,              // 05-07: dawn reads warm, like sunrise
+        0, 0, 0, 0, 0,       // 08-12: day
+        0, 0, 0, 1,           // 13-16: day → warming into dusk
+        1, 1, 1,              // 17-19: golden hour / dusk
+        2, 2, 2, 2,          // 20-23: night
+    };
+
+    // Night tint: deep blue with a faint violet cast, like real moonlight rather than flat black-blue.
+    private static readonly Color NightTint = new Color(0.05f, 0.06f, 0.16f, 1f);
+    // Evening tint: saturated golden-hour orange — the warm low-sun glow, not just "dim brown".
+    private static readonly Color EveningTint = new Color(0.55f, 0.24f, 0.07f, 1f);
+    // Day tint: faint warm haze (real daylight is never a perfectly neutral "no filter").
+    private static readonly Color DayTint = new Color(0.30f, 0.20f, 0.10f, 1f);
 
     public bool Enabled
     {
@@ -93,14 +111,33 @@ public partial class DayNightCycle : ColorRect
     public void SetHour(int hour)
     {
         _currentHour = Mathf.Clamp(hour, 0, 23);
-        if (_enabled)
-            _targetAlpha = HourAlpha[_currentHour];
-        else
-            _targetAlpha = 0f;
+        _targetAlpha = _enabled ? HourAlpha[_currentHour] : 0f;
+        _targetTint = HourTintKind[_currentHour] switch
+        {
+            1 => EveningTint,
+            2 => NightTint,
+            _ => DayTint,
+        };
 
         // Update IsNight flag in game state
         if (_state != null)
             _state.IsNight = _currentHour >= 20 || _currentHour < 6;
+    }
+
+    /// <summary>
+    /// Set day/evening/night directly from the server's forced-phase NOC packet
+    /// (0=day, 1=evening, 2=night). The server tracks a phase, not a live clock,
+    /// so we map each phase to a representative hour and reuse SetHour's
+    /// smooth alpha+color transition and tint selection.
+    /// </summary>
+    public void SetPhase(byte phase)
+    {
+        SetHour(phase switch
+        {
+            1 => 18, // evening
+            2 => 22, // night
+            _ => 12, // day
+        });
     }
 
     /// <summary>
@@ -112,28 +149,16 @@ public partial class DayNightCycle : ColorRect
     {
         if (_state == null || !Visible) return;
 
-        if (!_enabled)
-        {
-            if (_currentAlpha > 0.001f)
-            {
-                _currentAlpha = Mathf.MoveToward(_currentAlpha, 0f, TransitionSpeed * (float)delta);
-                Color = new Color(NightTint.R, NightTint.G, NightTint.B, _currentAlpha);
-            }
-            return;
-        }
+        float targetAlpha = _enabled ? _targetAlpha : 0f;
+        float t = TransitionSpeed * (float)delta;
 
-        // Smooth transition toward target
         float prevAlpha = _currentAlpha;
-        _currentAlpha = Mathf.MoveToward(_currentAlpha, _targetAlpha, TransitionSpeed * (float)delta);
+        _currentAlpha = Mathf.MoveToward(_currentAlpha, targetAlpha, t);
+        _currentTint = _currentTint.Lerp(_targetTint, Mathf.Clamp(t * 3f, 0f, 1f));
 
-        // Only recompute color when alpha actually changed
-        if (Math.Abs(_currentAlpha - prevAlpha) > 0.0001f)
+        if (Math.Abs(_currentAlpha - prevAlpha) > 0.0001f || _currentTint != Color)
         {
-            float nightFactor = Mathf.Clamp(_currentAlpha / 0.55f, 0f, 1f);
-            float r = Mathf.Lerp(DayTint.R, NightTint.R, nightFactor);
-            float g = Mathf.Lerp(DayTint.G, NightTint.G, nightFactor);
-            float b = Mathf.Lerp(DayTint.B, NightTint.B, nightFactor);
-            Color = new Color(r, g, b, _currentAlpha);
+            Color = new Color(_currentTint.R, _currentTint.G, _currentTint.B, _currentAlpha);
         }
     }
 }

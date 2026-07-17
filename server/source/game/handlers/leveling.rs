@@ -253,37 +253,20 @@ async fn quitar_newbie_obj(state: &mut GameState, conn_id: ConnectionId) {
         super::send_inventory_slot(state, conn_id, slot_idx).await;
     }
 
-    // VB6: If in newbie dungeon, teleport to hometown
-    let (map, x, y, hogar) = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.hogar.clone()),
+    // When leaving newbie status inside the Newbie Dungeon (map 89), teleport the
+    // player out to Tanaris (map 28, 50/50) — the fixed graduation destination.
+    const NEWBIE_DUNGEON_MAP: i32 = 89;
+    const GRADUATE_MAP: i32 = 28;
+    const GRADUATE_X: i32 = 50;
+    const GRADUATE_Y: i32 = 50;
+
+    let map = match state.users.get(&conn_id) {
+        Some(u) => u.pos_map,
         None => return,
     };
 
-    let in_newbie_zone = state
-        .game_data
-        .maps
-        .get(map as usize)
-        .and_then(|m| m.as_ref())
-        .and_then(|gm| gm.get_zone_at(x - 1, y - 1))
-        .map(|z| z.newbie)
-        .unwrap_or(false);
-
-    if in_newbie_zone {
-        let (home_map, home_x, home_y) = resolve_home_city_for_newbie(&hogar);
-        if home_map > 0 {
-            super::warp_user(state, conn_id, home_map, home_x, home_y).await;
-        }
-    }
-}
-
-/// Resolve hometown warp coordinates for QuitarNewbieObj.
-/// VB6: Lindos/Ullathorpe/Banderbill/Nix select block.
-fn resolve_home_city_for_newbie(hogar: &str) -> (i32, i32, i32) {
-    match hogar.to_uppercase().as_str() {
-        "LINDOS" => (28, 50, 50),
-        "ULLATHORPE" => (1, 50, 50),
-        "BANDERBILL" => (14, 50, 50),
-        _ => (3, 50, 50), // Default: Nix
+    if map == NEWBIE_DUNGEON_MAP {
+        super::warp_user(state, conn_id, GRADUATE_MAP, GRADUATE_X, GRADUATE_Y).await;
     }
 }
 

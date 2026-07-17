@@ -10,7 +10,7 @@ use crate::game::types::{GameState, SendTarget};
 use crate::game::world;
 use crate::net::ConnectionId;
 use crate::protocol::{binary_packets, font_index};
-use tracing::warn;
+use tracing::{info, warn};
 
 // =====================================================================
 // Helpers
@@ -143,6 +143,90 @@ fn randomize_exit(
     (exit_x, exit_y)
 }
 
+fn find_edge_exit(
+    state: &GameState,
+    map: i32,
+    old_x: i32,
+    old_y: i32,
+    new_x: i32,
+    new_y: i32,
+) -> Option<(i32, i32, i32, i32, i32)> {
+    let game_map = state
+        .game_data
+        .maps
+        .get(map as usize)
+        .and_then(|m| m.as_ref())?;
+
+    let width = game_map.tiles.width as i32;
+    let height = game_map.tiles.height as i32;
+
+    enum Side {
+        North,
+        East,
+        South,
+        West,
+    }
+
+    let walk_min_x = 9;
+    let walk_max_x = width - 8;
+    let walk_min_y = 7;
+    let walk_max_y = height - 6;
+
+    let side = if new_y < walk_min_y && new_x >= walk_min_x && new_x <= walk_max_x {
+        Side::North
+    } else if new_y > walk_max_y && new_x >= walk_min_x && new_x <= walk_max_x {
+        Side::South
+    } else if new_x < walk_min_x && new_y >= walk_min_y && new_y <= walk_max_y {
+        Side::West
+    } else if new_x > walk_max_x && new_y >= walk_min_y && new_y <= walk_max_y {
+        Side::East
+    } else {
+        return None;
+    };
+
+    let mut best: Option<(i32, i32, i32, i32, i32, i32)> = None;
+
+    for y0 in 0..game_map.tiles.height {
+        for x0 in 0..game_map.tiles.width {
+            let Some(tile) = game_map.tiles.get(x0, y0) else {
+                continue;
+            };
+            let Some(exit) = tile.tile_exit else {
+                continue;
+            };
+
+            let x = x0 as i32 + 1;
+            let y = y0 as i32 + 1;
+            let on_side = match side {
+                Side::North => y <= 10,
+                Side::South => y >= height - 9,
+                Side::West => x <= 10,
+                Side::East => x >= width - 9,
+            };
+            if !on_side {
+                continue;
+            }
+
+            let distance = (x - old_x).abs() + (y - old_y).abs();
+            match best {
+                Some((best_distance, ..)) if best_distance <= distance => {}
+                _ => {
+                    best = Some((
+                        distance,
+                        x,
+                        y,
+                        exit.map as i32,
+                        exit.x as i32,
+                        exit.y as i32,
+                    ));
+                }
+            }
+        }
+    }
+
+    best.map(|(_, sx, sy, dm, dx, dy)| (sx, sy, dm, dx, dy))
+}
+
 // =====================================================================
 // In-game handlers
 // =====================================================================
@@ -178,6 +262,11 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         resting,
         traveling,
     ) = user_data;
+
+    info!(
+        "[MOVE] Walk recv #{}: map {} ({},{}) heading {}",
+        conn_id, map, old_x, old_y, heading
+    );
 
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
     if paralyzed {
@@ -317,6 +406,55 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
     let (dx, dy) = world::heading_to_offset(heading);
     let new_x = old_x + dx;
     let new_y = old_y + dy;
+    let (map_width, map_height) = state.grid_dimensions(map);
+    let out_of_bounds = new_x < 1 || new_y < 1 || new_x > map_width || new_y > map_height;
+    if out_of_bounds {
+        info!(
+            "[MOVE] Out-of-bounds walk #{}: map {} ({},{}) heading {} -> ({},{}) bounds {}x{}",
+            conn_id, map, old_x, old_y, heading, new_x, new_y, map_width, map_height
+        );
+    }
+
+    if let Some((src_x, src_y, exit_map, exit_x, exit_y)) =
+        find_edge_exit(state, map, old_x, old_y, new_x, new_y)
+    {
+        info!(
+            "[MOVE] Border exit #{}: map {} ({},{}) via ({},{}) -> map {} ({},{})",
+            conn_id, map, old_x, old_y, src_x, src_y, exit_map, exit_x, exit_y
+        );
+
+        let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
+        let exit_map_restricts_dead = state
+            .game_data
+            .maps
+            .get(exit_map as usize)
+            .and_then(|m| m.as_ref())
+            .map(|m| m.info.on_death_go_to.0 != 0)
+            .unwrap_or(false);
+        if is_dead && exit_map_restricts_dead {
+            state.send_console(
+                conn_id,
+                "Solo se permite entrar al mapa a los personajes vivos.",
+                crate::protocol::font_index::INFO,
+            );
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_pos_update(old_x as i16, old_y as i16),
+            );
+            return;
+        }
+
+        let (dest_x, dest_y) = randomize_exit(state, exit_map, exit_x, exit_y, 0);
+        if check_teleport_restrictions(state, conn_id, exit_map, dest_x, dest_y) {
+            warp_user(state, conn_id, exit_map, dest_x, dest_y).await;
+        } else {
+            state.send_bytes(
+                conn_id,
+                &binary_packets::write_pos_update(old_x as i16, old_y as i16),
+            );
+        }
+        return;
+    }
 
     // Check map bounds and blocked
     // VB6 LegalPos: When navigating (PuedeAgua=True), only water tiles are legal.
@@ -342,8 +480,53 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
     // Walk movement — don't log (too frequent)
 
     if !legal {
+        if let Some((src_x, src_y, exit_map, exit_x, exit_y)) =
+            find_edge_exit(state, map, old_x, old_y, new_x, new_y)
+        {
+            info!(
+                "[MOVE] Edge exit #{}: map {} ({},{}) via ({},{}) -> map {} ({},{})",
+                conn_id, map, old_x, old_y, src_x, src_y, exit_map, exit_x, exit_y
+            );
+
+            let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
+            let exit_map_restricts_dead = state
+                .game_data
+                .maps
+                .get(exit_map as usize)
+                .and_then(|m| m.as_ref())
+                .map(|m| m.info.on_death_go_to.0 != 0)
+                .unwrap_or(false);
+            if is_dead && exit_map_restricts_dead {
+                state.send_console(
+                    conn_id,
+                    "Solo se permite entrar al mapa a los personajes vivos.",
+                    crate::protocol::font_index::INFO,
+                );
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_pos_update(old_x as i16, old_y as i16),
+                );
+                return;
+            }
+
+            let (dest_x, dest_y) = randomize_exit(state, exit_map, exit_x, exit_y, 0);
+            if check_teleport_restrictions(state, conn_id, exit_map, dest_x, dest_y) {
+                warp_user(state, conn_id, exit_map, dest_x, dest_y).await;
+            } else {
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_pos_update(old_x as i16, old_y as i16),
+                );
+            }
+            return;
+        }
+
         // Check if there's a map exit at the target tile
         if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
+            info!(
+                "[MOVE] Tile exit #{}: map {} ({},{}) -> map {} ({},{})",
+                conn_id, map, new_x, new_y, exit_map, exit_x, exit_y
+            );
             // VB6 M22: dead players cannot enter maps that have OnDeathGoTo defined
             let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
             let exit_map_restricts_dead = state
@@ -536,6 +719,10 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
 
     // VB6 DoTileEvents: check tile exit AFTER successful movement (map transitions)
     if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
+        info!(
+            "[MOVE] Tile exit #{}: map {} ({},{}) -> map {} ({},{})",
+            conn_id, map, new_x, new_y, exit_map, exit_x, exit_y
+        );
         // VB6 M22: dead players cannot enter maps that have OnDeathGoTo defined
         let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
         let exit_map_restricts_dead = state
@@ -602,6 +789,44 @@ pub(super) async fn handle_change_heading(
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.heading = heading;
+    }
+
+    let (dx, dy) = world::heading_to_offset(heading);
+    let new_x = x + dx;
+    let new_y = y + dy;
+    if let Some((src_x, src_y, exit_map, exit_x, exit_y)) =
+        find_edge_exit(state, map, x, y, new_x, new_y)
+    {
+        info!(
+            "[MOVE] Heading border exit #{}: map {} ({},{}) via ({},{}) -> map {} ({},{})",
+            conn_id, map, x, y, src_x, src_y, exit_map, exit_x, exit_y
+        );
+
+        let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
+        let exit_map_restricts_dead = state
+            .game_data
+            .maps
+            .get(exit_map as usize)
+            .and_then(|m| m.as_ref())
+            .map(|m| m.info.on_death_go_to.0 != 0)
+            .unwrap_or(false);
+        if is_dead && exit_map_restricts_dead {
+            state.send_console(
+                conn_id,
+                "Solo se permite entrar al mapa a los personajes vivos.",
+                crate::protocol::font_index::INFO,
+            );
+            state.send_bytes(conn_id, &binary_packets::write_pos_update(x as i16, y as i16));
+            return;
+        }
+
+        let (dest_x, dest_y) = randomize_exit(state, exit_map, exit_x, exit_y, 0);
+        if check_teleport_restrictions(state, conn_id, exit_map, dest_x, dest_y) {
+            warp_user(state, conn_id, exit_map, dest_x, dest_y).await;
+        } else {
+            state.send_bytes(conn_id, &binary_packets::write_pos_update(x as i16, y as i16));
+        }
+        return;
     }
 
     // Broadcast heading change to area (VB6: |H<charIndex>,<heading>)

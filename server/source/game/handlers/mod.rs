@@ -477,9 +477,8 @@ async fn handle_one_packet(
             handle_uk(state, conn_id, skill_id as i32).await;
         }
         ClientPacketID::SkillSet => {
-            // Read 20 bytes into array, pad remaining with 0
             let mut increments = [0i32; 22];
-            for i in 0..20 {
+            for i in 0..22 {
                 increments[i] = bq.read_byte().unwrap_or(0) as i32;
             }
             handle_skse(state, conn_id, &increments).await;

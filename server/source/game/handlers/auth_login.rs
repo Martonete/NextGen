@@ -41,6 +41,20 @@ pub(crate) async fn handle_hardware_check(
 const MAX_AUTH_FAILURES: u32 = 5;
 const AUTH_LOCKOUT_SECS: u64 = 300;
 
+fn is_valid_map_position(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+    if map <= 0 || x <= 0 || y <= 0 {
+        return false;
+    }
+
+    state
+        .game_data
+        .maps
+        .get(map as usize)
+        .and_then(|m| m.as_ref())
+        .map(|m| x <= m.tiles.width as i32 && y <= m.tiles.height as i32)
+        .unwrap_or(false)
+}
+
 /// Result of a rate-limit check on an IP address.
 enum RateLimitResult {
     /// Request is allowed (no record or count below threshold).
@@ -706,12 +720,14 @@ pub(crate) async fn connect_user(
         } else {
             state.config.start_y
         };
-        if state.world.grid(saved_map).is_some() {
+        if is_valid_map_position(state, saved_map, saved_x, saved_y) {
             (saved_map, saved_x, saved_y)
         } else {
             tracing::warn!(
-                "Map {} does not exist, sending {} to start position",
+                "Invalid saved position {} ({},{}), sending {} to start position",
                 saved_map,
+                saved_x,
+                saved_y,
                 char_name
             );
             (
@@ -1210,7 +1226,12 @@ pub(crate) async fn connect_user(
         .collect();
     state.send_bytes(
         conn_id,
-        &binary_packets::write_send_skills(&char_data.skills, &char_data.exp_skills, &elu_skills),
+        &binary_packets::write_send_skills(
+            &char_data.skills,
+            &char_data.exp_skills,
+            &elu_skills,
+            char_data.skill_pts_libres,
+        ),
     );
 
     // --- PHASE 10: Stop state (VB6 line 1730) ---
@@ -1387,9 +1408,9 @@ pub(crate) async fn connect_user(
         state.send_bytes(conn_id, &binary_packets::write_rain_toggle());
     }
 
-    // --- PHASE 16b: Night state (VB6 M19: send NOC packet so client reflects day/night on login) ---
-    if state.forced_night {
-        state.send_bytes(conn_id, &binary_packets::write_send_night(true));
+    // --- PHASE 16b: Day phase state (VB6 M19: send NOC packet so client reflects day/night on login) ---
+    if state.forced_day_phase != crate::game::types::DayPhase::Day {
+        state.send_bytes(conn_id, &binary_packets::write_send_night(state.forced_day_phase));
     }
 
     info!(

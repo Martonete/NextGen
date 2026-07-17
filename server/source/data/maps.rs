@@ -3,6 +3,7 @@
 // Binary .map format (legacy):
 //   Header: 273 bytes (MapVersion(2) + Desc(255) + CRC(4) + MagicWord(4) + Reserved(8))
 //   Tiles: 100x100 grid, variable-length per tile using ByFlags bitfield.
+//   Graphic layers are unsigned Int16 in the original VB6 format.
 //
 // Binary .aomap format (extended):
 //   Header: 16 bytes (Magic(6) + Version(2) + Width(2) + Height(2) + Flags(4))
@@ -24,7 +25,7 @@ use std::path::Path;
 
 pub const MAP_WIDTH: usize = 100;
 pub const MAP_HEIGHT: usize = 100;
-pub const MAX_MAPS: usize = 200; // Buffer above the 180-193 actual maps
+pub const MAX_MAPS: usize = 290;
 
 /// Trigger type for map tiles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -316,8 +317,20 @@ fn read_u8(cursor: &mut Cursor<&[u8]>) -> io::Result<u8> {
     Ok(buf[0])
 }
 
+fn read_graphic_layer(cursor: &mut Cursor<&[u8]>, int32_layers: bool) -> io::Result<i32> {
+    if int32_layers {
+        read_i32(cursor)
+    } else {
+        Ok(read_u16(cursor)? as i32)
+    }
+}
+
 /// Read tiles from cursor using the ByFlags encoding shared by .map and .aomap formats.
-fn read_map_tiles(cursor: &mut Cursor<&[u8]>, tiles: &mut MapTiles) -> Result<(), String> {
+fn read_map_tiles(
+    cursor: &mut Cursor<&[u8]>,
+    tiles: &mut MapTiles,
+    int32_layers: bool,
+) -> Result<(), String> {
     for y in 0..tiles.height {
         for x in 0..tiles.width {
             let by_flags = read_u8(cursor)
@@ -331,24 +344,24 @@ fn read_map_tiles(cursor: &mut Cursor<&[u8]>, tiles: &mut MapTiles) -> Result<()
             tile.blocked = (by_flags & 0x01) != 0;
 
             // Graphic[1] always present
-            tile.graphic[0] = read_i32(cursor)
+            tile.graphic[0] = read_graphic_layer(cursor, int32_layers)
                 .map_err(|e| format!("Tile ({},{}) graphic[1]: {}", x + 1, y + 1, e))?;
 
             // Bit 1: Graphic[2]
             if (by_flags & 0x02) != 0 {
-                tile.graphic[1] = read_i32(cursor)
+                tile.graphic[1] = read_graphic_layer(cursor, int32_layers)
                     .map_err(|e| format!("Tile ({},{}) graphic[2]: {}", x + 1, y + 1, e))?;
             }
 
             // Bit 2: Graphic[3]
             if (by_flags & 0x04) != 0 {
-                tile.graphic[2] = read_i32(cursor)
+                tile.graphic[2] = read_graphic_layer(cursor, int32_layers)
                     .map_err(|e| format!("Tile ({},{}) graphic[3]: {}", x + 1, y + 1, e))?;
             }
 
             // Bit 3: Graphic[4]
             if (by_flags & 0x08) != 0 {
-                tile.graphic[3] = read_i32(cursor)
+                tile.graphic[3] = read_graphic_layer(cursor, int32_layers)
                     .map_err(|e| format!("Tile ({},{}) graphic[4]: {}", x + 1, y + 1, e))?;
             }
 
@@ -396,7 +409,7 @@ fn load_map_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
         .read_exact(&mut header)
         .map_err(|e| format!("Failed to read .map header: {}", e))?;
 
-    read_map_tiles(&mut cursor, tiles)
+    read_map_tiles(&mut cursor, tiles, false)
 }
 
 /// Load .aomap binary file (extended format with dimensions in header).
@@ -463,7 +476,7 @@ fn load_aomap_file(path: &Path) -> Result<(MapTiles, i32), String> {
 
     // Create tiles and read using shared ByFlags encoding
     let mut tiles = MapTiles::new(width, height);
-    read_map_tiles(&mut cursor, &mut tiles)?;
+    read_map_tiles(&mut cursor, &mut tiles, true)?;
 
     Ok((tiles, flags))
 }
@@ -500,6 +513,8 @@ fn load_inf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
                 let ey = read_i16(&mut cursor)
                     .map_err(|e| format!("Inf tile ({},{}) exit y: {}", x + 1, y + 1, e))?;
                 tile.tile_exit = Some(WorldPos { map, x: ex, y: ey });
+                tile.blocked = false;
+                tile.original_blocked = false;
             }
 
             // Bit 1: NPC index (2 bytes)
@@ -567,6 +582,8 @@ fn load_aoinf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
                 let ex = read_i16(&mut cursor).map_err(|e| format!("aoinf exit x: {}", e))?;
                 let ey = read_i16(&mut cursor).map_err(|e| format!("aoinf exit y: {}", e))?;
                 tile.tile_exit = Some(WorldPos { map, x: ex, y: ey });
+                tile.blocked = false;
+                tile.original_blocked = false;
             }
             if (by_flags & 0x02) != 0 {
                 tile.npc_index = read_i16(&mut cursor).map_err(|e| format!("aoinf npc: {}", e))?;
@@ -716,6 +733,71 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
     Ok(game_map)
 }
 
+fn parse_world_pos(raw: &str) -> Option<(i32, i32, i32)> {
+    let parts: Vec<i32> = raw
+        .split('-')
+        .filter_map(|part| part.trim().parse::<i32>().ok())
+        .collect();
+    if parts.len() >= 3 {
+        Some((parts[0], parts[1], parts[2]))
+    } else {
+        None
+    }
+}
+
+fn apply_local_exits(base: &Path, maps: &mut [Option<GameMap>]) -> usize {
+    let path = base.join("dat").join("local_exits.ini");
+    let ini = match IniFile::load(&path) {
+        Ok(ini) => ini,
+        Err(_) => return 0,
+    };
+
+    let mut applied = 0;
+    for section in ini.section_names() {
+        if ini
+            .get(&section, "Enabled")
+            .map(|v| v.trim() == "0")
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
+        let source = match ini.get(&section, "Source").and_then(|v| parse_world_pos(&v)) {
+            Some(pos) => pos,
+            None => continue,
+        };
+        let dest = match ini.get(&section, "Dest").and_then(|v| parse_world_pos(&v)) {
+            Some(pos) => pos,
+            None => continue,
+        };
+
+        let (src_map, src_x, src_y) = source;
+        let (dest_map, dest_x, dest_y) = dest;
+        if src_map <= 0 || dest_map <= 0 || src_x <= 0 || src_y <= 0 || dest_x <= 0 || dest_y <= 0
+        {
+            continue;
+        }
+
+        if let Some(Some(game_map)) = maps.get_mut(src_map as usize) {
+            if let Some(tile) = game_map
+                .tiles
+                .get_mut((src_x - 1) as usize, (src_y - 1) as usize)
+            {
+                tile.tile_exit = Some(WorldPos {
+                    map: dest_map as i16,
+                    x: dest_x as i16,
+                    y: dest_y as i16,
+                });
+                tile.blocked = false;
+                tile.original_blocked = false;
+                applied += 1;
+            }
+        }
+    }
+
+    applied
+}
+
 /// Load all maps from the maps/ directory.
 /// Returns a Vec where index 0 is unused (maps are 1-indexed).
 pub fn load_all_maps(base: &Path) -> Result<Vec<Option<GameMap>>, String> {
@@ -760,6 +842,8 @@ pub fn load_all_maps(base: &Path) -> Result<Vec<Option<GameMap>>, String> {
         }
     }
 
+    let local_exits = apply_local_exits(base, &mut maps);
+
     // Count tile exits across all loaded maps for diagnostics
     let mut total_exits = 0;
     for map_opt in &maps {
@@ -776,11 +860,12 @@ pub fn load_all_maps(base: &Path) -> Result<Vec<Option<GameMap>>, String> {
         }
     }
     tracing::info!(
-        "Maps loaded: {} OK, {} failed, {} total slots, {} tile exits found",
+        "Maps loaded: {} OK, {} failed, {} total slots, {} tile exits found ({} local)",
         loaded,
         failed,
         num_maps,
-        total_exits
+        total_exits,
+        local_exits
     );
     Ok(maps)
 }

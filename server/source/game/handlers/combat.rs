@@ -13,7 +13,7 @@ use combat_pvp::*;
 
 use super::common::*;
 use super::npcs::fire_elemental_react;
-use super::skills::{try_desarmar, try_level_skill, try_level_skill_with_hit};
+use super::skills::{skill_id, try_desarmar, try_level_skill, try_level_skill_with_hit};
 use super::{check_user_level, send_full_inventory, user_attack_npc, warp_user};
 use crate::game::class_race::PlayerClass;
 use crate::game::constants::*;
@@ -442,12 +442,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             u.attributes[1], // Agility
             u.min_hit,
             u.max_hit,
-            u.skills[1],  // SK2 = Armas (combat skill)
-            u.skills[5],  // SK6 = Proyectiles
-            u.skills[3],  // SK4 = Tacticas
-            u.skills[4],  // SK5 = Defensa
-            u.skills[20], // SK21 = Wrestling
-            u.skills[8],  // SK9 = Apuñalar
+            u.skills[(skill_id::ARMAS - 1) as usize],
+            u.skills[(skill_id::PROYECTILES - 1) as usize],
+            u.skills[(skill_id::TACTICAS - 1) as usize],
+            u.skills[(skill_id::DEFENSA - 1) as usize],
+            u.skills[(skill_id::WRESTERLING - 1) as usize],
+            u.skills[(skill_id::APUNALAR - 1) as usize],
             u.char_name.clone(),
             u.class,
         ),
@@ -747,20 +747,20 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     .class_mod_ataque_proyectiles_e(class);
                 (
                     poder_ataque_proyectil(skill_proyectiles, agility, level, mod_atk),
-                    5usize,
+                    skill_id::PROYECTILES as usize,
                 ) // eSkill.Proyectiles
             } else {
                 let mod_atk = state.game_data.balance.class_mod_ataque_armas_e(class);
                 (
                     poder_ataque_arma(skill_armas, agility, level, mod_atk),
-                    1usize,
+                    skill_id::ARMAS as usize,
                 ) // eSkill.Armas
             }
         } else {
             let mod_atk = state.game_data.balance.class_mod_ataque_wrestling_e(class);
             (
                 poder_ataque_wrestling(skill_wrestling, agility, level, mod_atk),
-                20usize,
+                skill_id::WRESTERLING as usize,
             ) // eSkill.Wrestling
         };
 
@@ -914,7 +914,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     (
                         ring_idx == GUANTE_HURTO,
                         u.equip.weapon == 0,
-                        u.skills[20],
+                        u.skills[(skill_id::WRESTERLING - 1) as usize],
                         u.level,
                         u.class == PlayerClass::Bandido,
                     )
@@ -1114,16 +1114,16 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             if weapon.obj_index > 0 {
                 if weapon.is_proyectil {
                     if let Some(u) = state.users.get_mut(&conn_id) {
-                        try_level_skill_with_hit(u, 5, true); // Proyectiles
+                        try_level_skill_with_hit(u, skill_id::PROYECTILES as usize, true);
                     }
                 } else {
                     if let Some(u) = state.users.get_mut(&conn_id) {
-                        try_level_skill_with_hit(u, 1, true); // Armas
+                        try_level_skill_with_hit(u, skill_id::ARMAS as usize, true);
                     }
                 }
             } else {
                 if let Some(u) = state.users.get_mut(&conn_id) {
-                    try_level_skill_with_hit(u, 20, true); // Wrestling
+                    try_level_skill_with_hit(u, skill_id::WRESTERLING as usize, true);
                 }
             }
 
@@ -1144,7 +1144,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                         font_index::FIGHT,
                     );
                     if let Some(u) = state.users.get_mut(&conn_id) {
-                        try_level_skill_with_hit(u, 8, true); // Apuñalar
+                        try_level_skill_with_hit(u, skill_id::APUNALAR as usize, true);
                     }
                 } else {
                     state.send_console(
@@ -1153,7 +1153,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                         font_index::FIGHT,
                     );
                     if let Some(u) = state.users.get_mut(&conn_id) {
-                        try_level_skill_with_hit(u, 8, false);
+                        try_level_skill_with_hit(u, skill_id::APUNALAR as usize, false);
                     }
                 }
             }
@@ -1168,7 +1168,11 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 // Skip remaining special attacks (crit + cut) — victim is already dead
             } else {
                 // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
-                let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
+                let wrestling_sk = state
+                    .users
+                    .get(&conn_id)
+                    .map(|u| u.skills[(skill_id::WRESTERLING - 1) as usize])
+                    .unwrap_or(0);
                 if let Some(crit_dmg) =
                     do_golpe_critico(class, weapon.obj_index, wrestling_sk, damage)
                 {
@@ -1264,7 +1268,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             return;
         }
 
-        // Check for NPC on target tile
+        // VB6 UsuarioAtaca: Ctrl/melee attacks only the tile in front of the character.
         let target_npc = state
             .world
             .grid(map)

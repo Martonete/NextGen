@@ -458,16 +458,18 @@ public partial class TilePalette : VBoxContainer
             if (fIdx > 0 && fIdx < Grhs.Length) grh = Grhs[fIdx];
         }
 
-        if (grh.FileNum <= 0) return null;
+        if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) return null;
         var srcTex = Textures.GetTexture(grh.FileNum);
         if (srcTex == null) return null;
+
+        int cropW = Math.Min(grh.PixelWidth, srcTex.GetWidth() - grh.SX);
+        int cropH = Math.Min(grh.PixelHeight, srcTex.GetHeight() - grh.SY);
+        if (grh.SX < 0 || grh.SY < 0 || cropW <= 0 || cropH <= 0) return null;
 
         // Use AtlasTexture: GPU-side crop, NO GetImage() call, instant
         var atlas = new AtlasTexture();
         atlas.Atlas = srcTex;
-        atlas.Region = new Rect2(grh.SX, grh.SY,
-            Math.Min(grh.PixelWidth, srcTex.GetWidth() - grh.SX),
-            Math.Min(grh.PixelHeight, srcTex.GetHeight() - grh.SY));
+        atlas.Region = new Rect2(grh.SX, grh.SY, cropW, cropH);
         return atlas;
     }
 }

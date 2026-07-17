@@ -28,6 +28,9 @@ public partial class Main
         // Always hide delete confirm dialog on screen change
         _charCreateScreen?.HideDeleteConfirm();
 
+        // Live world backdrop sits behind every menu screen, off once in game.
+        _loginBackdrop?.SetActive(newScreen != Screen.Game);
+
         switch (newScreen)
         {
             case Screen.Login:
@@ -216,6 +219,9 @@ public partial class Main
         if (_dayNightCycle != null)
             _dayNightCycle.Enabled = cfg.ShowDayNight;
 
+        // Apply fog intensity (rebuild the overlay texture with the new alpha)
+        _worldRenderer?.RebuildFogOverlay();
+
         // Apply minimap visibility + resize console accordingly
         if (_minimapPanel != null)
         {
@@ -282,26 +288,14 @@ public partial class Main
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();
 
-        // If disconnect from CharCreate or CharSelect, go back to CharSelect so user can retry without re-logging
-        if (previousScreen == Screen.CharCreate || previousScreen == Screen.CharSelect)
-        {
-            _state.CurrentScreen = Screen.CharSelect;
-            HandleScreenChange(Screen.CharSelect);
-            _lastScreen = Screen.CharSelect;
-            if (!string.IsNullOrEmpty(serverError))
-                _dialogManager?.ShowMensaje(serverError, GetViewportRect().Size);
-        }
-        else
-        {
-            // Switch to login screen with error message
-            _state.CurrentScreen = Screen.Login;
-            HandleScreenChange(Screen.Login);
-            _lastScreen = Screen.Login;
-            // Prefer server error message (e.g. "Password incorrecto") over generic disconnect
-            string displayMsg = !string.IsNullOrEmpty(serverError) ? serverError : message;
-            if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = displayMsg;
-            if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
-        }
+        // Once TCP is gone, the account session is gone too. CharSelect/CharCreate cannot retry safely
+        // without logging in again because the server keeps account_id on the connection.
+        _state.CurrentScreen = Screen.Login;
+        HandleScreenChange(Screen.Login);
+        _lastScreen = Screen.Login;
+        string displayMsg = !string.IsNullOrEmpty(serverError) ? serverError : message;
+        if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = displayMsg;
+        if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
 
         // VB6: frmConnect.MousePointer = 1 (normal cursor)
         Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
@@ -386,6 +380,10 @@ public partial class Main
         _state.ShieldEqpSlot = 0; _state.HelmEqpSlot = 0;
         _state.WeaponLabel = "0/0"; _state.ArmourLabel = "0/0";
         _state.ShieldLabel = "0/0"; _state.HelmLabel = "0/0";
+
+        _state.FreeSkillPoints = 0;
+        Array.Clear(_state.Skills, 0, _state.Skills.Length);
+        Array.Clear(_state.SkillPct, 0, _state.SkillPct.Length);
 
         // Inventory & spells
         for (int i = 0; i < 25; i++)
@@ -551,7 +549,7 @@ public partial class Main
             _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
             _gameData.Textures?.ResetPreload(); // Allow re-evaluation of preload state on map change
 
-            // Load particles and lights embedded in tile data (byFlags bits 5/6)
+            // Load particles and lights from the map plus TS AO's hard-coded map effect table.
             LoadTileParticlesAndLights(_state);
 
             // Pre-compute spatial maps for O(1) lookups during rendering
@@ -569,14 +567,26 @@ public partial class Main
     private void LoadTileParticlesAndLights(GameState state)
     {
         if (state.MapData == null) return;
+
+        state.MapParticles.Clear();
+        state.MapLights.Clear();
+        state.LightsDirty = true;
+
         var map = state.MapData;
+        int tileParticles = 0;
+        int tileLights = 0;
+
         for (int y = 1; y <= map.Height; y++)
         {
             for (int x = 1; x <= map.Width; x++)
             {
                 ref var tile = ref map.Tiles[x, y];
                 if (tile.ParticleGroup > 0)
-                    ParticleSystem.CreateMapStream(state, tile.ParticleGroup, x, y);
+                {
+                    if (ParticleSystem.CreateMapStream(state, tile.ParticleGroup, x, y) != null)
+                        tileParticles++;
+                }
+
                 if (tile.LightRange > 0)
                 {
                     state.MapLights.Add(new MapLight
@@ -585,9 +595,23 @@ public partial class Main
                         R = (byte)tile.LightR, G = (byte)tile.LightG, B = (byte)tile.LightB,
                         Active = true
                     });
-                    state.LightsDirty = true;
+                    tileLights++;
                 }
             }
+        }
+
+        var scripted = _resources != null
+            ? MapEffectsLoader.Apply(_resources, state, state.CurrentMap)
+            : (particles: 0, lights: 0);
+
+        // Advanced lights authored in the World Editor (Maps/MapaN.aolight).
+        int advancedLights = _resources != null
+            ? Data.MapAdvancedLightsLoader.Apply(_resources, state, state.CurrentMap)
+            : 0;
+
+        if (tileParticles > 0 || tileLights > 0 || scripted.particles > 0 || scripted.lights > 0 || advancedLights > 0)
+        {
+            GD.Print($"[MAIN] Map effects {_state.CurrentMap}: tile particles={tileParticles}, tile lights={tileLights}, scripted particles={scripted.particles}, scripted lights={scripted.lights}, advanced lights={advancedLights}");
         }
     }
 

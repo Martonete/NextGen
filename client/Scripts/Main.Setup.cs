@@ -214,8 +214,7 @@ public partial class Main
         mapaButton.Pressed += () =>
         {
             _soundManager?.PlayNamedSound("click.wav");
-            _minimapPanel?.Toggle();
-            UpdateConsoleWidth();
+            _worldMapPanel?.Open();
         };
         _mapaButton = mapaButton as TextureButton;
 
@@ -374,6 +373,13 @@ public partial class Main
         _spawnListPanel = AddPanel<SpawnListPanel>(new Vector2(vpLeft + (vpW - 320) / 2, 80));
         _spawnListPanel.Init(_state, null);
         _gmPanel.OnOpenSpawnListRequested += () => _spawnListPanel?.Open();
+
+        _auraViewerPanel = AddPanel<AuraViewerPanel>(new Vector2(vpLeft + (vpW - 390) / 2, 70));
+        _auraViewerPanel.Init(_gameData, null);
+
+        _worldMapPanel = AddPanel<WorldMapPanel>(new Vector2(vpLeft + (vpW - 760) / 2, vpTop + (vpH - 560) / 2));
+        if (_resources != null)
+            _worldMapPanel.Init(_resources);
 
         _sosPanel = AddPanel<SosPanel>(new Vector2(vpLeft + (vpW - 360) / 2, 60));
         _sosPanel.Init(_state, null);

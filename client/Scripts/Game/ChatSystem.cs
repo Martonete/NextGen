@@ -84,6 +84,17 @@ public class ChatSystem
 
     public void OnChatSubmitted(string text)
     {
+        if (text.Contains('\n') || text.Contains('\r'))
+        {
+            foreach (string line in text.Replace('\r', '\n').Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                OnChatSubmitted(line);
+            }
+            return;
+        }
+
+        text = text.Trim();
+
         if (text.StartsWith("/"))
         {
             if (text.Equals("/PING", StringComparison.OrdinalIgnoreCase))
@@ -117,6 +128,18 @@ public class ChatSystem
             else if (text.Equals("/SOSPANEL", StringComparison.OrdinalIgnoreCase))
             {
                 OnSosPanelToggle?.Invoke();
+                HideChat();
+                return;
+            }
+            else if (text.Equals("/AURAS", StringComparison.OrdinalIgnoreCase))
+            {
+                OnSlashCommand?.Invoke(text);
+                HideChat();
+                return;
+            }
+            else if (text.Equals("/MAPA", StringComparison.OrdinalIgnoreCase))
+            {
+                OnSlashCommand?.Invoke(text);
                 HideChat();
                 return;
             }

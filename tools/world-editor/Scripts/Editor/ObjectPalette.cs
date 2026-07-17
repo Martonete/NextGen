@@ -260,9 +260,27 @@ public partial class ObjectPalette : VBoxContainer
         var baseTex = Textures.GetTexture(grh.FileNum);
         if (baseTex == null) return null;
 
+        if (!TryGetSafeGrhRegion(grh, baseTex, out var region))
+            return null;
+
         var atlas = new AtlasTexture();
         atlas.Atlas = baseTex;
-        atlas.Region = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+        atlas.Region = region;
         return atlas;
+    }
+
+    private static bool TryGetSafeGrhRegion(GrhData grh, Texture2D texture, out Rect2 region)
+    {
+        region = default;
+        if (grh.SX < 0 || grh.SY < 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0)
+            return false;
+
+        int width = Math.Min(grh.PixelWidth, texture.GetWidth() - grh.SX);
+        int height = Math.Min(grh.PixelHeight, texture.GetHeight() - grh.SY);
+        if (width <= 0 || height <= 0)
+            return false;
+
+        region = new Rect2(grh.SX, grh.SY, width, height);
+        return true;
     }
 }

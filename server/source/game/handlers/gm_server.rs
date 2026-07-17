@@ -1,5 +1,7 @@
 //! GM server/config commands: /GMSG, /SMSG, /FPS, /LLUVIA, /RESMAP, etc.
 
+use crate::data::maps::WorldPos;
+use crate::config::IniFile;
 use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::net::ConnectionId;
 use crate::protocol::{binary_packets, fields::read_field, font_index};
@@ -233,30 +235,99 @@ pub(super) async fn handle_slash_fps(state: &mut GameState, conn_id: ConnectionI
     );
 }
 
-/// /CT map x y — Create teleport at current position (requires map .inf modification).
-pub(super) async fn handle_slash_ct(state: &mut GameState, conn_id: ConnectionId, _args: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
+/// /CT map x y [src_x src_y] — Create teleport at current or specified tile.
+pub(super) async fn handle_slash_ct(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let (src_map, user_x, user_y, target_x, target_y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {
+            (u.pos_map, u.pos_x, u.pos_y, u.target_x, u.target_y)
+        }
         _ => return,
+    };
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() < 3 {
+        state.send_console(conn_id, "Uso: /CT mapa_dest x_dest y_dest [x_origen y_origen]", font_index::INFO);
+        return;
     }
-    // Teleport creation requires modifying map .inf files which is not yet supported.
-    // In VB6 this modifies MapData().TileExit in memory.
+
+    let dest_map: i32 = parts[0].parse().unwrap_or(0);
+    let dest_x: i32 = parts[1].parse().unwrap_or(0);
+    let dest_y: i32 = parts[2].parse().unwrap_or(0);
+    let default_src_x = if target_x > 0 { target_x } else { user_x };
+    let default_src_y = if target_y > 0 { target_y } else { user_y };
+    let src_x: i32 = parts.get(3).and_then(|v| v.parse().ok()).unwrap_or(default_src_x);
+    let src_y: i32 = parts.get(4).and_then(|v| v.parse().ok()).unwrap_or(default_src_y);
+
+    let src_ok = state
+        .world
+        .grid(src_map)
+        .map(|g| crate::game::world::in_map_bounds_grid(g, src_x, src_y))
+        .unwrap_or(false);
+    let dest_ok = state
+        .world
+        .grid(dest_map)
+        .map(|g| crate::game::world::in_map_bounds_grid(g, dest_x, dest_y))
+        .unwrap_or(false);
+    if !src_ok || !dest_ok {
+        state.send_console(conn_id, "Mapa o coordenadas invalidas para /CT.", font_index::INFO);
+        return;
+    }
+
+    if let Some(Some(game_map)) = state.game_data.maps.get_mut(src_map as usize) {
+        if let Some(tile) = game_map.tiles.get_mut((src_x - 1) as usize, (src_y - 1) as usize) {
+            tile.tile_exit = Some(WorldPos {
+                map: dest_map as i16,
+                x: dest_x as i16,
+                y: dest_y as i16,
+            });
+        }
+    }
+
+    let exits_path = state.base_path.join("dat").join("local_exits.ini");
+    let mut ini = IniFile::load(&exits_path).unwrap_or_default();
+    let section = format!("Exit_{}_{}_{}", src_map, src_x, src_y);
+    ini.set(&section, "Enabled", "1");
+    ini.set(&section, "Source", &format!("{}-{}-{}", src_map, src_x, src_y));
+    ini.set(&section, "Dest", &format!("{}-{}-{}", dest_map, dest_x, dest_y));
+    if let Err(err) = ini.save(&exits_path) {
+        state.send_console(
+            conn_id,
+            &format!("Teleport creado en memoria, pero no se pudo guardar: {}", err),
+            font_index::INFO,
+        );
+    }
+
     state.send_console(
         conn_id,
-        "Creacion de teleports no soportada aun (requiere edicion de .inf).",
+        &format!(
+            "Teleport creado: mapa {} ({},{}) -> mapa {} ({},{}).",
+            src_map, src_x, src_y, dest_map, dest_x, dest_y
+        ),
         font_index::INFO,
     );
 }
 
 /// /DT — Destroy teleport at current position.
 pub(super) async fn handle_slash_dt(state: &mut GameState, conn_id: ConnectionId) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => (u.pos_map, u.pos_x, u.pos_y),
         _ => return,
+    };
+    if let Some(Some(game_map)) = state.game_data.maps.get_mut(map as usize) {
+        if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
+            tile.tile_exit = None;
+        }
     }
+    let exits_path = state.base_path.join("dat").join("local_exits.ini");
+    let mut ini = IniFile::load(&exits_path).unwrap_or_default();
+    let section = format!("Exit_{}_{}_{}", map, x, y);
+    ini.set(&section, "Enabled", "0");
+    ini.set(&section, "Source", &format!("{}-{}-{}", map, x, y));
+    ini.set(&section, "Dest", "0-0-0");
+    let _ = ini.save(&exits_path);
     state.send_console(
         conn_id,
-        "Destruccion de teleports no soportada aun (requiere edicion de .inf).",
+        &format!("Teleport eliminado en mapa {} ({},{}).", map, x, y),
         font_index::INFO,
     );
 }
@@ -379,9 +450,19 @@ pub(super) async fn handle_slash_modmapinfo(
             if particle_id == 0 {
                 return;
             }
+            if let Some(Some(game_map)) = state.game_data.maps.get_mut(map as usize) {
+                if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
+                    tile.particle_group_index = particle_id as i16;
+                }
+            }
             let pkt =
                 binary_packets::write_particle_create(particle_id as i16, x as i16, y as i16, 0);
             state.send_data_bytes(SendTarget::ToMap(map), &pkt);
+            state.send_console(
+                conn_id,
+                &format!("Particula {} aplicada en mapa {} ({},{}).", particle_id, map, x, y),
+                font_index::INFO,
+            );
         }
         "LUZ" => {
             // VB6: /MODMAPINFO LUZ <range> <R> <G> <B>
@@ -792,8 +873,15 @@ pub(super) async fn handle_slash_lluvia(state: &mut GameState, conn_id: Connecti
     info!("[GM] {} toggled rain: {}", gm_name, state.raining);
 }
 
-/// /NOCHE — Toggle forced night mode. Requires DIOS+.
-pub(super) async fn handle_slash_noche(state: &mut GameState, conn_id: ConnectionId) {
+/// Shared implementation for /DIA, /TARDE, /NOCHE — forces the given phase for
+/// all online players and broadcasts the NOC packet so clients update their
+/// sky tint immediately. Requires DIOS+.
+async fn force_day_phase(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    phase: crate::game::types::DayPhase,
+    label: &str,
+) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => {
@@ -806,21 +894,16 @@ pub(super) async fn handle_slash_noche(state: &mut GameState, conn_id: Connectio
         }
     }
 
-    state.forced_night = !state.forced_night;
+    state.forced_day_phase = phase;
 
-    let status = if state.forced_night {
-        "activada"
-    } else {
-        "desactivada"
-    };
     state.send_console(
         conn_id,
-        &format!("Noche forzada {}.", status),
+        &format!("Fase de dia forzada: {}.", label),
         font_index::INFO,
     );
 
     // VB6 M19: broadcast NOC packet to all online users so clients update sky color.
-    let night_pkt = binary_packets::write_send_night(state.forced_night);
+    let night_pkt = binary_packets::write_send_night(phase);
     let online_ids: Vec<ConnectionId> = state
         .users
         .iter()
@@ -836,10 +919,22 @@ pub(super) async fn handle_slash_noche(state: &mut GameState, conn_id: Connectio
         .get(&conn_id)
         .map(|u| u.char_name.clone())
         .unwrap_or_default();
-    info!(
-        "[GM] {} toggled forced night: {}",
-        gm_name, state.forced_night
-    );
+    info!("[GM] {} forced day phase: {}", gm_name, label);
+}
+
+/// /DIA — Force day phase. Requires DIOS+.
+pub(super) async fn handle_slash_dia(state: &mut GameState, conn_id: ConnectionId) {
+    force_day_phase(state, conn_id, crate::game::types::DayPhase::Day, "Dia").await;
+}
+
+/// /TARDE — Force evening phase. Requires DIOS+.
+pub(super) async fn handle_slash_tarde(state: &mut GameState, conn_id: ConnectionId) {
+    force_day_phase(state, conn_id, crate::game::types::DayPhase::Evening, "Tarde").await;
+}
+
+/// /NOCHE — Force night phase. Requires DIOS+.
+pub(super) async fn handle_slash_noche(state: &mut GameState, conn_id: ConnectionId) {
+    force_day_phase(state, conn_id, crate::game::types::DayPhase::Night, "Noche").await;
 }
 
 /// /SHOWNAME — Toggle GM visible name. Requires CONSEJERO+.

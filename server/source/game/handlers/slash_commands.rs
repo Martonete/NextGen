@@ -544,6 +544,9 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/NPCAURA ") {
         let args = cmd[9..].trim();
         gm_items::handle_slash_npcaura(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/AURA ") {
+        let args = cmd[6..].trim();
+        handle_slash_aura(state, conn_id, args).await;
     } else if cmd_upper.starts_with("/DEST") && (cmd_upper.len() == 5 || cmd_upper.as_bytes().get(5) == Some(&b' ')) {
         gm_items::handle_slash_dest(state, conn_id).await;
     } else if cmd_upper == "/MASSDEST" {
@@ -578,6 +581,10 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_lluvia(state, conn_id).await;
     } else if cmd_upper == "/NOCHE" {
         handle_slash_noche(state, conn_id).await;
+    } else if cmd_upper == "/DIA" {
+        handle_slash_dia(state, conn_id).await;
+    } else if cmd_upper == "/TARDE" {
+        handle_slash_tarde(state, conn_id).await;
     } else if cmd_upper == "/SHOWNAME" {
         handle_slash_showname(state, conn_id).await;
     } else if cmd_upper.starts_with("/LASTIP ") {

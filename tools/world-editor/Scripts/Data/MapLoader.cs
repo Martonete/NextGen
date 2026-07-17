@@ -249,10 +249,10 @@ public static class MapLoader
                 ref var tile = ref mapData.Tiles[x, y];
 
                 tile.Blocked = (byFlags & 1) != 0;
-                tile.Layer1 = reader.ReadInt32();
-                tile.Layer2 = (byFlags & 2) != 0 ? reader.ReadInt32() : 0;
-                tile.Layer3 = (byFlags & 4) != 0 ? reader.ReadInt32() : 0;
-                tile.Layer4 = (byFlags & 8) != 0 ? reader.ReadInt32() : 0;
+                tile.Layer1 = reader.ReadUInt16();
+                tile.Layer2 = (byFlags & 2) != 0 ? reader.ReadUInt16() : 0;
+                tile.Layer3 = (byFlags & 4) != 0 ? reader.ReadUInt16() : 0;
+                tile.Layer4 = (byFlags & 8) != 0 ? reader.ReadUInt16() : 0;
                 tile.Trigger = (byFlags & 16) != 0 ? reader.ReadInt16() : (short)0;
                 tile.ParticleGroup = (byFlags & 32) != 0 ? reader.ReadInt16() : (short)0;
 
@@ -303,25 +303,70 @@ public static class MapLoader
 
     private static void LoadDatFile(string path, MapData mapData, int mapNumber)
     {
-        var cfg = new ConfigFile();
-        if (cfg.Load(path) != Error.Ok) return;
+        var cfg = ParseDatFile(path);
 
         string section = $"Mapa{mapNumber}";
-        if (!cfg.HasSection(section))
+        if (!cfg.TryGetValue(section, out var values))
         {
             section = $"MAPA{mapNumber}";
-            if (!cfg.HasSection(section)) return;
+            if (!cfg.TryGetValue(section, out values)) return;
         }
 
-        mapData.Name = cfg.GetValue(section, "Name", "").ToString() ?? "";
-        mapData.MusicNum = (int)cfg.GetValue(section, "MusicNum", 0);
-        mapData.PkEnabled = (int)cfg.GetValue(section, "Pk", 0) == 0;
-        mapData.BackUp = (int)cfg.GetValue(section, "BackUp", 1) == 1;
-        mapData.Terreno = cfg.GetValue(section, "Terreno", "TIERRA").ToString() ?? "TIERRA";
-        mapData.Zona = cfg.GetValue(section, "Zona", "CAMPO").ToString() ?? "CAMPO";
-        mapData.AmbientR = (byte)(int)cfg.GetValue(section, "R", 180);
-        mapData.AmbientG = (byte)(int)cfg.GetValue(section, "G", 180);
-        mapData.AmbientB = (byte)(int)cfg.GetValue(section, "B", 180);
+        mapData.Name = GetDatString(values, "Name", "");
+        mapData.MusicNum = GetDatInt(values, "MusicNum", 0);
+        mapData.PkEnabled = GetDatInt(values, "Pk", 0) == 0;
+        mapData.BackUp = GetDatInt(values, "BackUp", 1) == 1;
+        mapData.Terreno = GetDatString(values, "Terreno", "TIERRA");
+        mapData.Zona = GetDatString(values, "Zona", "CAMPO");
+        mapData.AmbientR = (byte)Math.Clamp(GetDatInt(values, "R", 180), 0, 255);
+        mapData.AmbientG = (byte)Math.Clamp(GetDatInt(values, "G", 180), 0, 255);
+        mapData.AmbientB = (byte)Math.Clamp(GetDatInt(values, "B", 180), 0, 255);
+    }
+
+    private static System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, string>> ParseDatFile(string path)
+    {
+        var sections = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(path)) return sections;
+
+        string currentSection = "";
+        foreach (string rawLine in File.ReadAllLines(path, Encoding.GetEncoding("iso-8859-1")))
+        {
+            string line = rawLine.Trim();
+            if (line.Length == 0 || line[0] == ';' || line[0] == '\'')
+                continue;
+
+            if (line[0] == '[')
+            {
+                int end = line.IndexOf(']');
+                if (end > 1)
+                {
+                    currentSection = line[1..end].Trim();
+                    if (!sections.ContainsKey(currentSection))
+                        sections[currentSection] = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                }
+                continue;
+            }
+
+            int eq = line.IndexOf('=');
+            if (eq <= 0 || currentSection.Length == 0 || !sections.ContainsKey(currentSection))
+                continue;
+
+            string key = line[..eq].Trim();
+            string value = line[(eq + 1)..].Trim();
+            sections[currentSection][key] = value;
+        }
+
+        return sections;
+    }
+
+    private static string GetDatString(System.Collections.Generic.Dictionary<string, string> values, string key, string fallback)
+    {
+        return values.TryGetValue(key, out string? value) ? value : fallback;
+    }
+
+    private static int GetDatInt(System.Collections.Generic.Dictionary<string, string> values, string key, int fallback)
+    {
+        return values.TryGetValue(key, out string? value) && int.TryParse(value, out int result) ? result : fallback;
     }
 
     #endregion

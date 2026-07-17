@@ -1083,7 +1083,8 @@ public partial class EditorMain : Control
             return;
         }
 
-        string cliProject = Path.GetFullPath(Path.Combine(_dataPath, "compressor", "lib", "CLI", "AoPakCli.csproj"));
+        string repoRoot = ResolveRepoRootFromDataPath(_dataPath);
+        string cliProject = Path.Combine(repoRoot, "resources", "compressor", "lib", "CLI", "AoPakCli.csproj");
         string mapsDir = Path.Combine(_dataPath, "Maps");
 
         GD.Print($"[Editor] ExportMapsAopak: cli={cliProject} maps={mapsDir} outputDir={clientDataPath}");
@@ -1134,6 +1135,26 @@ public partial class EditorMain : Control
                 CallDeferred(MethodName.SetStatus, $"ERROR: {ex.Message}");
             }
         });
+    }
+
+    private static string ResolveRepoRootFromDataPath(string dataPath)
+    {
+        string full = Path.GetFullPath(dataPath);
+        var dir = new DirectoryInfo(full);
+
+        while (dir != null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Cargo.toml")) &&
+                Directory.Exists(Path.Combine(dir.FullName, "resources")) &&
+                Directory.Exists(Path.Combine(dir.FullName, "server")))
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        return Path.GetFullPath(Path.Combine(full, "..", ".."));
     }
 
     private void BuildLoadingScreen()
@@ -1947,12 +1968,17 @@ public partial class EditorMain : Control
                 GD.Print($"[Editor] Saved {_map.PaintedFogLayers.Count} humo layers ({total} tiles)");
         }
 
-        // Save .aolight (advanced light data) alongside the map
-        if (_map.MapNumber > 0 && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+        // Save .aolight (advanced light data) alongside the map — to BOTH the
+        // server dir and the client data dir, so the client (which reads from
+        // resources/data/Maps) actually finds the lights in-game.
+        if (_map.MapNumber > 0)
         {
-            _map.SaveLightData(_serverMapDir);
+            if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+                _map.SaveLightData(_serverMapDir);
+            if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+                _map.SaveLightData(_clientMapDir);
             if (_map.LightData.Lights.Count > 0)
-                GD.Print($"[Editor] Saved {_map.LightData.Lights.Count} advanced lights");
+                GD.Print($"[Editor] Saved {_map.LightData.Lights.Count} advanced lights (server + client)");
         }
 
         _state.ResetDirty();
@@ -3545,12 +3571,27 @@ public partial class EditorMain : Control
         if (grh.FileNum <= 0) return null;
         var srcTex = _textures.GetTexture(grh.FileNum);
         if (srcTex == null) return null;
+        if (!TryGetSafeGrhRegion(grh, srcTex, out var region)) return null;
+
         var atlas = new AtlasTexture();
         atlas.Atlas = srcTex;
-        atlas.Region = new Rect2(grh.SX, grh.SY,
-            Math.Min(grh.PixelWidth, srcTex.GetWidth() - grh.SX),
-            Math.Min(grh.PixelHeight, srcTex.GetHeight() - grh.SY));
+        atlas.Region = region;
         return atlas;
+    }
+
+    private static bool TryGetSafeGrhRegion(GrhData grh, Texture2D texture, out Rect2 region)
+    {
+        region = default;
+        if (grh.SX < 0 || grh.SY < 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0)
+            return false;
+
+        int width = Math.Min(grh.PixelWidth, texture.GetWidth() - grh.SX);
+        int height = Math.Min(grh.PixelHeight, texture.GetHeight() - grh.SY);
+        if (width <= 0 || height <= 0)
+            return false;
+
+        region = new Rect2(grh.SX, grh.SY, width, height);
+        return true;
     }
 
     public override void _Notification(int what)

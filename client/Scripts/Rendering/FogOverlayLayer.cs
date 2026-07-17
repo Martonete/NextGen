@@ -4,26 +4,58 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Rendering;
 
 /// <summary>
-/// Draws darkness over tiles outside the core 17x13 viewport.
-/// The entire extra zone is solid dark (MaxAlpha). Only a thin ~1 tile
-/// transition strip at the core boundary fades from transparent to dark,
-/// creating a clean edge effect without revealing the tiles behind.
+/// Draws an animated, textured fog over tiles outside the core 17x13 viewport,
+/// using vision_fog.gdshader: a static mask (transparent core, thin gradient at
+/// the boundary, opaque outside) modulated by drifting noise so the fog reads
+/// as real mist instead of a flat color tint.
 /// Only active when resolution > 800x600.
-/// Fog texture is rebuilt only on resolution change (event-driven), not per-frame.
+/// The mask texture is rebuilt on resolution change (event-driven, not per-frame);
+/// intensity changes just update the shader's max_alpha uniform (no rebuild needed).
 /// </summary>
 public partial class FogOverlayLayer : Node2D
 {
-    private const float MaxAlpha = 0.12f;
+    // Dark gray-blue fog tint: reads as gloom/murk closing in rather than a pale
+    // haze, and doesn't fight the day/tarde/noche tints either.
+    private static readonly Color FogColor = new Color(0.13f, 0.15f, 0.19f, 1f);
     // Transition width in design pixels (~1 tile = 32px, at 1/4 res = 8 texels)
     private const float TransitionPx = 32f;
-    private ImageTexture? _fogTex;
+
+    private GameState? _state;
+    private ImageTexture? _maskTex;
+    private ShaderMaterial? _material;
     private int _cachedVpW, _cachedVpH;
+
+    /// <summary>Wire the game state so the fog can read the player's configured intensity.</summary>
+    public void Init(GameState state)
+    {
+        _state = state;
+    }
 
     public override void _Ready()
     {
-        // Build initial fog texture
+        var shader = GD.Load<Shader>("res://Shaders/vision_fog.gdshader");
+        GD.Print($"[FOG] shader loaded: {shader != null}");
+        if (shader != null)
+        {
+            var noise = new FastNoiseLite { Seed = 7, FractalOctaves = 3 };
+            var noiseTexture = new NoiseTexture2D
+            {
+                Noise = noise,
+                Seamless = true,
+                Width = 256,
+                Height = 256,
+            };
+            _material = new ShaderMaterial { Shader = shader };
+            _material.SetShaderParameter("noise_texture", noiseTexture);
+            _material.SetShaderParameter("fog_color", FogColor);
+            Material = _material;
+        }
+        else
+        {
+            GD.PrintErr("[FOG] vision_fog.gdshader failed to load — fog overlay disabled to avoid corrupting the render.");
+        }
+
         RebuildFogTexture();
-        // Subscribe to resolution changes for event-driven rebuilds
         ResolutionManager.OnResolutionChanged += RebuildFogTexture;
     }
 
@@ -33,19 +65,26 @@ public partial class FogOverlayLayer : Node2D
     }
 
     /// <summary>
-    /// Rebuild the fog texture for the current viewport size.
-    /// Called on initialization and whenever resolution changes.
+    /// Rebuild the mask texture for the current viewport size, and refresh the
+    /// shader's intensity uniform. Called on init, on resolution change, and
+    /// whenever the fog intensity option changes (not per-frame).
     /// </summary>
     public void RebuildFogTexture()
     {
         int vpW = ResolutionManager.ViewportW;
         int vpH = ResolutionManager.ViewportH;
-        if (vpW != _cachedVpW || vpH != _cachedVpH || _fogTex == null)
+        if (vpW != _cachedVpW || vpH != _cachedVpH || _maskTex == null)
         {
-            _fogTex = BuildFogTexture(vpW, vpH);
+            _maskTex = BuildFogMask(vpW, vpH);
+            _material?.SetShaderParameter("fog_mask", _maskTex);
             _cachedVpW = vpW;
             _cachedVpH = vpH;
         }
+
+        int intensity = _state?.Config?.FogIntensity ?? 30;
+        // Dark and dense at 100%: up to ~0.75 alpha so the terrain is barely
+        // legible through it, per the requested "bastante oscuro" look.
+        _material?.SetShaderParameter("max_alpha", (intensity / 100f) * 0.75f);
         QueueRedraw();
     }
 
@@ -54,17 +93,18 @@ public partial class FogOverlayLayer : Node2D
         int extraX = ResolutionManager.ExtraTilesX;
         int extraY = ResolutionManager.ExtraTilesY;
         if (extraX <= 0 && extraY <= 0) return;
+        if (_maskTex == null) return;
 
-        if (_fogTex == null) return;
-
-        DrawTextureRect(_fogTex, new Rect2(0, 0, _cachedVpW, _cachedVpH), false);
+        DrawTextureRect(_maskTex, new Rect2(0, 0, _cachedVpW, _cachedVpH), false);
     }
 
     /// <summary>
-    /// Build fog texture: transparent inside core, thin gradient at core edge,
-    /// then flat MaxAlpha everywhere else. Built at 1/4 resolution.
+    /// Build the fog MASK only (red channel = 0..1 shape): transparent inside
+    /// core, thin gradient at core edge, then flat 1.0 everywhere else. The
+    /// actual color/alpha/noise is applied by vision_fog.gdshader at draw time.
+    /// Built at 1/4 resolution.
     /// </summary>
-    private static ImageTexture BuildFogTexture(int vpW, int vpH)
+    private static ImageTexture BuildFogMask(int vpW, int vpH)
     {
         int texW = vpW / 4;
         int texH = vpH / 4;
@@ -88,27 +128,23 @@ public partial class FogOverlayLayer : Node2D
                 float dy = System.Math.Max(0, System.Math.Abs(py - centerY) - halfCoreH);
                 float dist = System.Math.Max(dx, dy);
 
-                float alpha;
+                float mask;
                 if (dist <= 0f)
                 {
-                    // Inside core: fully transparent
-                    alpha = 0f;
+                    mask = 0f; // inside core: no fog
                 }
                 else if (dist < transition)
                 {
-                    // Transition strip: smooth ramp from 0 → MaxAlpha
                     float t = dist / transition;
-                    // Smooth-step for clean transition
-                    t = t * t * (3f - 2f * t);
-                    alpha = t * MaxAlpha;
+                    t = t * t * (3f - 2f * t); // smooth-step
+                    mask = t;
                 }
                 else
                 {
-                    // Beyond transition: solid dark
-                    alpha = MaxAlpha;
+                    mask = 1f; // beyond transition: full fog
                 }
 
-                img.SetPixel(px, py, new Color(0, 0, 0, alpha));
+                img.SetPixel(px, py, new Color(mask, mask, mask, 1f));
             }
         }
 

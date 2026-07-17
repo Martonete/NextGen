@@ -374,8 +374,13 @@ pub fn write_attributes(str_: u8, agi: u8, int: u8, con: u8, cha: u8) -> Vec<u8>
     pkt.into_bytes()
 }
 
-/// ID 50: Send all 22 skills (level + XP percentage per skill).
-pub fn write_send_skills(skills: &[i32], exp_skills: &[i32], elu_skills: &[i32]) -> Vec<u8> {
+/// ID 50: Send all 22 skills (level + XP percentage per skill) plus free skill points.
+pub fn write_send_skills(
+    skills: &[i32],
+    exp_skills: &[i32],
+    elu_skills: &[i32],
+    free_skill_points: i32,
+) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::SendSkills.to_byte());
     for i in 0..22 {
@@ -392,6 +397,7 @@ pub fn write_send_skills(skills: &[i32], exp_skills: &[i32], elu_skills: &[i32])
         pkt.write_byte(level);
         pkt.write_byte(pct);
     }
+    pkt.write_integer(free_skill_points.clamp(0, i16::MAX as i32) as i16);
     pkt.into_bytes()
 }
 

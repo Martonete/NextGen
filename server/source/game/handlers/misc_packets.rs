@@ -97,16 +97,33 @@ pub(super) async fn handle_skse(
             state.send_console(conn_id, "Puntos de skill invalidos.", font_index::INFO);
             return;
         }
+        for i in 0..22 {
+            if increments[i] > 0 && user.skills[i] + increments[i] > 100 {
+                state.send_console(conn_id, "No puedes superar 100 puntos en una skill.", font_index::INFO);
+                return;
+            }
+        }
     } else {
         return;
     }
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         for i in 0..22 {
-            let new_val = (user.skills[i] + increments[i]).min(100);
-            user.skills[i] = new_val;
+            user.skills[i] += increments[i];
         }
         user.skill_pts_libres -= total;
+    }
+
+    let refresh_packet = state.users.get(&conn_id).map(|user| {
+        binary_packets::write_send_skills(
+            &user.skills,
+            &user.exp_skills,
+            &user.elu_skills,
+            user.skill_pts_libres,
+        )
+    });
+    if let Some(pkt) = refresh_packet {
+        state.send_bytes(conn_id, &pkt);
     }
 
     state.send_console(

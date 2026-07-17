@@ -333,7 +333,10 @@ public partial class PacketHandler
                 HandleBinChangeUserTradeSlot(bq);
                 break;
             case ServerPacketId.SendNight: // 87
-                _state.IsNight = bq.ReadBoolean();
+                // Wire byte: 0=day, 1=evening, 2=night (originally a plain bool 0/1).
+                byte dayPhase = bq.ReadByte();
+                _state.IsNight = dayPhase == 2;
+                OnDayPhaseChanged?.Invoke(dayPhase);
                 break;
             case ServerPacketId.Pong: // 88
                 HandleBinPong();
@@ -435,6 +438,9 @@ public partial class PacketHandler
             // ── Movement / Projectiles ────────────────────────────
             case ServerPacketId.Arrow: // 108
                 HandleBinArrow(bq);
+                break;
+            case ServerPacketId.SpellBeam: // 198
+                HandleBinSpellBeam(bq);
                 break;
             case ServerPacketId.NavigateBroadcast: // 109
                 HandleBinNavigateBroadcast(bq);

@@ -57,6 +57,9 @@ public class ForumPostEntry
 /// </summary>
 public class GameState
 {
+	public const int MaxLevel = 255;
+	public const int MaxSkillLevel = 100;
+
 	// Login / screen state
 	public bool IsLogged;
 	public bool Paused;
@@ -364,6 +367,9 @@ public class GameState
 	// Arrow/projectile system (VB6: FLECHI)
 	public List<ArrowProjectile> ActiveArrows = new();
 
+	// Spell travel beams (cosmetic light beam caster→target; drawn client-side)
+	public List<SpellBeam> ActiveBeams = new();
+
 	// Particle system
 	public ParticleStreamDef[] ParticleDefs = System.Array.Empty<ParticleStreamDef>();
 	public List<ParticleStream> MapParticles = new();
@@ -628,6 +634,20 @@ public class ArrowProjectile
 	public float Speed = 8f;  // pixels per frame
 	public bool Active = true;
 	public float LifetimeMs;  // accumulated lifetime for timeout
+}
+
+/// <summary>
+/// A cosmetic light beam traced from caster to target when a spell is cast.
+/// Purely visual: no position of its own — endpoints are re-read live from the
+/// caster/target char indexes each frame, and it fades out over DurationMs.
+/// </summary>
+public class SpellBeam
+{
+	public int CasterCharIndex;
+	public int TargetCharIndex;
+	public float ElapsedMs;
+	public float DurationMs = 575f; // instant strike + ~0.45s hold + fade window
+	public int JitterSeed;          // base seed for the electric wobble
 }
 
 /// A craftable item entry (blacksmith weapons/armors, carpenter items).

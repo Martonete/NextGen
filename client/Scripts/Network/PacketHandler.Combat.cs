@@ -93,6 +93,7 @@ public partial class PacketHandler
             _state.Skills[i] = bq.ReadByte();
             _state.SkillPct[i] = bq.ReadByte();
         }
+        _state.FreeSkillPoints = bq.ReadInteger();
     }
 
 

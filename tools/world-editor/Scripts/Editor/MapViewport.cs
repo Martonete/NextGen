@@ -1429,7 +1429,9 @@ public partial class MapViewport : Control
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
-        var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+        if (!TryGetSafeGrhRegion(grh, texture, out var srcRect, out int drawW, out int drawH))
+            return;
+
         float drawX = tileX * TileSize;
         float drawY = tileY * TileSize;
 
@@ -1439,7 +1441,7 @@ public partial class MapViewport : Control
             drawY += (TileSize - grh.PixelHeight);
         }
 
-        var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+        var destRect = new Rect2(drawX, drawY, drawW, drawH);
         DrawTextureRectRegion(texture, destRect, srcRect, modulate ?? Colors.White);
     }
 
@@ -1464,10 +1466,12 @@ public partial class MapViewport : Control
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
-        var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+        if (!TryGetSafeGrhRegion(grh, texture, out var srcRect, out int drawW, out int drawH))
+            return;
+
         float drawX = tileX * TileSize + (TileSize - grh.PixelWidth) / 2f + ofsX;
         float drawY = tileY * TileSize + (TileSize - grh.PixelHeight) + ofsY;
-        var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+        var destRect = new Rect2(drawX, drawY, drawW, drawH);
         DrawTextureRectRegion(texture, destRect, srcRect, modulate ?? Colors.White);
     }
 
@@ -1520,13 +1524,33 @@ public partial class MapViewport : Control
             var texture = Textures.GetTexture(grh.FileNum);
             if (texture == null) continue;
 
-            var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+            if (!TryGetSafeGrhRegion(grh, texture, out var srcRect, out int drawW, out int drawH))
+                continue;
+
             float drawX = centerX + p.X - grh.PixelWidth / 2f;
             float drawY = centerY + p.Y - grh.PixelHeight / 2f;
-            var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+            var destRect = new Rect2(drawX, drawY, drawW, drawH);
             var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha * alphaScale);
             canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
         }
+    }
+
+    private static bool TryGetSafeGrhRegion(GrhData grh, Texture2D texture, out Rect2 srcRect, out int width, out int height)
+    {
+        srcRect = default;
+        width = 0;
+        height = 0;
+
+        if (grh.SX < 0 || grh.SY < 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0)
+            return false;
+
+        width = Math.Min(grh.PixelWidth, texture.GetWidth() - grh.SX);
+        height = Math.Min(grh.PixelHeight, texture.GetHeight() - grh.SY);
+        if (width <= 0 || height <= 0)
+            return false;
+
+        srcRect = new Rect2(grh.SX, grh.SY, width, height);
+        return true;
     }
 
     #endregion

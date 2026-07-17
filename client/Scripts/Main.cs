@@ -254,6 +254,7 @@ public partial class Main : Control
 	private PacketHandler? _packetHandler;
 	private InputHandler? _inputHandler;
 	private WorldRenderer? _worldRenderer;
+	private Rendering.LoginBackdrop? _loginBackdrop;
 	private GrhAnimator _animator = new();
 	private ParticleSystem _particleSystem = new();
 	private LightSystem _lightSystem = new();
@@ -403,6 +404,12 @@ public partial class Main : Control
 	// Spawn List (frmSpawnList)
 	private SpawnListPanel? _spawnListPanel;
 
+	// Aura viewer/test panel
+	private AuraViewerPanel? _auraViewerPanel;
+
+	// World map panel
+	private WorldMapPanel? _worldMapPanel;
+
 	// SOS/Help panel (GM help requests)
 	private SosPanel? _sosPanel;
 
@@ -463,6 +470,8 @@ public partial class Main : Control
 			_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
 		}
 		_packetHandler.OnInventoryChanged = () => _inventoryPanel?.MarkDirty();
+		_packetHandler.OnVisualStateChanged = () => _worldRenderer?.MarkRenderDirty();
+		_packetHandler.OnDayPhaseChanged = (phase) => _dayNightCycle?.SetPhase(phase);
 		_packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
 		{
 			var floatingLayer = _worldRenderer?.FloatingText;
@@ -505,11 +514,11 @@ public partial class Main : Control
 		_state.Config = GameConfig.Load(dataPath);
 		_state.ShowNames = _state.Config.ShowNames;
 
-		// Apply V-Sync
+		// Apply V-Sync + FPS cap. FpsLimit 0 = uncapped: always assign so it can't
+		// keep a stale nonzero cap from a previous apply.
 		DisplayServer.WindowSetVsyncMode(
 			_state.Config.VsyncEnabled ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
-		if (_state.Config.FpsLimit > 0)
-			Engine.MaxFps = _state.Config.FpsLimit;
+		Engine.MaxFps = _state.Config.FpsLimit > 0 ? _state.Config.FpsLimit : 0;
 
 		// Apply dynamic resolution (window size + tile calculation)
 		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
@@ -525,7 +534,7 @@ public partial class Main : Control
 
 		// Setup renderer inside the SubViewport
 		_worldRenderer = new WorldRenderer();
-		_worldRenderer.Init(_state, _gameData, _animator);
+		_worldRenderer.Init(_state, _gameData, _animator, _resources);
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 
@@ -568,6 +577,18 @@ public partial class Main : Control
 			if (child is CanvasItem ci) ci.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
 		GetNode<Control>("GameUI").TextureFilter = CanvasItem.TextureFilterEnum.Linear;
 
+		// Live world backdrop behind the menu screens. Added to UILayer BEFORE the
+		// forms so it draws behind them, and before RepositionUI so it picks up the
+		// current resolution.
+		_loginBackdrop = new Rendering.LoginBackdrop();
+		_loginBackdrop.Name = "LoginBackdrop";
+		GetNode("UILayer").AddChild(_loginBackdrop);
+		_loginBackdrop.Init(_gameData, _resources);
+		ResolutionManager.OnResolutionChanged += () => _loginBackdrop?.OnResolutionChanged();
+		// The app opens on Login and _lastScreen already starts there, so
+		// HandleScreenChange never fires for it — activate the backdrop here.
+		_loginBackdrop.SetActive(_state.CurrentScreen != Screen.Game);
+
 		// Grab Login UI nodes
 		// Login form (programmatic — replaces scene LoginPanel)
 		_loginForm = new UI.LoginForm(_state, _dataPath);
@@ -576,6 +597,7 @@ public partial class Main : Control
 		_loginForm.OnLoginRequest = (account, password) =>
 		{
 			_tcp = new AoTcpClient();
+			_auraViewerPanel?.SetTcp(_tcp);
 			CreatePacketHandler();
 			_inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
 			if (_inputRouter != null) _inputRouter.InputHandler = _inputHandler;
@@ -671,6 +693,13 @@ public partial class Main : Control
 		_chatSystem.OnPasswdCommand = () => _state.ShowChangePassword = true;
 		_chatSystem.OnGmPanelToggle = () => _gmPanel?.Toggle();
 		_chatSystem.OnSosPanelToggle = () => _sosPanel?.Open();
+		_chatSystem.OnSlashCommand = (cmd) =>
+		{
+			if (cmd.Equals("/AURAS", StringComparison.OrdinalIgnoreCase))
+				_auraViewerPanel?.Open();
+			else if (cmd.Equals("/MAPA", StringComparison.OrdinalIgnoreCase))
+				_worldMapPanel?.Open();
+		};
 		_goldLabel = GetNode<Label>("GameUI/GoldLabel");
 		_levelLabel = GetNode<Label>("GameUI/LevelLabel");
 		_nameLabel = GetNode<Label>("GameUI/NameLabel");
@@ -863,9 +892,16 @@ public partial class Main : Control
 		};
 		_charCreateScreen.OnCreateCharConfirm = () =>
 		{
+			if (_tcp == null || !_tcp.IsConnected)
+			{
+				_charCreateScreen.ErrorLabel!.Text = "Conexion perdida. Volve a iniciar sesion.";
+				_charCreateScreen.CreateButton!.Disabled = false;
+				return;
+			}
+
 			int head = _state.CreateCharHead;
 			string account = _state.AccountName;
-			_tcp!.SendPacket(ClientPackets.WriteCreateCharacter(
+			_tcp.SendPacket(ClientPackets.WriteCreateCharacter(
 				_state.CreateCharName, (byte)_state.CreateCharRace, (byte)_state.CreateCharGender,
 				(byte)_state.CreateCharClass, (short)head, (byte)_state.CreateCharFaction, account));
 			GD.Print("[MAIN] Sent: CreateCharacter (binary)");
@@ -1182,6 +1218,9 @@ public partial class Main : Control
 		// Update arrow projectiles (move toward target, remove on arrival)
 		UpdateArrowProjectiles((float)delta);
 
+		// Update cosmetic spell beams (fade out and drop when done)
+		UpdateSpellBeams((float)delta);
+
 		// Recalculate lighting when dirty (lights added/removed/map changed)
 		if (_state.LightsDirty)
 		{
@@ -1217,6 +1256,7 @@ public partial class Main : Control
 	/// </summary>
 	private void UpdateGameUI() => _gameUIUpdater?.UpdateGameUI();
 	private void UpdateArrowProjectiles(float delta) => _gameUIUpdater?.UpdateArrowProjectiles(delta);
+	private void UpdateSpellBeams(float delta) => _gameUIUpdater?.UpdateSpellBeams(delta);
 
 
 	public override void _Input(InputEvent @event)

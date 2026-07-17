@@ -120,9 +120,9 @@ public static partial class CharRenderer
 
         int fontSize = font.CharHeight;
 
-        // VB6: Y = PixelOffsetY + HeadOffset.Y + OFFSET_HEAD - (numLines * 3)
-        // OFFSET_HEAD = -34 ("34 pixels of head GRH that overlap with body")
-        const int OffsetHead = -34;
+        // TS AO head offsets already place the anchor above the body; using the old
+        // helmet overlap constant made spoken text float too far above the head.
+        const int OffsetHead = -8;
         int baseY = (int)(pos.Y + headOffset.Y) + OffsetHead - ((numLines - 1) * 3);
         if (ch.DialogRiseCounter > 0)
             baseY += (int)(ch.DialogRiseCounter / 1.2f);
@@ -286,6 +286,45 @@ public static partial class CharRenderer
         var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), pw, ph);
 
         Color color = modulate ?? Colors.White;
+        canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+    }
+
+    public static void DrawEffectGrh(
+        CanvasItem canvas, GameData data, int grhIndex, int frame, Vector2 pos,
+        Color? modulate = null, float angle = 0f)
+    {
+        var resolved = data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX;
+        int sy = resolved.SY;
+        int pw = resolved.PixelWidth;
+        int ph = resolved.PixelHeight;
+
+        if (texW > 0) sx %= texW;
+        if (texH > 0) sy %= texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        var srcRect = new Rect2(sx, sy, pw, ph);
+        Color color = modulate ?? Colors.White;
+
+        if (angle != 0f)
+        {
+            var center = new Vector2((float)Math.Round(pos.X + pw / 2f), (float)Math.Round(pos.Y + ph / 2f));
+            ((Node2D)canvas).DrawSetTransform(center, angle);
+            canvas.DrawTextureRectRegion(texture, new Rect2(-pw / 2f, -ph / 2f, pw, ph), srcRect, color);
+            ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+            return;
+        }
+
+        var destRect = new Rect2((float)Math.Round(pos.X), (float)Math.Round(pos.Y), pw, ph);
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
     }
 }

@@ -48,6 +48,13 @@ public partial class PacketHandler
     /// Callback when an inventory slot changes (drop, pickup, equip, use).
     public Action? OnInventoryChanged;
 
+    /// Callback when a packet changes only render-side character state.
+    public Action? OnVisualStateChanged;
+
+    /// Callback when the server sends a day/night (NOC) update.
+    /// Argument = phase byte (0=day, 1=evening, 2=night).
+    public Action<byte>? OnDayPhaseChanged;
+
     // Meditation FX IDs — cleared when the character moves or the meditate toggle fires.
     // Each ID corresponds to a GRH animation played over the character while meditating:
     //   4   = Meditación básica (aura blanca pequeña)

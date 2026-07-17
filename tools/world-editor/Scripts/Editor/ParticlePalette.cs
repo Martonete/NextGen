@@ -292,7 +292,7 @@ public partial class ParticlePalette : VBoxContainer
             AddChild(_placeholder);
 
             // Additive overlay draws particles ON TOP of the dark bg
-            _overlay = new PreviewOverlay { Owner = this };
+            _overlay = new PreviewOverlay { PreviewOwner = this };
             _overlay.Material = MapViewport.AdditiveBlendMaterial();
             _overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
             _overlay.MouseFilter = MouseFilterEnum.Ignore;
@@ -360,20 +360,40 @@ public partial class ParticlePalette : VBoxContainer
                 var texture = Textures.GetTexture(grh.FileNum);
                 if (texture == null) continue;
 
-                var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+                if (!TryGetSafeGrhRegion(grh, texture, out var srcRect, out int drawW, out int drawH))
+                    continue;
+
                 float drawX = CenterX + p.X - grh.PixelWidth  / 2f;
                 float drawY = CenterY + p.Y - grh.PixelHeight / 2f;
-                var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+                var destRect = new Rect2(drawX, drawY, drawW, drawH);
                 var color    = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
                 canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
             }
         }
 
+        private static bool TryGetSafeGrhRegion(GrhData grh, Texture2D texture, out Rect2 srcRect, out int width, out int height)
+        {
+            srcRect = default;
+            width = 0;
+            height = 0;
+
+            if (grh.SX < 0 || grh.SY < 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0)
+                return false;
+
+            width = Math.Min(grh.PixelWidth, texture.GetWidth() - grh.SX);
+            height = Math.Min(grh.PixelHeight, texture.GetHeight() - grh.SY);
+            if (width <= 0 || height <= 0)
+                return false;
+
+            srcRect = new Rect2(grh.SX, grh.SY, width, height);
+            return true;
+        }
+
         /// <summary>Additive-blend child that draws particles on top of the dark bg.</summary>
         private sealed partial class PreviewOverlay : Control
         {
-            public ParticlePreview? Owner;
-            public override void _Draw() => Owner?.DrawParticlesOn(this);
+            public ParticlePreview? PreviewOwner;
+            public override void _Draw() => PreviewOwner?.DrawParticlesOn(this);
         }
     }
 }

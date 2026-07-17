@@ -28,6 +28,7 @@ public class GameConfig
 	public bool ShowNames = true;           // VB6: General_Show_Nicks
 	public bool ShowLights = true;          // (not in VB6, but useful toggle)
 	public bool ShowWaterEffect = true;    // VB6: polygon water deformation
+	public int FogIntensity = 30;          // 0-100, opacity of fog outside the lit core area
 
 	// ── Transparency ──────────────────────────────────────
 	public bool UiTransparency;             // VB6: Alpha_Interfaz_Activar
@@ -41,8 +42,8 @@ public class GameConfig
 
 	// ── Performance ───────────────────────────────────────
 	public int PerformanceLevel = 4;        // VB6: Performance_Level (0=Min,1=Low,2=Med,3=High,4=Max)
-	public bool VsyncEnabled = true;        // V-Sync on by default (syncs to monitor refresh rate)
-	public int FpsLimit;                     // 0=unlimited, 60, 120, 144, 165, 240
+	public bool VsyncEnabled = false;       // V-Sync off by default — run uncapped (no monitor-refresh cap)
+	public int FpsLimit;                     // 0=unlimited (default), 60, 120, 144, 165, 240
 
 	// ── Interface ─────────────────────────────────────────
 	public bool ShowMinimap = true;         // VB6: MiniMap_Activate
@@ -102,6 +103,7 @@ public class GameConfig
 		ShowNames = other.ShowNames;
 		ShowLights = other.ShowLights;
 		ShowWaterEffect = other.ShowWaterEffect;
+		FogIntensity = other.FogIntensity;
 
 		UiTransparency = other.UiTransparency;
 		UiTransparencyLevel = other.UiTransparencyLevel;
@@ -201,6 +203,7 @@ public class GameConfig
 					case "ShowNames": cfg.ShowNames = val == "1"; break;
 					case "ShowLights": cfg.ShowLights = val == "1"; break;
 					case "ShowWaterEffect": cfg.ShowWaterEffect = val == "1"; break;
+					case "FogIntensity": if (int.TryParse(val, out int fi)) cfg.FogIntensity = Math.Clamp(fi, 0, 100); break;
 
 					// Transparency
 					case "UiTransparency": cfg.UiTransparency = val == "1"; break;
@@ -289,6 +292,7 @@ public class GameConfig
 			sb.AppendLine($"ShowNames={(ShowNames ? "1" : "0")}");
 			sb.AppendLine($"ShowLights={(ShowLights ? "1" : "0")}");
 			sb.AppendLine($"ShowWaterEffect={(ShowWaterEffect ? "1" : "0")}");
+			sb.AppendLine($"FogIntensity={FogIntensity}");
 
 			// Transparency
 			sb.AppendLine($"UiTransparency={(UiTransparency ? "1" : "0")}");

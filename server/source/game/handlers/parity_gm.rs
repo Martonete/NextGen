@@ -1166,13 +1166,17 @@ pub(super) async fn handle_slash_panelgm(state: &mut GameState, conn_id: Connect
     let gold_mult = state.multiplicador_oro;
     let drop_mult = state.multiplicador_drop;
     let raining = state.raining;
-    let night = state.forced_night;
+    let day_phase = match state.forced_day_phase {
+        crate::game::types::DayPhase::Day => "Dia",
+        crate::game::types::DayPhase::Evening => "Tarde",
+        crate::game::types::DayPhase::Night => "Noche",
+    };
 
     state.send_console(conn_id, &format!(
-        "=== Panel GM === Online: {} | Record: {} | EXP: {}x | Gold: {}x | Drop: {}x | Lluvia: {} | Noche: {}",
+        "=== Panel GM === Online: {} | Record: {} | EXP: {}x | Gold: {}x | Drop: {}x | Lluvia: {} | Fase: {}",
         online, record, exp_mult, gold_mult, drop_mult,
         if raining { "Si" } else { "No" },
-        if night { "Si" } else { "No" }
+        day_phase
     ), font_index::SERVER);
 
     // Show pending SOS messages

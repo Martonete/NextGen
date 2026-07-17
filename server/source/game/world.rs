@@ -11,19 +11,20 @@ use std::collections::HashMap;
 pub const MAP_WIDTH: usize = 100;
 pub const MAP_HEIGHT: usize = 100;
 
-// Client viewport — worst case for 1920x1080 resolution (~45x23 tiles visible)
-pub const X_WINDOW: i32 = 45;
-pub const Y_WINDOW: i32 = 23;
+// Client viewport — extended ~35% past the 1920x1080 worst case (45x23) for a
+// wider visibility range (61x31 tiles visible).
+pub const X_WINDOW: i32 = 61;
+pub const Y_WINDOW: i32 = 31;
 
 // Border offsets (half viewport) — used for area queries and range checks
-pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 22
-pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 11
+pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 30
+pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 15
 
 // Extended visibility for objects (doors, ground items, particles, lights).
-// Covers up to 1920x1080 (45x27 tiles → half = 22x13) with margin.
+// Kept at a small margin above MIN_X/Y_BORDER, same ratio as before.
 // Characters/NPCs still use MIN_X/Y_BORDER — they fade via client FOV system.
-pub const OBJ_X_BORDER: i32 = 23;
-pub const OBJ_Y_BORDER: i32 = 14;
+pub const OBJ_X_BORDER: i32 = 31;
+pub const OBJ_Y_BORDER: i32 = 16;
 
 // Default zone size for area tracking
 const DEFAULT_ZONE_SIZE: i32 = 9;
@@ -336,11 +337,7 @@ pub fn in_map_bounds_grid(grid: &MapGrid, x: i32, y: i32) -> bool {
 
 /// Check if position is within walkable border limits for any grid size.
 pub fn in_map_bounds_for(x: i32, y: i32, width: i32, height: i32) -> bool {
-    let min_x = 1 + (X_WINDOW / 2);
-    let max_x = width - (X_WINDOW / 2);
-    let min_y = 1 + (Y_WINDOW / 2);
-    let max_y = height - (Y_WINDOW / 2);
-    x >= min_x && x <= max_x && y >= min_y && y <= max_y
+    x >= 1 && x <= width && y >= 1 && y <= height
 }
 
 /// Convert heading to position offset.

@@ -149,6 +149,9 @@ pub struct UserState {
     pub invisible: bool,
     pub cursed: bool,       // VB6: flags.Maldicion
     pub blessed: bool,      // VB6: flags.Bendicion
+    // VB6 shares a single `Counters.Ceguera` for stun and blindness, so the two are
+    // mutually exclusive. We keep separate fields (distinct expiry messages), but every
+    // site that activates one MUST clear the other — see npcs.rs / spell_offensive.rs.
     pub stunned: bool,      // VB6: flags.Estupidez
     pub counter_stun: i32,  // Ticks remaining for stun
     pub blind: bool,        // VB6: flags.Ceguera
@@ -629,6 +632,27 @@ impl UserState {
     }
 }
 
+/// GM-forced time-of-day phase (VB6 only had /NOCHE; extended to a 3-phase
+/// cycle so /DIA, /TARDE, /NOCHE can each force a distinct ambient/ lighting look).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DayPhase {
+    #[default]
+    Day,
+    Evening,
+    Night,
+}
+
+impl DayPhase {
+    /// Wire value sent to the client in the SendNight packet (was a bool: 0/1).
+    pub fn to_byte(self) -> u8 {
+        match self {
+            DayPhase::Day => 0,
+            DayPhase::Evening => 1,
+            DayPhase::Night => 2,
+        }
+    }
+}
+
 /// Routing target for SendData (matches VB6 SendTarget enum).
 #[derive(Debug, Clone, Copy)]
 pub enum SendTarget {
@@ -863,8 +887,8 @@ pub struct GameState {
     pub raining: bool,
     pub rain_counter: i32, // Tick counter for rain STA drain (incremented each 40ms tick)
 
-    // GM forced night mode (VB6: /NOCHE toggle)
-    pub forced_night: bool,
+    // GM forced day/evening/night phase (VB6: /NOCHE toggle; extended to 3 phases)
+    pub forced_day_phase: DayPhase,
 
     // Server shutdown/restart countdown (VB6: /APAGAR, /REINICIAR)
     pub shutdown_countdown: i32, // Seconds remaining until shutdown (0 = inactive)
@@ -935,6 +959,8 @@ impl GameState {
     ) -> Self {
         let notice = config.notice.clone();
         let exp_mult = config.exp_multiplier as i32;
+        let gold_mult = config.gold_multiplier as i32;
+        let drop_mult = config.drop_multiplier as i32;
         let security_code = format!("{}", rand_simple());
         // Extract security config before `config` is moved into struct
         let ip_max_conn = config.ip_max_connections.unwrap_or(10);
@@ -1009,8 +1035,8 @@ impl GameState {
             pretoriano_faccion: 0,
             pretoriano_alcoba: 0,
             multiplicador_exp: exp_mult,
-            multiplicador_oro: 1,
-            multiplicador_drop: 1,
+            multiplicador_oro: gold_mult,
+            multiplicador_drop: drop_mult,
             auto_msg_active: false,
             auto_msg_text: String::new(),
             auto_msg_interval: 0,
@@ -1033,7 +1059,7 @@ impl GameState {
             flood_strikes: HashMap::new(),
             raining: false,
             rain_counter: 0,
-            forced_night: false,
+            forced_day_phase: DayPhase::default(),
             shutdown_countdown: 0,
             shutdown_restart: false,
             auth_failures: HashMap::new(),

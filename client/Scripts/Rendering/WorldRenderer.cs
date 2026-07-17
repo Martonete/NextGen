@@ -31,6 +31,9 @@ public partial class WorldRenderer : Node2D
 	private GameState? _state;
 	private GameData? _data;
 	private GrhAnimator? _animator;
+	private IResourceProvider? _resources;
+	private readonly Dictionary<int, MapData> _mapCache = new();
+	private readonly Dictionary<int, AdjacentMapCache> _adjacentCache = new();
 
 	// Child layers
 	private ReflectedAuraLayer? _reflAuraLayer;
@@ -44,16 +47,32 @@ public partial class WorldRenderer : Node2D
 	private RoofLayer? _roofLayer;
 	private WeatherRenderer? _weatherRenderer;
 	private FloatingTextLayer? _floatingTextLayer;
+	private FogOverlayLayer? _fogOverlay;
 
 	private const int TileSize = 32;
 
+	// Render window override (login backdrop): when set, this renderer draws its
+	// own tile window instead of the shared gameplay viewport's. Null = gameplay,
+	// which reads ResolutionManager exactly as before.
+	private Vector2I? _renderWindowOverride;
+
+	/// <summary>
+	/// Render a custom pixel-sized window instead of the shared gameplay viewport.
+	/// Used by the login backdrop to fill the whole screen; gameplay leaves it unset.
+	/// </summary>
+	public void SetRenderWindow(Vector2I sizePx) => _renderWindowOverride = sizePx;
+
 	// Viewport dimensions — dynamic, read from ResolutionManager
-	private static int ViewportWidth => ResolutionManager.ViewportW;
-	private static int ViewportHeight => ResolutionManager.ViewportH;
+	private int ViewportWidth => _renderWindowOverride?.X ?? ResolutionManager.ViewportW;
+	private int ViewportHeight => _renderWindowOverride?.Y ?? ResolutionManager.ViewportH;
 
 	// How many tiles from center to edge (visible range) — dynamic
-	private static int HalfWindowTileWidth => ResolutionManager.HalfTilesX;
-	private static int HalfWindowTileHeight => ResolutionManager.HalfTilesY;
+	private int HalfWindowTileWidth => _renderWindowOverride.HasValue
+		? _renderWindowOverride.Value.X / (2 * TileSize) + 1
+		: ResolutionManager.HalfTilesX;
+	private int HalfWindowTileHeight => _renderWindowOverride.HasValue
+		? _renderWindowOverride.Value.Y / (2 * TileSize) + 1
+		: ResolutionManager.HalfTilesY;
 
 	// Buffer sizes beyond visible area
 	private const int TerrainBufferSize = 4; // L1-L4: supports GRHs up to 128px (4 tiles). VB6 max sprite ~128px.
@@ -157,7 +176,14 @@ void fragment() {
 	if (use_lightmap) {
 		vec2 uv = (v_world_px - 32.0) / map_size_px;
 		vec3 light = texture(lightmap, uv).rgb;
-		COLOR.rgb *= light;
+		// Multiplicative darkening/brightening (day/evening/night ambient) PLUS
+		// an additive glow measured against a FIXED floor (not the scene's own
+		// ambient) — so a torch reads as a real light source with the same
+		// visible punch at noon, dusk, or midnight, instead of only standing
+		// out when the ambient happens to be dark.
+		const vec3 glowFloor = vec3(0.35);
+		vec3 boost = max(light - glowFloor, vec3(0.0));
+		COLOR.rgb = COLOR.rgb * light + COLOR.rgb * boost * 1.4;
 	}
 }
 ";
@@ -166,6 +192,9 @@ void fragment() {
 	/// Called by Main after RecalculateLights() to trigger lightmap texture rebuild.
 	/// </summary>
 	public void MarkLightmapDirty() => _lightmapDirty = true;
+
+	/// <summary>Rebuild the fog overlay texture — call when the fog intensity option changes.</summary>
+	public void RebuildFogOverlay() => _fogOverlay?.RebuildFogTexture();
 
 	/// <summary>
 	/// Rebuild the pre-computed water tile map from current MapData.
@@ -249,11 +278,12 @@ void fragment() {
 		}
 	}
 
-	public void Init(GameState state, GameData data, GrhAnimator animator)
+	public void Init(GameState state, GameData data, GrhAnimator animator, IResourceProvider? resources = null)
 	{
 		_state = state;
 		_data = data;
 		_animator = animator;
+		_resources = resources;
 
 		// Create lightmap shader + material (shared across terrain layers)
 		var shader = new Shader();
@@ -367,11 +397,13 @@ void fragment() {
 		safeZoneBorder.ZIndex = 6;
 		AddChild(safeZoneBorder);
 
-		// Fog overlay: z=7 (darkens extended viewport edges beyond core 17x13)
+		// Fog overlay: z=7 (fogs extended viewport edges beyond core 17x13)
 		var fogOverlay = new FogOverlayLayer();
 		fogOverlay.Name = "FogOverlay";
 		fogOverlay.ZIndex = 7;
+		fogOverlay.Init(_state!);
 		AddChild(fogOverlay);
+		_fogOverlay = fogOverlay;
 	}
 
 	/// <summary>
@@ -565,12 +597,113 @@ void fragment() {
 	/// <summary>
 	/// Convert world tile to screen pixel position.
 	/// </summary>
-	private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
+	private Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
 										 float pixelOffsetX, float pixelOffsetY)
 	{
 		float px = (tileX - userX + HalfWindowTileWidth) * TileSize + pixelOffsetX;
 		float py = (tileY - userY + HalfWindowTileHeight) * TileSize + pixelOffsetY;
 		return new Vector2(px, py);
+	}
+
+	private void ApplyCameraClamp(int rawUserX, int rawUserY, float rawPixelOffsetX, float rawPixelOffsetY,
+								  int mapW, int mapH)
+	{
+		float originX = (rawUserX - HalfWindowTileWidth) * TileSize - rawPixelOffsetX;
+		float originY = (rawUserY - HalfWindowTileHeight) * TileSize - rawPixelOffsetY;
+
+		float maxOriginX = Math.Max(0, mapW * TileSize - ViewportWidth);
+		float maxOriginY = Math.Max(0, mapH * TileSize - ViewportHeight);
+		originX = Math.Clamp(originX, 0, maxOriginX);
+		originY = Math.Clamp(originY, 0, maxOriginY);
+
+		_frameUserX = (int)Math.Floor(originX / TileSize) + HalfWindowTileWidth;
+		_frameUserY = (int)Math.Floor(originY / TileSize) + HalfWindowTileHeight;
+		_framePixelOffsetX = (_frameUserX - HalfWindowTileWidth) * TileSize - originX;
+		_framePixelOffsetY = (_frameUserY - HalfWindowTileHeight) * TileSize - originY;
+	}
+
+	private MapData? LoadCachedMap(int mapNumber)
+	{
+		if (mapNumber <= 0 || _resources == null) return null;
+		if (_state != null && mapNumber == _state.CurrentMap) return _state.MapData;
+		if (_mapCache.TryGetValue(mapNumber, out var cached)) return cached;
+		try
+		{
+			var loaded = MapLoader.Load(_resources, mapNumber);
+			_mapCache[mapNumber] = loaded;
+			return loaded;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
+	private bool TryResolveTile(int x, int y, out MapTile tile)
+	{
+		tile = default;
+		if (_state?.MapData == null) return false;
+
+		var current = _state.MapData;
+		if (IsClassicEdgeBand(x, y, current) && TryResolveAdjacentTile(x, y, current, out tile))
+			return true;
+
+		if (x >= 1 && x <= current.Width && y >= 1 && y <= current.Height)
+		{
+			tile = current.Tiles[x, y];
+			return true;
+		}
+
+		if (TryResolveAdjacentTile(x, y, current, out tile))
+			return true;
+
+		return false;
+	}
+
+	private bool TryResolveAdjacentTile(int x, int y, MapData current, out MapTile tile)
+	{
+		tile = default;
+		int side = GetClassicEdgeSide(x, y, current);
+		if (side == 0) return false;
+
+		if (_state == null) return false;
+		var cache = GetAdjacentCache(_state.CurrentMap, current);
+		int coord = side is 1 or 3 ? Math.Clamp(x, 1, current.Width) : Math.Clamp(y, 1, current.Height);
+		var exit = cache.Get(side, coord);
+		if (exit.DestMap <= 0) return false;
+
+		var neighbor = LoadCachedMap(exit.DestMap);
+		if (neighbor == null) return false;
+
+		int nx = exit.DestX + (x - exit.SrcX);
+		int ny = exit.DestY + (y - exit.SrcY);
+		if (nx < 1 || nx > neighbor.Width || ny < 1 || ny > neighbor.Height)
+			return false;
+
+		tile = neighbor.Tiles[nx, ny];
+		return true;
+	}
+
+	private static bool IsClassicEdgeBand(int x, int y, MapData map)
+	{
+		return GetClassicEdgeSide(x, y, map) != 0;
+	}
+
+	private static int GetClassicEdgeSide(int x, int y, MapData map)
+	{
+		if (y < 7) return 1;
+		if (y > map.Height - 6) return 3;
+		if (x > map.Width - 8) return 2;
+		if (x < 9) return 4;
+		return 0;
+	}
+
+	private AdjacentMapCache GetAdjacentCache(int mapNumber, MapData current)
+	{
+		if (_adjacentCache.TryGetValue(mapNumber, out var cache)) return cache;
+		cache = AdjacentMapCache.Build(current);
+		_adjacentCache[mapNumber] = cache;
+		return cache;
 	}
 
 
@@ -593,7 +726,10 @@ void fragment() {
 		_pendingDialogDraws.Clear();
 		_pendingRoofDraws.Clear();
 
-		// VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter
+		int mapW = _state.MapData.Width;
+		int mapH = _state.MapData.Height;
+
+		// VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter.
 		_frameUserX = _state.UserPosX - _state.AddToUserPosX;
 		_frameUserY = _state.UserPosY - _state.AddToUserPosY;
 
@@ -612,20 +748,17 @@ void fragment() {
 		int screenMinY = _frameUserY - HalfWindowTileHeight;
 		int screenMaxY = _frameUserY + HalfWindowTileHeight;
 
-		int mapW = _state.MapData.Width;
-		int mapH = _state.MapData.Height;
-
 		// L2/L3 terrain bounds (large buffer for 512px sprites)
-		_frameMinX = Math.Max(1, screenMinX - TerrainBufferSize);
-		_frameMaxX = Math.Min(mapW, screenMaxX + TerrainBufferSize);
-		_frameMinY = Math.Max(1, screenMinY - TerrainBufferSize);
-		_frameMaxY = Math.Min(mapH, screenMaxY + TerrainBufferSize);
+		_frameMinX = screenMinX - TerrainBufferSize;
+		_frameMaxX = screenMaxX + TerrainBufferSize;
+		_frameMinY = screenMinY - TerrainBufferSize;
+		_frameMaxY = screenMaxY + TerrainBufferSize;
 
 		// L1 water bounds (+3 to account for pixel offset during smooth scroll)
-		_frameL1MinX = Math.Max(1, screenMinX - 3);
-		_frameL1MaxX = Math.Min(mapW, screenMaxX + 3);
-		_frameL1MinY = Math.Max(1, screenMinY - 3);
-		_frameL1MaxY = Math.Min(mapH, screenMaxY + 3);
+		_frameL1MinX = screenMinX - 3;
+		_frameL1MaxX = screenMaxX + 3;
+		_frameL1MinY = screenMinY - 3;
+		_frameL1MaxY = screenMaxY + 3;
 
 		// Character bounds (viewport only + 1 tile for smooth edge)
 		_frameCharMinX = Math.Max(1, screenMinX - CharBufferSize);
@@ -706,7 +839,7 @@ void fragment() {
 		{
 			for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
 			{
-				ref var tile = ref _state.MapData.Tiles[x, y];
+				if (!TryResolveTile(x, y, out var tile)) continue;
 				if (!IsWaterGrh(tile.Layer1)) continue; // only water
 
 				Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
@@ -796,35 +929,21 @@ void fragment() {
 		// PASS 1b (mask) and PASS 2 (L2) are now drawn by child layers
 		// (NonWaterMaskLayer and Layer2Layer) which draw AFTER this _Draw().
 
-		// ==========================================
-		// Pre-compute PASS 3 data for ContentLayer (characters queue aura draws)
-		// We must process characters HERE (parent _Draw runs first) so aura data
-		// is available when AuraLayer._Draw() fires.
-		// But actual character drawing goes to ContentLayer via DrawContent().
-		// ==========================================
-		// Collect aura draws by iterating characters and updating their aura state.
-		// This populates _pendingAuraDraws before AuraLayer._Draw() fires.
-		// Opt 3: reuse viewport bounds from reflection pass (already computed above).
+		// Pre-compute PASS 3 aura data before AuraLayer draws, matching the original flow.
 		foreach (var kvp in _state.Characters)
 		{
 			var ch = kvp.Value;
-			// Invisible chars from OTHER players skip ALL rendering
 			if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
-			// Auras not drawn when Navegando or Montado (equipment hidden)
 			if (ch.Navigating || ch.Mounted) continue;
-
-			// Opt 3: skip aura collection for characters well outside viewport
 			if (ch.PosX < reflMinX || ch.PosX > reflMaxX ||
 				ch.PosY < reflMinY || ch.PosY > reflMaxY)
 				continue;
 
-			// Compute character screen position
 			var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
 										_framePixelOffsetX, _framePixelOffsetY);
 			float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
 			float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
 
-			// Pre-resolve head offset for aura positioning
 			Vector2 headOffset = new Vector2(0, -30);
 			if (ch.Body > 0 && ch.Body < _data.Bodies.Length)
 			{
@@ -832,17 +951,11 @@ void fragment() {
 				headOffset = new Vector2(body.HeadOffsetX, body.HeadOffsetY);
 			}
 
-			// Collect aura draws (updates angle state + queues to _pendingAuraDraws)
-			// When invisible (self only), auras pulse with the same alpha as the body
 			if (_state.Config?.ShowAuras ?? true)
 			{
-				float auraAlpha = 1f;
-				if (ch.Invisible)
-				{
-					// TransparenciaBody ranges 18-53, maps to alpha ~45-135 out of 255
-					auraAlpha = (ch.TransparenciaBody + 45f) / 255f;
-				}
-				CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data, _animator!.GlobalTimeMs, auraAlpha);
+				float auraAlpha = ch.Invisible ? (ch.TransparenciaBody + 45f) / 255f : 1f;
+				CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset,
+					_data, _animator!.GlobalTimeMs, auraAlpha);
 			}
 		}
 
@@ -878,7 +991,7 @@ void fragment() {
 				float sy = _screenYCache[y - _frameMinY];
 				for (int x = _frameMinX; x <= _frameMaxX; x++)
 				{
-					ref var tile = ref _state.MapData.Tiles[x, y];
+					if (!TryResolveTile(x, y, out var tile)) continue;
 					if (tile.Layer4 <= 0) continue;
 
 					// Determine color: tiles in the fading region get fade, others stay opaque
@@ -995,5 +1108,104 @@ public readonly struct CameraSnapshot
 	{
 		UserX = userX; UserY = userY;
 		PixelOffsetX = pixelOffsetX; PixelOffsetY = pixelOffsetY;
+	}
+}
+
+internal readonly struct AdjacentExit
+{
+	public readonly int SrcX, SrcY, DestMap, DestX, DestY;
+
+	public AdjacentExit(int srcX, int srcY, int destMap, int destX, int destY)
+	{
+		SrcX = srcX;
+		SrcY = srcY;
+		DestMap = destMap;
+		DestX = destX;
+		DestY = destY;
+	}
+}
+
+internal sealed class AdjacentMapCache
+{
+	private readonly AdjacentExit[] _north;
+	private readonly AdjacentExit[] _east;
+	private readonly AdjacentExit[] _south;
+	private readonly AdjacentExit[] _west;
+
+	private AdjacentMapCache(int width, int height)
+	{
+		_north = new AdjacentExit[width + 1];
+		_south = new AdjacentExit[width + 1];
+		_east = new AdjacentExit[height + 1];
+		_west = new AdjacentExit[height + 1];
+	}
+
+	public AdjacentExit Get(int side, int coord) => side switch
+	{
+		1 => coord >= 1 && coord < _north.Length ? _north[coord] : default,
+		2 => coord >= 1 && coord < _east.Length ? _east[coord] : default,
+		3 => coord >= 1 && coord < _south.Length ? _south[coord] : default,
+		4 => coord >= 1 && coord < _west.Length ? _west[coord] : default,
+		_ => default
+	};
+
+	public static AdjacentMapCache Build(MapData map)
+	{
+		var cache = new AdjacentMapCache(map.Width, map.Height);
+		FillHorizontal(map, cache._north, north: true);
+		FillHorizontal(map, cache._south, north: false);
+		FillVertical(map, cache._west, west: true);
+		FillVertical(map, cache._east, west: false);
+		return cache;
+	}
+
+	private static void FillHorizontal(MapData map, AdjacentExit[] target, bool north)
+	{
+		int edgeLimit = 10;
+		for (int coord = 1; coord <= map.Width; coord++)
+		{
+			int bestDistance = int.MaxValue;
+			AdjacentExit best = default;
+			int yStart = north ? 1 : Math.Max(1, map.Height - edgeLimit + 1);
+			int yEnd = north ? Math.Min(edgeLimit, map.Height) : map.Height;
+			for (int y = yStart; y <= yEnd; y++)
+			{
+				for (int x = 1; x <= map.Width; x++)
+				{
+					var tile = map.Tiles[x, y];
+					if (tile.ExitMap <= 0) continue;
+					int distance = Math.Abs(x - coord);
+					if (distance >= bestDistance) continue;
+					bestDistance = distance;
+					best = new AdjacentExit(x, y, tile.ExitMap, tile.ExitX, tile.ExitY);
+				}
+			}
+			target[coord] = best;
+		}
+	}
+
+	private static void FillVertical(MapData map, AdjacentExit[] target, bool west)
+	{
+		int edgeLimit = 10;
+		for (int coord = 1; coord <= map.Height; coord++)
+		{
+			int bestDistance = int.MaxValue;
+			AdjacentExit best = default;
+			int xStart = west ? 1 : Math.Max(1, map.Width - edgeLimit + 1);
+			int xEnd = west ? Math.Min(edgeLimit, map.Width) : map.Width;
+			for (int y = 1; y <= map.Height; y++)
+			{
+				for (int x = xStart; x <= xEnd; x++)
+				{
+					var tile = map.Tiles[x, y];
+					if (tile.ExitMap <= 0) continue;
+					int distance = Math.Abs(y - coord);
+					if (distance >= bestDistance) continue;
+					bestDistance = distance;
+					best = new AdjacentExit(x, y, tile.ExitMap, tile.ExitX, tile.ExitY);
+				}
+			}
+			target[coord] = best;
+		}
 	}
 }

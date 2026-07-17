@@ -32,8 +32,9 @@ public static class TextosLoader
 
         // First pass: find max ID
         int maxId = 0;
-        foreach (var line in lines)
+        foreach (var rawLine in lines)
         {
+            string line = rawLine.Trim();
             if (line.StartsWith("[TEXTO") && line.EndsWith("]"))
             {
                 string numStr = line[6..^1]; // strip [TEXTO and ]

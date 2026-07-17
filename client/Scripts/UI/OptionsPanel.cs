@@ -39,6 +39,8 @@ public partial class OptionsPanel : RpgBaseForm
     private HSlider? _sldSfxVol;
     private Label? _lblMusicVol;
     private Label? _lblSfxVol;
+    private HSlider? _sldFogIntensity;
+    private Label? _lblFogIntensity;
     private Button? _chkGlobalChat;
     private Button? _chkPrivateChat;
     private Button? _chkBuffTimers;
@@ -426,6 +428,19 @@ public partial class OptionsPanel : RpgBaseForm
         _chkLights.Toggled += _ => ApplyImmediate();
         rightCol.AddChild(lightsRow);
 
+        // Niebla: [label] [slider] [%]
+        var fogRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        var fogLabel = RpgTheme.CreateInfoLabel("Niebla", 13);
+        RpgTheme.SetMinW(fogLabel, 70);
+        fogRow.AddChild(fogLabel);
+        _sldFogIntensity = RpgTheme.CreateRpgSlider(30, 0, 100, 40);
+        _sldFogIntensity.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        fogRow.AddChild(_sldFogIntensity);
+        _lblFogIntensity = RpgTheme.CreateInfoLabel("30%", 11);
+        fogRow.AddChild(_lblFogIntensity);
+        _sldFogIntensity.ValueChanged += v => { _lblFogIntensity.Text = $"{(int)v}%"; ApplyImmediate(); };
+        rightCol.AddChild(fogRow);
+
         var reflectionsRow = RpgTheme.CreateRpgCheckboxRow("Reflejos agua");
         _chkReflections = GetCheckboxFromRow(reflectionsRow);
         _chkReflections.Toggled += _ => ApplyImmediate();
@@ -632,6 +647,8 @@ public partial class OptionsPanel : RpgBaseForm
         SetCheck(_chkDayNight, cfg.ShowDayNight);
         SetCheck(_chkNames, cfg.ShowNames);
         SetCheck(_chkLights, cfg.ShowLights);
+        if (_sldFogIntensity != null) _sldFogIntensity.Value = cfg.FogIntensity;
+        if (_lblFogIntensity != null) _lblFogIntensity.Text = $"{cfg.FogIntensity}%";
         SetCheck(_chkMinimap, cfg.ShowMinimap);
         // Transparencias
         SetCheck(_chkTreeTransparency, cfg.TreeRoofTransparency);
@@ -692,6 +709,7 @@ public partial class OptionsPanel : RpgBaseForm
         cfg.ShowDayNight = IsChecked(_chkDayNight);
         cfg.ShowNames = IsChecked(_chkNames);
         cfg.ShowLights = IsChecked(_chkLights);
+        cfg.FogIntensity = (int)(_sldFogIntensity?.Value ?? 30);
         cfg.ShowMinimap = IsChecked(_chkMinimap);
         // Transparencias
         cfg.TreeRoofTransparency = IsChecked(_chkTreeTransparency);

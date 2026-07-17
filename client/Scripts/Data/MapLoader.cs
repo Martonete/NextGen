@@ -9,7 +9,7 @@ namespace ArgentumNextgen.Data;
 
 /// <summary>
 /// Parses .map + .inf (legacy 100x100) and .aomap + .aoinf (dynamic size) binary files.
-/// Legacy: Map header(273) + reserved(16) + tiles(100x100 variable)
+/// Legacy: Map header(273) + tiles(100x100 variable, Int16 layers)
 ///         Inf header(10) + tiles(100x100 variable)
 /// New:    AOMAP header(16) + tiles(WxH variable), same ByFlags format
 ///         AOINF header(16) + tiles(WxH variable), same ByFlags format
@@ -176,6 +176,7 @@ public static class MapLoader
                     tile.ExitMap = reader.ReadInt16();
                     tile.ExitX = reader.ReadInt16();
                     tile.ExitY = reader.ReadInt16();
+                    tile.Blocked = false;
                 }
 
                 if ((byFlags & 2) != 0)
@@ -216,24 +217,24 @@ public static class MapLoader
 
                 tile.Blocked = (byFlags & 1) != 0;
 
-                // Layer 1 always present
-                tile.Layer1 = reader.ReadInt32();
+                // Layer 1 always present. Legacy VB6 .map stores graphic layers as UInt16.
+                tile.Layer1 = reader.ReadUInt16();
 
                 // Layer 2
                 if ((byFlags & 2) != 0)
-                    tile.Layer2 = reader.ReadInt32();
+                    tile.Layer2 = reader.ReadUInt16();
                 else
                     tile.Layer2 = 0;
 
                 // Layer 3
                 if ((byFlags & 4) != 0)
-                    tile.Layer3 = reader.ReadInt32();
+                    tile.Layer3 = reader.ReadUInt16();
                 else
                     tile.Layer3 = 0;
 
                 // Layer 4
                 if ((byFlags & 8) != 0)
-                    tile.Layer4 = reader.ReadInt32();
+                    tile.Layer4 = reader.ReadUInt16();
                 else
                     tile.Layer4 = 0;
 
@@ -285,6 +286,7 @@ public static class MapLoader
                     tile.ExitMap = reader.ReadInt16();
                     tile.ExitX = reader.ReadInt16();
                     tile.ExitY = reader.ReadInt16();
+                    tile.Blocked = false;
                 }
 
                 // Bit 1: NPC

@@ -322,6 +322,9 @@ pub enum ServerPacketID {
     ClanChatResp = 196,
     GuildBankSlotData = 197, // SBG: full guild bank slot data (slot+item+gold)
 
+    // Spell travel beam (cosmetic light beam caster→target; drawn client-side)
+    SpellBeam = 198,
+
     // Character particles
     CharParticleCreate = 211,
 

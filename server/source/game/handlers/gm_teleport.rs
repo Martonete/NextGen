@@ -43,6 +43,14 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
     let map: i32 = parts[1].parse().unwrap_or(0);
     let x: i32 = parts[2].parse().unwrap_or(0);
     let y: i32 = parts[3].parse().unwrap_or(0);
+    tracing::info!(
+        "[GM] TELEP request from #{}: target={} map={} x={} y={}",
+        conn_id,
+        name,
+        map,
+        x,
+        y
+    );
 
     if map < 1
         || state
@@ -51,6 +59,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
             .map(|g| !crate::game::world::in_map_bounds_grid(g, x, y))
             .unwrap_or(true)
     {
+        state.send_console(conn_id, "Mapa o coordenadas invalidas.", font_index::INFO);
         return;
     }
 
@@ -64,6 +73,11 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
             .and_then(|m| m.as_ref())
             .is_none()
     {
+        state.send_console(
+            conn_id,
+            &format!("Mapa {} no existe.", map),
+            font_index::INFO,
+        );
         return;
     }
 
@@ -89,6 +103,11 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
 
     // Notify
     if target_id == conn_id {
+        state.send_console(
+            conn_id,
+            &format!("Teleport OK: mapa {} ({},{})", map, x, y),
+            font_index::INFO,
+        );
         state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
     } else {
         let gm_name = state
@@ -221,6 +240,11 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
+    state.send_console(
+        conn_id,
+        &format!("Teleport OK: mapa {} ({},{})", map, x, y),
+        font_index::INFO,
+    );
     state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
 }
 

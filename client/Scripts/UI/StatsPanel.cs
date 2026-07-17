@@ -430,7 +430,7 @@ public partial class StatsPanel : RpgBaseForm
         _lblCharName?.SetDeferred("text", _state.UserName);
         _lblClass?.SetDeferred("text", _state.UserClassName);
         _lblRace?.SetDeferred("text", _state.UserRaceName);
-        _lblLevel?.SetDeferred("text", _state.Level.ToString());
+        _lblLevel?.SetDeferred("text", $"{_state.Level} / {GameState.MaxLevel}");
         _lblExp?.SetDeferred("text", $"{_state.Exp} / {_state.ExpNext}");
         _lblGold?.SetDeferred("text", _state.Gold.ToString("N0"));
         _lblHp?.SetDeferred("text", $"{_state.MinHp} / {_state.MaxHp}");
@@ -481,25 +481,30 @@ public partial class StatsPanel : RpgBaseForm
 
             if (_lblSkillValues[i] != null)
             {
-                string text = pending > 0 ? $"{skillVal}+{pending}" : skillVal.ToString();
+                string text = pending > 0
+                    ? $"{skillVal}+{pending}/{GameState.MaxSkillLevel}"
+                    : $"{skillVal}/{GameState.MaxSkillLevel}";
                 _lblSkillValues[i].Text = text;
                 _lblSkillValues[i].AddThemeColorOverride("font_color",
                     pending > 0 ? new Color(0.3f, 1f, 0.3f) : Colors.White);
             }
 
             if (_skillBars[i] != null)
+            {
+                _skillBars[i].MaxValue = GameState.MaxSkillLevel;
                 _skillBars[i].Value = displayVal;
+            }
 
             // XP progress bar — show actual server XP%, but hide when pending changes are applied
             if (_xpBars[i] != null)
             {
                 int pct = (i < _state.SkillPct.Length) ? _state.SkillPct[i] : 0;
                 _xpBars[i].Value = pending > 0 ? 0 : pct;
-                _xpBars[i].Visible = skillVal < 100; // hide at max level
+                _xpBars[i].Visible = skillVal < GameState.MaxSkillLevel;
             }
 
             if (_btnSkillUp[i] != null)
-                _btnSkillUp[i].Visible = hasPoints || pending > 0;
+                _btnSkillUp[i].Visible = (hasPoints || pending > 0) && displayVal < GameState.MaxSkillLevel;
         }
 
         if (_btnApplySkills != null)
@@ -534,7 +539,7 @@ public partial class StatsPanel : RpgBaseForm
         if (remaining <= 0) return;
 
         int currentSkill = (skillIndex < _state.Skills.Length) ? _state.Skills[skillIndex] : 0;
-        if (currentSkill + _pendingSkillIncrements[skillIndex] >= 100) return;
+        if (currentSkill + _pendingSkillIncrements[skillIndex] >= GameState.MaxSkillLevel) return;
 
         _pendingSkillIncrements[skillIndex]++;
         RefreshSkillsTab();
@@ -546,16 +551,16 @@ public partial class StatsPanel : RpgBaseForm
         int total = TotalPendingIncrements();
         if (total <= 0) return;
 
-        // Build the 20-byte array for WriteSkillSet (server expects 20 values for skills 1-20)
-        // But server handle_skse reads 22 values — send all 22 as the protocol supports it
-        var points = new byte[20];
-        for (int i = 0; i < 20 && i < 22; i++)
+        // Server expects one increment byte per VB6 skill slot.
+        var points = new byte[22];
+        for (int i = 0; i < 22; i++)
         {
             points[i] = (byte)_pendingSkillIncrements[i];
         }
 
         _tcp.SendPacket(ClientPackets.WriteSkillSet(points));
         ResetPendingSkills();
+        RefreshSkillsTab();
 
         GD.Print($"[StatsPanel] Applied {total} skill points");
     }
@@ -580,7 +585,7 @@ public partial class StatsPanel : RpgBaseForm
 
     public override void _Process(double delta)
     {
-        if (!Visible || _state == null || !_dirty) return;
+        if (!Visible || _state == null) return;
         _dirty = false;
         RefreshCurrentTab();
     }

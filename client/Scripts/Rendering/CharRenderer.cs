@@ -32,9 +32,9 @@ internal static class ByteToFloat
 public static partial class CharRenderer
 {
 	private const int TileSize = 32;
-	// VB6: OFFSET_HEAD = -34 — vertical offset for helmet sprite above head position.
-	// Helmets are drawn at HeadOffset + OFFSET_HEAD (head uses just HeadOffset).
-	private const int OFFSET_HEAD = -34;
+	// Helmets use the same head anchor as Cabezas.ind. Older code subtracted 34px here,
+	// which made TS AO helmets float above the character.
+	private const int HELMET_Y_OFFSET = 1;
 
 	// Static buffers for DrawShadowProjected — reused every call to avoid per-frame allocations
 	private static readonly Vector2[] _shadowVerts = new Vector2[4];
@@ -202,7 +202,7 @@ public static partial class CharRenderer
 				if (cascoRes != null && cascoRes.FileNum > 0)
 				{
 					float cascoDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX;
-					float cascoDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY + OFFSET_HEAD;
+					float cascoDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY + HELMET_Y_OFFSET;
 					if (cascoRes.TileWidth != 1f && cascoRes.TileWidth > 0)
 						cascoDrawX -= (int)(cascoRes.TileWidth * (TileSize / 2)) - TileSize / 2;
 					if (cascoRes.TileHeight != 1f && cascoRes.TileHeight > 0)
@@ -418,7 +418,7 @@ public static partial class CharRenderer
 
 		// VB6: no per-heading X adjustment; mounted gets X+1
 		float xAdj = ch.Mounted ? 1f : 0f;
-		Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + OFFSET_HEAD);
+		Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + HELMET_Y_OFFSET);
 
 		DrawGrh(canvas, data, grhIdx, 0, helmetPos, true, colorOverride);
 	}

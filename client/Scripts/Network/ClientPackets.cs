@@ -280,7 +280,7 @@ public static class ClientPackets
     {
         var bq = new ByteQueue();
         bq.WriteByte(ClientPacketId.SkillSet);
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 22; i++)
         {
             bq.WriteByte(i < skillPoints.Length ? skillPoints[i] : (byte)0);
         }

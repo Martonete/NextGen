@@ -27,25 +27,26 @@ void fragment() {
         mask = texture(fog_mask, mask_uv).r;
     }
     if (mask <= 0.001) {
+        // Outside the fog mask: fully transparent.
+        // NOTE: Godot canvas_item shaders forbid 'return' in fragment(); use else.
         COLOR = vec4(0.0, 0.0, 0.0, 0.0);
-        return;
-    }
-
-    vec2 base_uv = world_px / 512.0;
-    float n;
-    if (free_smoke > 0.5) {
-        vec2 d1 = vec2(0.030, 0.012);
-        vec2 d2 = vec2(-0.018, 0.026);
-        float n1 = texture(noise_texture, base_uv + d1 * TIME).r;
-        float n2 = texture(noise_texture, base_uv + d2 * TIME).r;
-        n = max(n1, n2);
     } else {
-        n = texture(noise_texture, base_uv + speed * TIME).r;
+        vec2 base_uv = world_px / 512.0;
+        float n;
+        if (free_smoke > 0.5) {
+            vec2 d1 = vec2(0.030, 0.012);
+            vec2 d2 = vec2(-0.018, 0.026);
+            float n1 = texture(noise_texture, base_uv + d1 * TIME).r;
+            float n2 = texture(noise_texture, base_uv + d2 * TIME).r;
+            n = max(n1, n2);
+        } else {
+            n = texture(noise_texture, base_uv + speed * TIME).r;
+        }
+        float fog = clamp(n * 2.0 - 1.0, 0.0, 1.0);
+
+        float pd = length(world_px - player_world_pos);
+        float player_fade = smoothstep(0.0, player_break_radius, pd);
+
+        COLOR = vec4(fog_color.rgb, fog * density * mask * player_fade);
     }
-    float fog = clamp(n * 2.0 - 1.0, 0.0, 1.0);
-
-    float pd = length(world_px - player_world_pos);
-    float player_fade = smoothstep(0.0, player_break_radius, pd);
-
-    COLOR = vec4(fog_color.rgb, fog * density * mask * player_fade);
 }

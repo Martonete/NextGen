@@ -1,0 +1,12 @@
+[MAPA28]
+Name=Tanaris
+MusicNum=58
+Pk=1
+BackUp=0
+Terreno=BOSQUE
+Zona=CIUDAD
+RestringirNavegar=0
+NoEncriptarMP=0
+R=150
+G=150
+B=170

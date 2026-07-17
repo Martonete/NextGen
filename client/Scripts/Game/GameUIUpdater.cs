@@ -224,4 +224,23 @@ public class GameUIUpdater
         }
         QueueWorldRedraw?.Invoke(); // ensure arrows are redrawn
     }
+
+    /// <summary>
+    /// Advance cosmetic spell beams and drop them once their fade-out completes.
+    /// Positions are resolved live in the renderer, so this only ages the beams.
+    /// </summary>
+    public void UpdateSpellBeams(float delta)
+    {
+        if (_state.ActiveBeams.Count == 0) return;
+        for (int i = _state.ActiveBeams.Count - 1; i >= 0; i--)
+        {
+            var b = _state.ActiveBeams[i];
+            b.ElapsedMs += delta * 1000f;
+            if (b.ElapsedMs >= b.DurationMs)
+            {
+                _state.ActiveBeams.RemoveAt(i);
+            }
+        }
+        QueueWorldRedraw?.Invoke(); // ensure beams are redrawn while fading
+    }
 }

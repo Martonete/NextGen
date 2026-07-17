@@ -330,6 +330,16 @@ pub fn write_arrow(src: i16, tgt: i16, grh: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
+/// ID 185: Spell travel beam — cosmetic light beam from caster to target.
+/// Client draws a procedural fading beam between the two char indexes; purely visual.
+pub fn write_spell_beam(caster_ci: i16, target_ci: i16) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::SpellBeam.to_byte());
+    pkt.write_integer(caster_ci);
+    pkt.write_integer(target_ci);
+    pkt.into_bytes()
+}
+
 /// ID 109: Navigation broadcast (NVG).
 pub fn write_navigate_broadcast(ci: i16, flag: bool) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -376,11 +386,13 @@ pub fn write_levitate(ci: i16, flag: bool) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 87: Send night mode status (VB6: WriteSendNight / NOC packet).
-/// `is_night = true` forces night; `false` returns to normal day/night cycle.
-pub fn write_send_night(is_night: bool) -> Vec<u8> {
+/// ID 87: Send day/evening/night phase (VB6: WriteSendNight / NOC packet).
+/// Originally a bool (0=day, 1=night); extended to a byte phase
+/// (0=day, 1=evening, 2=night) — the client's boolean read still treats any
+/// nonzero value as "not day", so this stays wire-compatible.
+pub fn write_send_night(phase: crate::game::types::DayPhase) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::SendNight.to_byte());
-    pkt.write_byte(if is_night { 1 } else { 0 });
+    pkt.write_byte(phase.to_byte());
     pkt.into_bytes()
 }

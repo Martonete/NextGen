@@ -161,7 +161,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         }
     } // end privileges == 0 mana/stamina gate
     if spell.min_skill > 0 {
-        let magic_skill = state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0);
+        let magic_skill = state.users.get(&conn_id).map(|u| u.skills[1]).unwrap_or(0);
         if magic_skill < spell.min_skill {
             state.send_msg_id(conn_id, 834, ""); // Magic skill too low
             return;

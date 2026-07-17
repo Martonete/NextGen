@@ -348,53 +348,58 @@ impl NpcDatabase {
     }
 }
 
+fn load_npc_file(path: &Path, npcs: &mut Vec<Option<NpcData>>) -> usize {
+    let ini = match IniFile::load(path) {
+        Ok(ini) => ini,
+        Err(_) => return 0,
+    };
+
+    let mut sections: Vec<(usize, String)> = ini
+        .section_names()
+        .into_iter()
+        .filter_map(|section| {
+            let index = section
+                .strip_prefix("npc")
+                .and_then(|raw| raw.parse::<usize>().ok())?;
+            (index > 0).then_some((index, section))
+        })
+        .collect();
+    sections.sort_by_key(|(index, _)| *index);
+
+    let mut loaded = 0;
+    for (index, section) in sections {
+        let name = ini.get(&section, "Name").unwrap_or_default();
+        if name.is_empty() {
+            continue;
+        }
+        if index >= npcs.len() {
+            npcs.resize(index + 1, None);
+        }
+        if npcs[index].is_none() {
+            loaded += 1;
+        }
+        npcs[index] = Some(load_npc_from_ini(&ini, &section, index));
+    }
+    loaded
+}
+
 /// Load both NPC databases and merge them.
 pub fn load_npcs(base: &Path) -> Result<NpcDatabase, String> {
     let normal_path = base.join("dat").join("NPCs.dat");
     let hostile_path = base.join("dat").join("NPCs-HOSTILES.dat");
 
-    // Start with enough capacity for index 1000+
+    // Sparse index keyed by the actual [NPC<number>] sections in the DAT files.
     let mut npcs: Vec<Option<NpcData>> = vec![None; 1500];
-    let mut count = 0;
+    let normal_count = load_npc_file(&normal_path, &mut npcs);
+    let hostile_count = load_npc_file(&hostile_path, &mut npcs);
+    let count = npcs.iter().filter(|n| n.is_some()).count();
 
-    // Load normal NPCs (1-499)
-    if let Ok(ini) = IniFile::load(&normal_path) {
-        let num: usize = ini
-            .get("INIT", "NumNPCs")
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-
-        for i in 1..=num {
-            let section = format!("NPC{}", i);
-            let name = ini.get(&section, "Name").unwrap_or_default();
-            if !name.is_empty() {
-                if i >= npcs.len() {
-                    npcs.resize(i + 1, None);
-                }
-                npcs[i] = Some(load_npc_from_ini(&ini, &section, i));
-                count += 1;
-            }
-        }
-    }
-
-    // Load hostile NPCs (500+)
-    if let Ok(ini) = IniFile::load(&hostile_path) {
-        // Scan for NPC sections starting at 500
-        // The header says NumNPCs=1000 but actual entries start at [NPC500]
-        for i in 500..1500 {
-            let section = format!("NPC{}", i);
-            let name = ini.get(&section, "Name").unwrap_or_default();
-            if !name.is_empty() {
-                if i >= npcs.len() {
-                    npcs.resize(i + 1, None);
-                }
-                npcs[i] = Some(load_npc_from_ini(&ini, &section, i));
-                count += 1;
-            }
-        }
-    }
-
-    tracing::info!("NPCs loaded: {} total (normal + hostile)", count);
+    tracing::info!(
+        "NPCs loaded: {} total ({} normal + {} hostile/new)",
+        count,
+        normal_count,
+        hostile_count
+    );
     Ok(NpcDatabase { npcs })
 }
 

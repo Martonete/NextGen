@@ -517,15 +517,16 @@ pub(super) async fn handle_slash_ir(
 
     // VB6 13.3 travel destinations (map, x, y)
     let (dest_map, dest_x, dest_y) = match dest_upper.as_str() {
-        "ULLATHORPE" => (1, 45, 47),
-        "NIX" => (3, 45, 50),
-        "BANDERBILL" => (4, 50, 50),
-        "LINDOS" => (5, 50, 50),
-        "ARGHAL" => (6, 50, 50),
+        "ULLATHORPE" | "ULLA" => (1, 50, 50),
+        "NIX" => (34, 50, 50),
+        "BANDERBILL" | "BANDER" => (59, 50, 50),
+        "LINDOS" => (62, 50, 50),
+        "ARGHAL" => (171, 50, 50),
+        "ARKHEIN" => (151, 50, 50),
         _ => {
             state.send_console(
                 conn_id,
-                "Destino desconocido. Destinos: Ullathorpe, Nix, Banderbill, Lindos, Arghal.",
+                "Destino desconocido. Destinos: Ullathorpe, Nix, Banderbill, Lindos, Arghal, Arkhein.",
                 font_index::INFO,
             );
             return;

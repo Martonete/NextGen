@@ -446,10 +446,11 @@ fn is_exterior_map(state: &GameState, map_num: i32) -> bool {
 fn resolve_home_city(hogar: &str) -> (i32, i32, i32) {
     match hogar.to_uppercase().as_str() {
         "ULLATHORPE" => (1, 50, 50),
-        "NIX" => (3, 50, 50),
-        "BANDERBILL" => (14, 50, 50),
-        "LINDOS" => (28, 50, 50),
-        "ARGHAL" => (35, 50, 50),
+        "NIX" => (34, 50, 50),
+        "BANDERBILL" => (59, 50, 50),
+        "LINDOS" => (62, 50, 50),
+        "ARGHAL" => (171, 50, 50),
+        "ARKHEIN" => (151, 50, 50),
         _ => {
             // Default: Ullathorpe if home not recognized
             if hogar.is_empty() {

@@ -177,22 +177,23 @@ pub(super) async fn handle_guild_create(
             u.char_name.clone(),
             u.guild_creating_alignment,
             u.level,
-            u.skills[0],
+            u.skills[16], // LIDERAZGO = skill_id 17 → index 16 (0-based)
         ),
         _ => return,
     };
 
-    // Validate requirements
-    if level < 50 {
+    // Validate requirements — VB6 13.3 parity: nivel >= 25, liderazgo >= 90.
+    // (Amuleto de Lider item 939 is an added mechanic kept below, not part of VB6.)
+    if level < 25 {
         state.send_console(
             conn_id,
-            "Necesitas nivel 50 para fundar un clan.",
+            "Necesitas nivel 25 para fundar un clan.",
             font_index::INFO,
         );
         return;
     }
-    if skills_leadership < 100 {
-        state.send_console(conn_id, "Necesitas 100 en liderazgo.", font_index::INFO);
+    if skills_leadership < 90 {
+        state.send_console(conn_id, "Necesitas 90 de liderazgo.", font_index::INFO);
         return;
     }
 
