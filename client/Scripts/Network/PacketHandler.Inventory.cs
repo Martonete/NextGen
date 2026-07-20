@@ -28,7 +28,7 @@ public partial class PacketHandler
         short minDef = bq.ReadInteger();
         float value = bq.ReadSingle();
 
-        if (slot < 1 || slot > 25) return;
+        if (slot < 1 || slot > _state.Inventory.Length) return;
 
         if (objIndex <= 0)
         {

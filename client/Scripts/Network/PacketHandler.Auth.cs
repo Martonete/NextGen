@@ -33,6 +33,7 @@ public partial class PacketHandler
     private void HandleBinDisconnect(ByteQueue bq)
     {
         _state.IsLogged = false;
+        OnServerDisconnect?.Invoke("El servidor cerró la conexión.");
     }
 
 
@@ -54,6 +55,7 @@ public partial class PacketHandler
     private void HandleBinUserIndex(ByteQueue bq)
     {
         short index = bq.ReadInteger();
+        _state.UserIndex = index;
     }
 
 
@@ -82,6 +84,7 @@ public partial class PacketHandler
     private void HandleBinUserIndexAlt(ByteQueue bq)
     {
         short index = bq.ReadInteger();
+        _state.UserIndex = index;
     }
 
 

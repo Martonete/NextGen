@@ -62,6 +62,14 @@ public partial class WorldRenderer : Node2D
 	/// </summary>
 	public void SetRenderWindow(Vector2I sizePx) => _renderWindowOverride = sizePx;
 
+	// Gameplay snaps the camera pixel offset to whole pixels every frame (matches
+	// the VB6 original's tile-step movement and keeps sprites crisp). A slow,
+	// continuous camera — the login backdrop — needs the fractional part kept
+	// instead, or the sub-pixel/frame drift gets swallowed by rounding until it
+	// piles up into a visible 1px jump, reading as stutter instead of a smooth pan.
+	private bool _subpixelCamera;
+	public void SetSubpixelCamera(bool enabled) => _subpixelCamera = enabled;
+
 	// Viewport dimensions — dynamic, read from ResolutionManager
 	private int ViewportWidth => _renderWindowOverride?.X ?? ResolutionManager.ViewportW;
 	private int ViewportHeight => _renderWindowOverride?.Y ?? ResolutionManager.ViewportH;
@@ -98,8 +106,10 @@ public partial class WorldRenderer : Node2D
 	private readonly List<int> _emptyCharList = new();
 
 	// Pending particle draws for the additive blend layer
-	private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingMapParticleDraws = new();
-	private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingCharParticleDraws = new();
+	// angle/scale default to 0f/1f (no rotation, no resize) for every classic draw
+	// path — only extended-motor particles (RotateVisual/ScaleOverLife) set them.
+	private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle, float scale)> _pendingMapParticleDraws = new();
+	private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle, float scale)> _pendingCharParticleDraws = new();
 
 	// Pending aura draws for the aura additive layer (VB6: D3DBLEND_ONE/ONE)
 	private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingAuraDraws = new();
@@ -595,6 +605,18 @@ void fragment() {
 	}
 
 	/// <summary>
+	/// Extended-motor scale factor for a particle: lerps ResizeX→ResizeY across
+	/// Life/MaxLife when ScaleOverLife is on. Classic particles (ScaleOverLife=false,
+	/// the default) always return 1f — untouched size, matching VB6.
+	/// </summary>
+	private static float ScaleForLife(ParticleStreamDef def, Particle p)
+	{
+		if (!def.ScaleOverLife || p.MaxLife <= 0) return 1f;
+		float t = System.Math.Clamp(1f - p.Life / p.MaxLife, 0f, 1f);
+		return def.ResizeX + (def.ResizeY - def.ResizeX) * t;
+	}
+
+	/// <summary>
 	/// Convert world tile to screen pixel position.
 	/// </summary>
 	private Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
@@ -730,15 +752,18 @@ void fragment() {
 		int mapH = _state.MapData.Height;
 
 		// VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter.
-		_frameUserX = _state.UserPosX - _state.AddToUserPosX;
-		_frameUserY = _state.UserPosY - _state.AddToUserPosY;
-
-		BuildCharPositionIndex();
+		int rawUserX = _state.UserPosX - _state.AddToUserPosX;
+		int rawUserY = _state.UserPosY - _state.AddToUserPosY;
 
 		// Camera pixel offset — NEGATED because ScreenOffset grows in the movement
 		// direction, but tiles must shift in the OPPOSITE direction on screen.
-		_framePixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
-		_framePixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
+		// Gameplay rounds to whole pixels (crisp, VB6-accurate); the login backdrop
+		// keeps the fraction for a smooth continuous pan (see _subpixelCamera).
+		float rawPixelOffsetX = _subpixelCamera ? -_state.ScreenOffsetX : (float)Math.Round(-_state.ScreenOffsetX);
+		float rawPixelOffsetY = _subpixelCamera ? -_state.ScreenOffsetY : (float)Math.Round(-_state.ScreenOffsetY);
+		ApplyCameraClamp(rawUserX, rawUserY, rawPixelOffsetX, rawPixelOffsetY, mapW, mapH);
+
+		BuildCharPositionIndex();
 
 		CurrentCamera = new CameraSnapshot(_frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
 
@@ -966,6 +991,7 @@ void fragment() {
 			{
 				if (!stream.Active || stream.CharIndex >= 0) continue;
 				if (stream.DefIndex < 1 || stream.DefIndex >= _state.ParticleDefs.Length) continue;
+				var def = _state.ParticleDefs[stream.DefIndex];
 
 				Vector2 streamPos = TileToScreen(stream.MapX, stream.MapY, _frameUserX, _frameUserY,
 												  _framePixelOffsetX, _framePixelOffsetY);
@@ -973,10 +999,15 @@ void fragment() {
 				foreach (var p in stream.Particles)
 				{
 					if (!p.Alive || p.GrhIndex <= 0) continue;
-					var color = new Color(ByteToFloat.Table[p.ColR], ByteToFloat.Table[p.ColG], ByteToFloat.Table[p.ColB], p.Alpha);
+					float alpha = def.FadeAlpha && p.MaxLife > 0
+						? p.Alpha * System.Math.Clamp(p.Life / p.MaxLife, 0f, 1f)
+						: p.Alpha;
+					var color = new Color(ByteToFloat.Table[p.ColR], ByteToFloat.Table[p.ColG], ByteToFloat.Table[p.ColB], alpha);
 					Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
 					int frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
-					_pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color));
+					float angle = def.RotateVisual ? Mathf.DegToRad(p.Angle) : 0f;
+					float scale = ScaleForLife(def, p);
+					_pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color, angle, scale));
 				}
 			}
 		}

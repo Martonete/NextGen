@@ -53,7 +53,7 @@ public partial class CommercePanel : RpgBaseForm
     private int _userScrollRow;
 
     // Filtered user inventory (non-empty slots)
-    private int[] _userSlots = new int[25];
+    private int[] _userSlots = new int[GameState.MaxInventoryCapacity];
     private int _userSlotCount;
     private bool _dirty = true;
 
@@ -165,7 +165,7 @@ public partial class CommercePanel : RpgBaseForm
     private void RebuildUserSlots()
     {
         _userSlotCount = 0;
-        for (int i = 0; i < 25; i++)
+        for (int i = 0; i < _state!.MaxInventorySlots; i++)
         {
             if (_state!.Inventory[i].ObjIndex > 0)
                 _userSlots[_userSlotCount++] = i;

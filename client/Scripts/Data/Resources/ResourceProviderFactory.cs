@@ -30,7 +30,10 @@ public static class ResourceProviderFactory
         if (hasArchives)
         {
             byte[] amk = GetApplicationMasterKey();
-            return new AopakResourceProvider(dataPath, amk);
+            var providers = CreateLooseOverrideProviders(dataPath);
+            providers.Add(new AopakResourceProvider(dataPath, amk));
+            GD.Print($"[Resources] Loose override provider enabled over archives: {providers.Count - 1} folder(s)");
+            return new CompositeResourceProvider(dataPath, providers);
         }
 
         // Fallback to loose files even in release (graceful degradation)
@@ -53,7 +56,8 @@ public static class ResourceProviderFactory
         // Sort by layer descending (highest priority first)
         entries.Sort((a, b) => b.Layer.CompareTo(a.Layer));
 
-        var providers = new List<IResourceProvider>(entries.Count);
+        var providers = CreateLooseOverrideProviders(dataPath);
+        int looseProviderCount = providers.Count;
         foreach (var entry in entries)
         {
             string archivePath = Path.Combine(dataPath, entry.FileName);
@@ -79,8 +83,55 @@ public static class ResourceProviderFactory
             return new FileResourceProvider(dataPath);
         }
 
-        GD.Print($"[AoPak] Composite provider: {providers.Count} archive(s) from manifest.");
+        GD.Print($"[AoPak] Composite provider: {providers.Count - looseProviderCount} archive(s) from manifest, {looseProviderCount} loose override folder(s).");
         return new CompositeResourceProvider(dataPath, providers);
+    }
+
+    private static List<IResourceProvider> CreateLooseOverrideProviders(string dataPath)
+    {
+        var providers = new List<IResourceProvider>();
+        AddFileProviderIfPresent(providers, dataPath);
+
+        string? sourceDataPath = FindSourceDataPath(dataPath);
+        if (sourceDataPath != null
+            && !Path.GetFullPath(sourceDataPath).Equals(Path.GetFullPath(dataPath), System.StringComparison.OrdinalIgnoreCase))
+        {
+            AddFileProviderIfPresent(providers, sourceDataPath);
+        }
+
+        return providers;
+    }
+
+    private static void AddFileProviderIfPresent(List<IResourceProvider> providers, string path)
+    {
+        if (!Directory.Exists(path))
+            return;
+
+        providers.Add(new FileResourceProvider(path));
+        GD.Print($"[Resources] Loose resources enabled: {path}");
+    }
+
+    private static string? FindSourceDataPath(string dataPath)
+    {
+        string? fromDataPath = FindSourceDataPathFrom(dataPath);
+        if (fromDataPath != null)
+            return fromDataPath;
+
+        string projectPath = ProjectSettings.GlobalizePath("res://");
+        return FindSourceDataPathFrom(projectPath);
+    }
+
+    private static string? FindSourceDataPathFrom(string startPath)
+    {
+        var dir = new DirectoryInfo(Path.GetFullPath(startPath));
+        for (int depth = 0; dir != null && depth < 8; depth++, dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, "resources", "data");
+            if (Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
     /// <summary>

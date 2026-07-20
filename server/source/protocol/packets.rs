@@ -78,6 +78,7 @@ pub enum ClientPacketID {
     BankDeposit = 80,  // DEPO → deposit item to bank
     BankWithdraw = 81, // RETI → withdraw item from bank
     BankClose = 82,    // FINBAN → close bank window
+    Pong = 88,
 
     // Crafting (90-94)
     ConstructSmith = 90, // CNS → construct blacksmith item
@@ -418,6 +419,7 @@ impl ClientPacketID {
             80 => Some(Self::BankDeposit),
             81 => Some(Self::BankWithdraw),
             82 => Some(Self::BankClose),
+            88 => Some(Self::Pong),
             90 => Some(Self::ConstructSmith),
             91 => Some(Self::ConstructCarp),
             92 => Some(Self::TrainCreature),
@@ -525,3 +527,4 @@ impl MultiMessageID {
         }
     }
 }
+

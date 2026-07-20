@@ -159,7 +159,7 @@ public partial class TradePanel : RpgBaseForm
     public void OfferInventorySlot(int invSlot, int amount)
     {
         if (_tcp == null || _state == null) return;
-        if (invSlot < 0 || invSlot >= 25) return;
+        if (invSlot < 0 || invSlot >= _state.MaxInventorySlots) return;
 
         var inv = _state.Inventory[invSlot];
         if (inv.ObjIndex <= 0 || inv.Amount <= 0) return;

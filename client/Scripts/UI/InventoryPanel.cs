@@ -31,7 +31,7 @@ public partial class InventoryPanel : Control
 
     private int _selectedSlot = -1;
     private int _hoveredSlot = -1;
-    private bool _dydEnabled;
+    private bool _dydEnabled = true;
     private int _dragSourceSlot = -1;
     private bool _dragging;
     private Vector2 _dragMousePos; // local mouse pos during drag
@@ -47,7 +47,18 @@ public partial class InventoryPanel : Control
     public TooltipPanel? RichTooltip;
 
     public int SelectedSlot => _selectedSlot;
-    public bool DyDEnabled { get => _dydEnabled; set => _dydEnabled = value; }
+    public bool DyDEnabled
+    {
+        get => _dydEnabled;
+        set
+        {
+            if (_dydEnabled == value) return;
+            _dydEnabled = value;
+            if (!_dydEnabled)
+                CancelDrag();
+            QueueRedraw();
+        }
+    }
 
     /// <summary>True when a drag is in progress (used by Main.cs for cross-panel routing).</summary>
     public bool IsDragging => _dragging && _dydEnabled && _dragSourceSlot >= 0;
@@ -65,9 +76,11 @@ public partial class InventoryPanel : Control
     /// <summary>Cancel any in-progress drag operation (e.g. when switching tabs).</summary>
     public void CancelDrag()
     {
+        if (!_dragging && !_dragPending && _dragSourceSlot < 0) return;
         _dragging = false;
         _dragPending = false;
         _dragSourceSlot = -1;
+        QueueRedraw();
     }
 
     public void Init(GameState state, GameData data, AoTcpClient tcp)
@@ -114,19 +127,25 @@ public partial class InventoryPanel : Control
     /// </summary>
     public override void _Input(InputEvent @event)
     {
-        if (!_dragging || !_dydEnabled || _dragSourceSlot < 0) return;
+        if (!_dydEnabled || _dragSourceSlot < 0 || (!_dragging && !_dragPending)) return;
 
         // Track mouse position globally during drag (for ghost item rendering even outside panel)
         if (@event is InputEventMouseMotion globalMotion)
         {
-            _dragMousePos = globalMotion.Position - GlobalPosition;
+            TrackDragMotion(GlobalMouseToLocal(globalMotion.GlobalPosition));
         }
         else if (@event is InputEventMouseButton globalMb
             && globalMb.ButtonIndex == MouseButton.Left
             && !globalMb.Pressed)
         {
+            if (!_dragging)
+            {
+                CancelDrag();
+                return;
+            }
+
             // Mouse released globally — check if inside inventory or outside
-            var localPos = globalMb.Position - GlobalPosition;
+            var localPos = GlobalMouseToLocal(globalMb.GlobalPosition);
             int destSlot = HitTestSlot(localPos);
 
             if (destSlot >= 0 && destSlot < _totalSlots && destSlot != _dragSourceSlot)
@@ -138,17 +157,38 @@ public partial class InventoryPanel : Control
             else if (destSlot < 0)
             {
                 // Drop outside inventory — cross-panel or ground drop
-                OnDropOutside?.Invoke(_dragSourceSlot, globalMb.Position);
+                OnDropOutside?.Invoke(_dragSourceSlot, globalMb.GlobalPosition);
             }
 
             // Clear drag state
             _dragSourceSlot = -1;
             _dragging = false;
             _dragPending = false;
+            QueueRedraw();
 
             // Consume event so other controls don't process this release
             GetViewport().SetInputAsHandled();
         }
+    }
+
+    private Vector2 GlobalMouseToLocal(Vector2 globalPosition)
+    {
+        return GetGlobalTransformWithCanvas().AffineInverse() * globalPosition;
+    }
+
+    private void TrackDragMotion(Vector2 localPos)
+    {
+        _dragMousePos = localPos;
+
+        if (_dragPending && _dragSourceSlot >= 0
+            && localPos.DistanceTo(_dragStartPos) >= DragThreshold)
+        {
+            _dragging = true;
+            _dragPending = false;
+            RichTooltip?.Hide();
+        }
+
+        QueueRedraw();
     }
 
     public override void _Draw()
@@ -311,22 +351,9 @@ public partial class InventoryPanel : Control
                 UpdateTooltip(slot);
             }
 
-            // Drag threshold: only activate drag after mouse moves enough from press point.
-            // This prevents drag from blocking rapid clicks (poteo) while allowing real drags.
-            if (_dragPending && _dydEnabled && _dragSourceSlot >= 0)
-            {
-                if (motion.Position.DistanceTo(_dragStartPos) >= DragThreshold)
-                {
-                    _dragging = true;
-                    _dragPending = false;
-                }
-            }
+            if (_dydEnabled && _dragSourceSlot >= 0 && (_dragPending || _dragging))
+                TrackDragMotion(motion.Position);
 
-            // Track mouse position for ghost item rendering during active drag
-            if (_dragging && _dydEnabled && _dragSourceSlot >= 0)
-            {
-                _dragMousePos = motion.Position;
-            }
         }
         else if (@event is InputEventMouseButton mb)
         {
@@ -361,6 +388,7 @@ public partial class InventoryPanel : Control
                                 _dragSourceSlot = slot;
                                 _dragPending = true;
                                 _dragStartPos = mb.Position;
+                                _dragMousePos = mb.Position;
                                 // _dragging stays false until threshold is met
                             }
                         }
@@ -371,6 +399,9 @@ public partial class InventoryPanel : Control
                     // Drag release is handled by _Input (global handler) for both
                     // inside and outside panel drops. Just clear pending state here.
                     _dragPending = false;
+                    if (!_dragging)
+                        _dragSourceSlot = -1;
+                    QueueRedraw();
                 }
             }
             else if (mb.ButtonIndex == MouseButton.Right && mb.Pressed)

@@ -564,4 +564,91 @@ pub fn tick_security(state: &mut GameState) {
     state
         .flood_strikes
         .retain(|conn_id, _| state.users.contains_key(conn_id));
+
+    let stale_after = std::time::Duration::from_secs(15 * 60);
+    let now = std::time::Instant::now();
+    state
+        .auth_failures
+        .retain(|_, (_, last_failure)| now.duration_since(*last_failure) < stale_after);
+    state.ip_last_connect.retain(|ip, last_connect| {
+        state.ip_connection_count.get(ip).copied().unwrap_or(0) > 0
+            || now.duration_since(*last_connect) < stale_after
+    });
+
+    if !state.centinela_enabled {
+        return;
+    }
+
+    let centinela_min_seconds = state.centinela_min_seconds;
+    let centinela_max_seconds = state.centinela_max_seconds;
+    let centinela_macro_seconds = state.centinela_macro_seconds;
+    let centinela_max_fails = state.centinela_max_fails;
+    let centinela_retry_seconds = centinela_macro_seconds.min(60).max(5);
+    let mut centinela_challenges: Vec<ConnectionId> = Vec::new();
+    let mut centinela_warnings: Vec<(ConnectionId, i32)> = Vec::new();
+    let mut centinela_kicks: Vec<ConnectionId> = Vec::new();
+    for (&conn_id, user) in state.users.iter_mut() {
+        if !user.logged || user.privileges != 0 {
+            continue;
+        }
+
+        if user.centinela_number > 0 {
+            if user.centinela_timer > 0 {
+                user.centinela_timer -= 1;
+            }
+            if user.centinela_timer <= 0 {
+                user.centinela_number = 0;
+                user.centinela_fails += 1;
+                if user.centinela_fails >= centinela_max_fails {
+                    centinela_kicks.push(conn_id);
+                } else {
+                    user.centinela_next_check = centinela_retry_seconds;
+                    centinela_warnings.push((conn_id, centinela_max_fails - user.centinela_fails));
+                }
+            }
+            continue;
+        }
+
+        if user.tiene_macro > 0 && user.centinela_next_check > centinela_macro_seconds {
+            user.centinela_next_check = centinela_macro_seconds;
+        }
+        if user.centinela_next_check > 0 {
+            user.centinela_next_check -= 1;
+        } else {
+            user.centinela_next_check = rand_range(centinela_min_seconds, centinela_max_seconds);
+            centinela_challenges.push(conn_id);
+        }
+    }
+
+    for (conn_id, remaining) in centinela_warnings {
+        state.send_console(
+            conn_id,
+            &format!(
+                "No respondiste al Centinela. Intentos restantes: {}.",
+                remaining
+            ),
+            font_index::WARNING,
+        );
+    }
+    for conn_id in centinela_challenges {
+        super::super::parity_gm::send_centinela_challenge(state, conn_id);
+    }
+    for conn_id in centinela_kicks {
+        let name = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_default();
+        tracing::info!(
+            "[CENTINELA] {} kicked for {} expired/failed centinela checks",
+            name,
+            centinela_max_fails
+        );
+        state.send_console(
+            conn_id,
+            "No respondiste al Centinela. Desconectado.",
+            font_index::FIGHT,
+        );
+        state.security_kick_queue.push(conn_id);
+    }
 }

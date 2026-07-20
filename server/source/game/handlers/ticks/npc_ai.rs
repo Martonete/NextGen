@@ -1567,14 +1567,18 @@ pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize) {
 
 /// Respawn tick — check dead NPCs and revive them.
 pub async fn tick_npc_respawn(state: &mut GameState) {
-    let dead_npcs: Vec<usize> = state
-        .npcs
-        .iter()
-        .enumerate()
-        .filter_map(|(i, slot)| slot.as_ref().filter(|n| !n.active && n.respawn).map(|_| i))
-        .collect();
+    let dead_npcs: Vec<usize> = state.pending_respawn_npc_indices.iter().copied().collect();
 
     for npc_idx in dead_npcs {
+        let still_pending = state
+            .get_npc(npc_idx)
+            .map(|n| !n.active && n.respawn)
+            .unwrap_or(false);
+        if !still_pending {
+            state.pending_respawn_npc_indices.remove(&npc_idx);
+            continue;
+        }
+
         if state.respawn_npc(npc_idx) {
             // Send CC to area users
             let cc = match state.get_npc(npc_idx) {

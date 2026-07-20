@@ -1,12 +1,18 @@
 //! Offensive and damage spell helpers: info packets, property effects, status effects.
 
 use super::super::common::*;
+use super::super::skills::skill_id;
 use super::super::{check_user_level, npc_die, revive_user, user_die};
 use crate::data::experience::MAX_LEVEL;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget};
 use crate::net::ConnectionId;
 use crate::protocol::{binary_packets, font_index};
+
+/// Particles.ini index #106 ("SpellImpact") — generic energy burst played on the
+/// target when an offensive spell with a visual (fx_grh > 0) lands. Same
+/// mechanism leveling.rs already uses for the level-up burst (index 58).
+const SPELL_IMPACT_PARTICLE: i16 = 106;
 
 // =====================================================================
 // Item-index constants (shared with spell_support.rs via pub(super))
@@ -216,6 +222,21 @@ pub(super) async fn send_spell_info_user(
             },
             &fx_pkt,
         );
+
+        // Impact particle burst — complements the sprite FX above with a short-lived
+        // energy burst using the extended particle motor (fade/gradient/scale).
+        // Same char-particle mechanism as the level-up burst; the client replaces
+        // any previous stream on this char index, so it stays deliberately brief.
+        let impact_pkt =
+            binary_packets::write_char_particle_create(target_ci as i16, SPELL_IMPACT_PARTICLE);
+        state.send_data_bytes(
+            SendTarget::ToArea {
+                map: fx_map,
+                x: fx_x,
+                y: fx_y,
+            },
+            &impact_pkt,
+        );
     }
     if spell.wav > 0 {
         let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as i16, fx_y as i16);
@@ -311,6 +332,18 @@ pub(super) async fn send_spell_info_npc(
                 y: fx_y,
             },
             &fx_pkt,
+        );
+
+        // Impact particle burst — see send_spell_info_user for the full rationale.
+        let impact_pkt =
+            binary_packets::write_char_particle_create(npc_ci as i16, SPELL_IMPACT_PARTICLE);
+        state.send_data_bytes(
+            SendTarget::ToArea {
+                map: fx_map,
+                x: fx_x,
+                y: fx_y,
+            },
+            &impact_pkt,
         );
     }
     if spell.wav > 0 {
@@ -719,6 +752,8 @@ pub(super) async fn apply_spell_status(
     if let Some(target) = state.users.get_mut(&target_id) {
         if spell.cura_veneno {
             target.poisoned = false;
+            target.poisoned_by = None;
+            target.poisoned_skill_id = 0;
         }
         if spell.paraliza || spell.inmoviliza {
             if !target.paralyzed {
@@ -742,6 +777,9 @@ pub(super) async fn apply_spell_status(
         }
         if spell.envenena {
             target.poisoned = true;
+            target.counter_poison = 0;
+            target.poisoned_by = Some(caster_id);
+            target.poisoned_skill_id = skill_id::MAGIA;
         }
         if spell.maldicion {
             target.cursed = true;

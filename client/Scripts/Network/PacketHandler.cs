@@ -55,6 +55,12 @@ public partial class PacketHandler
     /// Argument = phase byte (0=day, 1=evening, 2=night).
     public Action<byte>? OnDayPhaseChanged;
 
+    /// Callback to send a client packet immediately from an inbound handler.
+    public Func<byte[], bool>? OnSendPacket;
+
+    /// Callback when the server explicitly closes the session.
+    public Action<string>? OnServerDisconnect;
+
     // Meditation FX IDs — cleared when the character moves or the meditate toggle fires.
     // Each ID corresponds to a GRH animation played over the character while meditating:
     //   4   = Meditación básica (aura blanca pequeña)

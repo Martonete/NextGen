@@ -49,6 +49,13 @@ public class EditorState
     public bool ShowParticles = true;
     public bool ShowLights = true;
 
+    /// <summary>Forces the "Luz avanzada" shader preview to a fixed time of day,
+    /// independent of the map's own AmbientR/G/B (which stays untouched on disk).
+    /// Default Day so the editor doesn't open looking like night — before this,
+    /// LightRenderer's ambient was hardcoded to a night-blue tint with no way to
+    /// change it. See LightRenderer.SetAmbient.</summary>
+    public LightPreviewMode LightPreview = LightPreviewMode.Day;
+
     // Tile property editing
     public bool ShowTileProperties;
     public int PropTileX, PropTileY;
@@ -76,6 +83,12 @@ public class EditorState
     /// tiles of the click (Chebyshev distance) are stamped in one click.
     /// 0 = single tile. Set from HumoConfigPanel brushSpin.</summary>
     public int FogBrushRadius = 0;
+
+    /// <summary>Brush radius for Paint/Erase/Block — tiles within this many tiles
+    /// of the click (circular, same pattern as FogBrushRadius) are painted in one
+    /// click/drag step. 0 = single tile (classic behavior, default). Set from
+    /// TilePalette's brush size control.</summary>
+    public int PaintBrushRadius = 0;
 
     // Zone system (editor metadata for sub-regions)
     public List<MapZone> Zones { get; } = new();
@@ -175,13 +188,25 @@ public class EditorState
     public void CopySelection(MapData map)
     {
         if (!HasSelection) return;
-        ClipWidth = SelX2 - SelX1 + 1;
-        ClipHeight = SelY2 - SelY1 + 1;
+        CopyRegionFrom(map, SelX1, SelY1, SelX2, SelY2);
+    }
+
+    /// <summary>
+    /// Writes into THIS state's clipboard, reading tiles from a possibly-different
+    /// map/selection. Used by the auxiliary map-viewer window's Ctrl+C: the selection
+    /// lives in the aux window's own EditorState, but the copied tiles should land in
+    /// the main editor's clipboard so the existing Ctrl+V flow (EditorMain.PasteClipboard,
+    /// which always reads _state.Clipboard) picks it up without any changes.
+    /// </summary>
+    public void CopyRegionFrom(MapData map, int x1, int y1, int x2, int y2)
+    {
+        ClipWidth = x2 - x1 + 1;
+        ClipHeight = y2 - y1 + 1;
         Clipboard = new MapTile[ClipWidth + 1, ClipHeight + 1];
         for (int y = 0; y < ClipHeight; y++)
             for (int x = 0; x < ClipWidth; x++)
-                if (map.InBounds(SelX1 + x, SelY1 + y))
-                    Clipboard[x + 1, y + 1] = map.Tiles[SelX1 + x, SelY1 + y];
+                if (map.InBounds(x1 + x, y1 + y))
+                    Clipboard[x + 1, y + 1] = map.Tiles[x1 + x, y1 + y];
     }
 }
 
@@ -285,4 +310,13 @@ public enum EditorTool
     Trigger,  // Set trigger type (opens properties)
     Particle, // Paint particle group on tiles
     Fog,      // Paint per-tile fog blobs (soft world-space fog)
+}
+
+/// Time-of-day override for the "Luz avanzada" shader preview (LightRenderer).
+/// Editor-only display setting — never written to the map file.
+public enum LightPreviewMode
+{
+    Day,
+    Evening,
+    Night,
 }

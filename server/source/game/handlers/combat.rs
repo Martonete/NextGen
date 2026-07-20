@@ -1102,6 +1102,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 if let Some(victim) = state.users.get_mut(&victim_id) {
                     victim.poisoned = true;
                     victim.counter_poison = 0;
+                    victim.poisoned_by = Some(conn_id);
+                    victim.poisoned_skill_id = if weapon.is_proyectil {
+                        skill_id::PROYECTILES
+                    } else {
+                        skill_id::ARMAS
+                    };
                 }
                 state.send_msg_id(victim_id, 171, &attacker_name);
                 state.send_msg_id(conn_id, 172, &victim_name);
@@ -1356,6 +1362,8 @@ pub(super) async fn user_die(
         user.meditating = false;
         user.resting = false;
         user.poisoned = false;
+        user.poisoned_by = None;
+        user.poisoned_skill_id = 0;
         user.montado = false;
         user.levitando = false;
         user.mimetizado = false;

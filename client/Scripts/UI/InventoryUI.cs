@@ -183,7 +183,7 @@ public class InventoryUI
         else
         {
             int slot = _state.SelectedInvSlot;
-            if (slot < 0 || slot >= 25 || _state.Inventory[slot].ObjIndex <= 0)
+            if (slot < 0 || slot >= _state.MaxInventorySlots || _state.Inventory[slot].ObjIndex <= 0)
             {
                 _state.ChatMessages.Enqueue(new ChatMessage
                 {
@@ -259,9 +259,9 @@ public class InventoryUI
     /// </summary>
     public void OnInventoryDropOutside(int slot, Vector2 globalPos)
     {
-        if (slot < 0 || slot >= 25) return;
+        if (slot < 0 || slot >= _state.MaxInventorySlots) return;
         var item = _state.Inventory[slot];
-        if (item.ObjIndex <= 0) return;
+        if (item.ObjIndex <= 0 || item.Amount <= 0) return;
 
         byte slot1 = (byte)(slot + 1); // server uses 1-indexed slots
 

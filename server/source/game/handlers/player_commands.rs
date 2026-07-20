@@ -500,6 +500,8 @@ pub(super) async fn handle_slash_curar(state: &mut GameState, conn_id: Connectio
     // VB6: Remove poison, heal to full HP, send ||398
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.poisoned = false;
+        user.poisoned_by = None;
+        user.poisoned_skill_id = 0;
         let max = user.max_hp;
         user.min_hp = max;
     }

@@ -90,7 +90,8 @@ public partial class SafeZoneBorderLayer : Node2D
                 break;
         }
 
-        QueueRedraw();
+        if (_hasSafeZone || _warningAlpha > 0.001f)
+            QueueRedraw();
     }
 
     /// <summary>

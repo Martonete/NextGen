@@ -102,6 +102,11 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
+    public static byte[] WritePong()
+    {
+        return new byte[] { ClientPacketId.Pong };
+    }
+
     // ── Movement ───────────────────────────────────────────────
 
     public static byte[] WriteWalk(byte heading)

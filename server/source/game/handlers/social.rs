@@ -4,7 +4,7 @@
 use super::common::*;
 use super::{handle_slash_command, send_inventory_slot};
 use crate::data::balance;
-use crate::game::types::{GameState, InventorySlot, MAX_INVENTORY_SLOTS, SendTarget};
+use crate::game::types::{GameState, InventorySlot, MAX_INVENTORY_SLOTS, SendTarget, privilege_level};
 use crate::net::ConnectionId;
 use crate::protocol::binary_packets;
 use crate::protocol::font_index;
@@ -686,6 +686,33 @@ pub(super) async fn handle_slash_online(state: &mut GameState, conn_id: Connecti
 }
 
 /// /BALANCE — Show gold and bank gold.
+/// /ONLINEUSERS — Send an interactive online character list to the GM panel.
+pub(super) async fn handle_slash_onlineusers(state: &mut GameState, conn_id: ConnectionId) {
+    let my_priv = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.privileges,
+        _ => return,
+    };
+    if my_priv < privilege_level::CONSEJERO {
+        state.send_console(
+            conn_id,
+            "No tienes permisos para ver la lista de usuarios online.",
+            font_index::INFO,
+        );
+        return;
+    }
+
+    let mut names: Vec<String> = state
+        .users
+        .values()
+        .filter(|u| u.logged)
+        .filter(|u| u.privileges < privilege_level::DIOS || my_priv >= privilege_level::DIOS)
+        .map(|u| u.char_name.clone())
+        .collect();
+    names.sort_by_key(|name| name.to_uppercase());
+
+    state.send_bytes(conn_id, &binary_packets::write_user_name_list(&names.join(",")));
+}
+
 pub(super) async fn handle_slash_balance(state: &mut GameState, conn_id: ConnectionId) {
     let (gold, bank_gold) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.gold, u.bank_gold),

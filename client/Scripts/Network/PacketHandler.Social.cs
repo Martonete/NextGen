@@ -390,9 +390,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinPingRequest()
     {
-        // Send pong back to server (using existing binary ping/pong infrastructure)
-        // The TcpClient's SendPing() method sends the pong response.
         _state.PingSentMs = Time.GetTicksMsec();
+        OnSendPacket?.Invoke(ClientPackets.WritePong());
     }
 
     // ── Arena ─────────────────────────────────────────────────────

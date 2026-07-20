@@ -33,6 +33,9 @@ public partial class MapViewport : Control
     /// (place / delete). EditorMain wires this to LightToolPanel.RefreshFromMap
     /// + viewport dirty mark.</summary>
     public Action? OnAdvancedLightsChanged;
+    /// <summary>Fires with a status message when a paint gesture starts outside the
+    /// map's Width/Height — painting there is otherwise a silent no-op.</summary>
+    public Action<string>? OnOutOfBounds;
 
     /// <summary>Tracks which advanced light is currently selected (for the
     /// selection-highlight gizmo in _Draw). Synced from the LightToolPanel
@@ -256,6 +259,13 @@ public partial class MapViewport : Control
             Vector2? charPx = State.HoverValid && Map != null && Map.InBounds(State.HoverX, State.HoverY)
                 ? new Vector2((State.HoverX + 0.5f) * 32f, (State.HoverY + 1f) * 32f)
                 : (Vector2?)null;
+            _lightRenderer.SetAmbient(State.LightPreview switch
+            {
+                LightPreviewMode.Day => Colors.White,
+                LightPreviewMode.Evening => new Color(0.75f, 0.62f, 0.55f),
+                LightPreviewMode.Night => new Color(0.4f, 0.4f, 0.5f),
+                _ => Colors.White,
+            });
             _lightRenderer.Update(Size, worldOrigin, worldSize, Map, (float)delta, charPx);
         }
         else
@@ -953,6 +963,17 @@ public partial class MapViewport : Control
         // Skip detailed overlays at low zoom — too many draw calls, not visible anyway
         int overlayTiles = (ovMaxX - ovMinX) * (ovMaxY - ovMinY);
         bool skipDetailedOverlays = overlayTiles > 40000; // ~200x200
+
+        // ── Map bounds border — always on, single draw call so it never needs the
+        // skipDetailedOverlays guard. Tiles are 1-indexed, so the rect starts at
+        // (TileSize, TileSize) not (0,0). Line width is divided by Zoom so the
+        // border reads as a constant screen-space thickness at any zoom level
+        // (DrawSetTransform's scale would otherwise stretch/shrink it with the map).
+        DrawRect(
+            new Rect2(TileSize, TileSize, mapW * TileSize, mapH * TileSize),
+            EditorTheme.OVERLAY_MAP_BOUNDS,
+            filled: false,
+            width: 2f / Math.Max(State.Zoom, 0.01f));
 
         // ── Zone overlays (semi-transparent colored rectangles) ──
         if (ZoneData != null)
@@ -1723,6 +1744,29 @@ public partial class MapViewport : Control
         _panCameraStart = State!.CameraOffset;
     }
 
+    /// <summary>
+    /// Fit the whole map (1..Width, 1..Height) inside the current viewport size —
+    /// useful to orient on large maps (e.g. the default 1000x1000) without manual
+    /// zoom/pan. Picks the smaller of the two axis scales so nothing gets cropped,
+    /// then centers the map rect in the viewport.
+    /// </summary>
+    public void ZoomToFit()
+    {
+        if (State == null || Map == null) return;
+        if (Map.Width <= 0 || Map.Height <= 0 || Size.X <= 0 || Size.Y <= 0) return;
+
+        float mapPxW = Map.Width * TileSize;
+        float mapPxH = Map.Height * TileSize;
+        float fitZoom = Math.Min(Size.X / mapPxW, Size.Y / mapPxH);
+        State.Zoom = Math.Clamp(fitZoom, 0.02f, 4f);
+
+        // Center the (TileSize, TileSize)..(mapPxW+TileSize, mapPxH+TileSize) map
+        // rect (1-indexed tiles) in the viewport at the new zoom.
+        Vector2 mapCenterWorld = new Vector2(TileSize + mapPxW / 2f, TileSize + mapPxH / 2f);
+        State.CameraOffset = Size / 2f - mapCenterWorld * State.Zoom;
+        QueueRedraw();
+    }
+
     private void HandleMouseButton(InputEventMouseButton mb)
     {
         // Zoom towards cursor
@@ -1937,7 +1981,15 @@ public partial class MapViewport : Control
                         _paintedThisStroke.Clear();
                         Undo?.BeginBatch(State.ActiveTool == EditorTool.Paint ? "Paint" :
                                          State.ActiveTool == EditorTool.Erase ? "Erase" : "Block");
-                        ApplyToolAt(tile.X, tile.Y);
+                        // Erase has its own brush-radius call site (matches the drag
+                        // path in HandleMouseMotion) — previously this always called
+                        // ApplyToolAt, which never had an Erase branch, so the FIRST
+                        // tile of an erase stroke silently did nothing until the drag
+                        // reached the next tile.
+                        if (State.ActiveTool == EditorTool.Erase)
+                            EraseAt(tile.X, tile.Y);
+                        else
+                            ApplyToolAt(tile.X, tile.Y);
                         break;
                     case EditorTool.Select:
                     {
@@ -2843,53 +2895,106 @@ public partial class MapViewport : Control
     {
         if (Map == null || State == null) return;
 
-        if (State.ActiveTool == EditorTool.Paint)
+        // Single entry point for every painting tool — report out-of-bounds once
+        // here instead of leaving each branch's individual InBounds guard (further
+        // below) as a silent no-op. Once per click/stroke start, not per tile, so
+        // dragging along the edge doesn't spam the status bar.
+        if (!Map.InBounds(tx, ty))
         {
-            if (State.SelectedTexture != null)
+            long strokeKey = (long)tx << 32 | (uint)ty;
+            if (!_paintedThisStroke.Contains(strokeKey))
             {
-                if (!Map.InBounds(tx, ty)) return;
-                long key = (long)tx << 32 | (uint)ty;
-                if (_paintedThisStroke.Contains(key)) return;
-                _paintedThisStroke.Add(key);
-
-                // Mosaic formula with user-adjustable offset
-                int grhIdx = GetMosaicGrh(State.SelectedTexture, tx, ty);
-
-                var before = Map.Tiles[tx, ty];
-                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)grhIdx);
-                Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+                _paintedThisStroke.Add(strokeKey);
+                OnOutOfBounds?.Invoke("Fuera de los límites del mapa");
             }
-            else if (State.EyedropGrh > 0)
-            {
-                // Paint with raw GRH captured by eyedrop
-                if (!Map.InBounds(tx, ty)) return;
-                long key = (long)tx << 32 | (uint)ty;
-                if (_paintedThisStroke.Contains(key)) return;
-                _paintedThisStroke.Add(key);
-
-                var before = Map.Tiles[tx, ty];
-                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)State.EyedropGrh);
-                Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
-            }
+            return;
         }
-        else if (State.ActiveTool == EditorTool.Block)
-        {
-            if (!Map.InBounds(tx, ty)) return;
-            long key = (long)tx << 32 | (uint)ty;
-            if (_paintedThisStroke.Contains(key)) return;
-            _paintedThisStroke.Add(key);
 
-            var before = Map.Tiles[tx, ty];
-            Map.Tiles[tx, ty].Blocked = !Map.Tiles[tx, ty].Blocked;
-            Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+        // Circular brush: paint/block every tile within State.PaintBrushRadius of
+        // the click, not just (tx,ty) — radius 0 (default) is exactly the old
+        // single-tile behavior. Same dx*dx+dy*dy circular pattern as the Fog brush
+        // (PaintFogAt). Erase has its own call site (EraseAt below) that applies
+        // the same radius — this method is only ever reached for Paint/Block.
+        int radius = State.PaintBrushRadius;
+
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                if (radius > 0 && dx * dx + dy * dy > radius * radius) continue;
+                int x = tx + dx, y = ty + dy;
+                if (!Map.InBounds(x, y)) continue;
+
+                if (State.ActiveTool == EditorTool.Paint)
+                    PaintTileAt(x, y);
+                else if (State.ActiveTool == EditorTool.Block)
+                    BlockTileAt(x, y);
+                else if (State.ActiveTool == EditorTool.Erase)
+                    EraseTileAt(x, y);
+            }
         }
 
         QueueRedraw();
     }
 
+    private void PaintTileAt(int tx, int ty)
+    {
+        if (Map == null || State == null) return;
+        long key = (long)tx << 32 | (uint)ty;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+
+        if (State.SelectedTexture != null)
+        {
+            // Mosaic formula with user-adjustable offset
+            int grhIdx = GetMosaicGrh(State.SelectedTexture, tx, ty);
+            var before = Map.Tiles[tx, ty];
+            SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)grhIdx);
+            Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+        }
+        else if (State.EyedropGrh > 0)
+        {
+            // Paint with raw GRH captured by eyedrop
+            var before = Map.Tiles[tx, ty];
+            SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)State.EyedropGrh);
+            Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+        }
+    }
+
+    private void BlockTileAt(int tx, int ty)
+    {
+        if (Map == null) return;
+        long key = (long)tx << 32 | (uint)ty;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+
+        var before = Map.Tiles[tx, ty];
+        Map.Tiles[tx, ty].Blocked = !Map.Tiles[tx, ty].Blocked;
+        Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+    }
+
+    /// <summary>Single-tile call site preserved for callers outside the brush loop (if any).</summary>
     private void EraseAt(int tx, int ty)
     {
         if (Map == null || State == null || !Map.InBounds(tx, ty)) return;
+
+        int radius = State.PaintBrushRadius;
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                if (radius > 0 && dx * dx + dy * dy > radius * radius) continue;
+                int x = tx + dx, y = ty + dy;
+                if (!Map.InBounds(x, y)) continue;
+                EraseTileAt(x, y);
+            }
+        }
+        QueueRedraw();
+    }
+
+    private void EraseTileAt(int tx, int ty)
+    {
+        if (Map == null || State == null) return;
         long key = (long)tx << 32 | (uint)ty;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
@@ -2897,7 +3002,6 @@ public partial class MapViewport : Control
         var before = Map.Tiles[tx, ty];
         SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, 0);
         Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
-        QueueRedraw();
     }
 
     private void SetLayerGrh(ref MapTile tile, int layer, int grhIdx)

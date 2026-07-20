@@ -39,9 +39,11 @@ public partial class PartyPanel : RpgBaseForm
     private readonly List<PartyMemberInfo> _members = new();
     private bool _inParty;
     private bool _isLeader;
+    private byte _serverPanelType;
 
     /// <summary>Read-only access to party members for minimap markers.</summary>
     public IReadOnlyList<PartyMemberInfo> Members => _members;
+    public byte ServerPanelType => _serverPanelType;
 
     // Tracks whether we're expecting PINFO response lines
     private bool _parsingPinfo;
@@ -142,8 +144,9 @@ public partial class PartyPanel : RpgBaseForm
     /// <summary>
     /// Open the panel (called from ShowPartyForm packet or button press).
     /// </summary>
-    public void OpenPanel()
+    public void OpenPanel(byte panelType = 0)
     {
+        _serverPanelType = panelType;
         ShowForm();
         RequestPartyInfo();
     }

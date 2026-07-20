@@ -14,11 +14,19 @@ namespace AOWorldEditor.Editor;
 public partial class ParticlePalette : VBoxContainer
 {
     [Signal] public delegate void ParticleSelectedEventHandler(int groupId);
+    /// <summary>Fired after any CRUD action (new/edit/duplicate/delete) so the host can
+    /// rebuild map particle streams — edited physics/life fields otherwise wouldn't be
+    /// reflected in streams already built from the def array by BuildStreamsFromMap.</summary>
+    [Signal] public delegate void DefinitionsChangedEventHandler();
 
     public ParticleEngine? Engine;
     public EditorState? State;
     public GrhData[]? Grhs;
     public TextureManager? Textures;
+    /// <summary>Body index → walk-south GRH, forwarded to ParticleEditPopup's reference character.</summary>
+    public int[]? NpcBodyGrhs;
+    /// <summary>Absolute path to Particles.ini — needed for the "Guardar" button.</summary>
+    public string ParticlesIniPath = "";
 
     private ParticlePreview? _preview;
     private LineEdit? _searchBox;
@@ -35,6 +43,34 @@ public partial class ParticlePalette : VBoxContainer
         SizeFlagsHorizontal = SizeFlags.ExpandFill;
         ClipContents = true;
         AddThemeConstantOverride("separation", 3);
+
+        // Action bar: create / edit / duplicate / delete the SELECTED definition,
+        // plus save all definitions back to Particles.ini.
+        var actionRow1 = new HBoxContainer();
+        actionRow1.AddThemeConstantOverride("separation", 4);
+        var newBtn = EditorTheme.PrimaryButton("+ Nueva", OnNewPressed);
+        newBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        actionRow1.AddChild(newBtn);
+        var editBtn = EditorTheme.MakeButton("Editar", OnEditPressed);
+        editBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        actionRow1.AddChild(editBtn);
+        AddChild(actionRow1);
+
+        var actionRow2 = new HBoxContainer();
+        actionRow2.AddThemeConstantOverride("separation", 4);
+        var dupBtn = EditorTheme.MakeButton("Duplicar", OnDuplicatePressed);
+        dupBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        actionRow2.AddChild(dupBtn);
+        var delBtn = EditorTheme.DangerButton("Eliminar");
+        delBtn.Pressed += OnDeletePressed;
+        delBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        actionRow2.AddChild(delBtn);
+        AddChild(actionRow2);
+
+        var saveBtn = EditorTheme.SuccessButton("💾 Guardar Particles.ini", OnSavePressed);
+        AddChild(saveBtn);
+
+        AddChild(EditorTheme.MakeHSeparator());
 
         // Preview area (live animated particle preview)
         var previewLabel = EditorTheme.MakeLabel("Preview", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
@@ -231,7 +267,135 @@ public partial class ParticlePalette : VBoxContainer
         // No-op: buttons restore their pressed state in CreateParticleButton via _selectedGroup
     }
 
+    /// <summary>
+    /// Select a definition by index without requiring a real button reference —
+    /// used after CRUD actions (new/duplicate/delete) where there's no click event
+    /// to hang the selection off of. Sets _selectedGroup BEFORE Rebuild() so
+    /// CreateParticleButton restores the right pressed state during list rebuild,
+    /// then fires the same preview/signal wiring OnParticleClicked does.
+    /// </summary>
+    private void SelectDefinitionProgrammatically(int groupId)
+    {
+        _selectedGroup = groupId;
+        Rebuild();
+
+        if (_preview != null)
+        {
+            _preview.Grhs = Grhs;
+            _preview.Textures = Textures;
+            _preview.Engine = Engine;
+            _preview.SetDefinition(groupId);
+        }
+        if (State != null)
+        {
+            State.SelectedParticleGroup = groupId;
+            State.ActiveTool = EditorTool.Particle;
+        }
+        EmitSignal(SignalName.ParticleSelected, groupId);
+        EmitSignal(SignalName.DefinitionsChanged);
+    }
+
     public int SelectedGroup => _selectedGroup;
+
+    // -------------------------------------------------------------------------
+    // CRUD actions: create / edit / duplicate / delete / save
+    // -------------------------------------------------------------------------
+
+    private void OnNewPressed()
+    {
+        if (Engine == null) return;
+        var wizard = new ParticleWizardPopup { Engine = Engine };
+        wizard.OnCreate = draft =>
+        {
+            int newIndex = Engine.AddDefinition(draft);
+            SelectDefinitionProgrammatically(newIndex);
+            OpenEditPopup(newIndex);
+        };
+        AddChild(wizard);
+        wizard.PopupCentered();
+    }
+
+    private void OnEditPressed()
+    {
+        if (_selectedGroup <= 0) return;
+        OpenEditPopup(_selectedGroup);
+    }
+
+    private void OpenEditPopup(int index)
+    {
+        if (Engine == null || index < 1 || index >= Engine.Defs.Length) return;
+        var popup = new ParticleEditPopup
+        {
+            Target = Engine.Defs[index],
+            TargetIndex = index,
+            Grhs = Grhs,
+            Textures = Textures,
+            NpcBodyGrhs = NpcBodyGrhs,
+        };
+        popup.OnSaved += () => SelectDefinitionProgrammatically(index);
+        // "Duplicar" inside the popup: commit the clone as a new def and select it
+        // in the list (the popup stays open on the original).
+        popup.OnDuplicateDraft = draft =>
+        {
+            int newIndex = Engine.AddDefinition(draft);
+            SelectDefinitionProgrammatically(newIndex);
+            return newIndex;
+        };
+        AddChild(popup);
+        popup.PopupCentered();
+    }
+
+    private void OnDuplicatePressed()
+    {
+        if (Engine == null || _selectedGroup <= 0) return;
+        int newIndex = Engine.DuplicateDefinition(_selectedGroup);
+        if (newIndex < 0) return;
+        SelectDefinitionProgrammatically(newIndex);
+    }
+
+    private void OnDeletePressed()
+    {
+        if (Engine == null || _selectedGroup <= 0) return;
+        int toDelete = _selectedGroup;
+
+        var confirm = new ConfirmationDialog
+        {
+            DialogText = $"¿Eliminar la partícula #{toDelete}" +
+                (toDelete < Engine.Defs.Length ? $" \"{Engine.Defs[toDelete].Name}\"" : "") +
+                "?\n\nLos mapas que la usan quedarán apuntando a un índice incorrecto " +
+                "hasta que reabras/repintes esas zonas.",
+            Size = new Vector2I(360, 140),
+            OkButtonText = "Eliminar",
+            CancelButtonText = "Cancelar",
+        };
+        confirm.Confirmed += () =>
+        {
+            Engine.RemoveDefinition(toDelete);
+            _selectedGroup = 0;
+            Rebuild();
+            EmitSignal(SignalName.DefinitionsChanged);
+        };
+        AddChild(confirm);
+        confirm.PopupCentered();
+    }
+
+    private void OnSavePressed()
+    {
+        if (Engine == null) return;
+        if (ParticlesIniPath.Length == 0)
+        {
+            GD.PrintErr("[ParticlePalette] No Particles.ini path configured — cannot save.");
+            return;
+        }
+        Engine.SaveDefinitions(ParticlesIniPath);
+        if (_infoLabel != null)
+        {
+            string original = _infoLabel.Text;
+            _infoLabel.Text = "Guardado ✓";
+            var timer = GetTree().CreateTimer(1.5);
+            timer.Timeout += () => { if (_infoLabel != null) _infoLabel.Text = original; };
+        }
+    }
 
     // -------------------------------------------------------------------------
     // Inner class: live particle preview control

@@ -289,9 +289,14 @@ public static partial class CharRenderer
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
     }
 
+    /// <summary>
+    /// scale=1f (default) reproduces the original pixel-for-pixel VB6 draw exactly.
+    /// Values != 1f are the extended motor's ScaleOverLife — the sprite is scaled
+    /// around its own center, same anchor the angle rotation already uses.
+    /// </summary>
     public static void DrawEffectGrh(
         CanvasItem canvas, GameData data, int grhIndex, int frame, Vector2 pos,
-        Color? modulate = null, float angle = 0f)
+        Color? modulate = null, float angle = 0f, float scale = 1f)
     {
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
@@ -315,10 +320,10 @@ public static partial class CharRenderer
         var srcRect = new Rect2(sx, sy, pw, ph);
         Color color = modulate ?? Colors.White;
 
-        if (angle != 0f)
+        if (angle != 0f || scale != 1f)
         {
             var center = new Vector2((float)Math.Round(pos.X + pw / 2f), (float)Math.Round(pos.Y + ph / 2f));
-            ((Node2D)canvas).DrawSetTransform(center, angle);
+            ((Node2D)canvas).DrawSetTransform(center, angle, new Vector2(scale, scale));
             canvas.DrawTextureRectRegion(texture, new Rect2(-pw / 2f, -ph / 2f, pw, ph), srcRect, color);
             ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
             return;

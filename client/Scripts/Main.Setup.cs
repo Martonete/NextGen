@@ -83,12 +83,14 @@ public partial class Main
         _dydToggle.Position = new Vector2(sideX - S(25), S(338));
         _dydToggle.Size = new Vector2(S(21), S(21));
         _dydToggle.StretchMode = TextureButton.StretchModeEnum.Scale;
-        _dydToggle.TextureNormal = _dydOffTex;
+        _dydToggle.TextureNormal = _inventoryPanel.DyDEnabled ? _dydOnTex : _dydOffTex;
+        _dydToggle.TooltipText = _inventoryPanel.DyDEnabled ? "Drag & drop activado" : "Drag & drop desactivado";
         _dydToggle.MouseDefaultCursorShape = CursorShape.PointingHand;
         _dydToggle.Pressed += () => {
             _soundManager?.PlayNamedSound("click.wav");
             _inventoryPanel!.DyDEnabled = !_inventoryPanel.DyDEnabled;
             _dydToggle.TextureNormal = _inventoryPanel.DyDEnabled ? _dydOnTex : _dydOffTex;
+            _dydToggle.TooltipText = _inventoryPanel.DyDEnabled ? "Drag & drop activado" : "Drag & drop desactivado";
         };
         _gameUI.AddChild(_dydToggle);
 
@@ -377,6 +379,10 @@ public partial class Main
         _auraViewerPanel = AddPanel<AuraViewerPanel>(new Vector2(vpLeft + (vpW - 390) / 2, 70));
         _auraViewerPanel.Init(_gameData, null);
 
+        _itemSearchPanel = AddPanel<ItemSearchPanel>(new Vector2(vpLeft + (vpW - 620) / 2, vpTop + (vpH - 460) / 2));
+        _itemSearchPanel.Init(_gameData, null);
+        _gmPanel.OnItemSearchRequested += query => _itemSearchPanel?.OpenWithQuery(query);
+
         _worldMapPanel = AddPanel<WorldMapPanel>(new Vector2(vpLeft + (vpW - 760) / 2, vpTop + (vpH - 560) / 2));
         if (_resources != null)
             _worldMapPanel.Init(_resources);
@@ -446,17 +452,14 @@ public partial class Main
         _inventoryUI.TryTradeOffer = (slot, pos) =>
         {
             if (_tradePanel == null || !_tradePanel.Visible) return false;
-            var rect = new Rect2(_tradePanel.GlobalPosition, _tradePanel.Size);
-            if (!rect.HasPoint(pos)) return false;
-            byte s = (byte)(slot + 1);
-            _tcp?.SendPacket(ClientPackets.WriteTradeOfferItem(s, (short)_state.Inventory[slot].Amount));
+            if (!_tradePanel.GetGlobalRect().HasPoint(pos)) return false;
+            _tradePanel.OfferInventorySlot(slot, _state.Inventory[slot].Amount);
             return true;
         };
         _inventoryUI.TryVaultDeposit = (slot, pos) =>
         {
             if (_vaultPanel == null || !_vaultPanel.Visible) return false;
-            var rect = new Rect2(_vaultPanel.GlobalPosition, _vaultPanel.Size);
-            if (!rect.HasPoint(pos)) return false;
+            if (!_vaultPanel.GetGlobalRect().HasPoint(pos)) return false;
             byte s = (byte)(slot + 1);
             _tcp?.SendPacket(ClientPackets.WriteBankDeposit(s, (short)_state.Inventory[slot].Amount));
             return true;
@@ -464,8 +467,7 @@ public partial class Main
         _inventoryUI.TryGuildBankDeposit = (slot, pos) =>
         {
             if (_guildBankPanel == null || !_guildBankPanel.Visible) return false;
-            var rect = new Rect2(_guildBankPanel.GlobalPosition, _guildBankPanel.Size);
-            if (!rect.HasPoint(pos)) return false;
+            if (!_guildBankPanel.GetGlobalRect().HasPoint(pos)) return false;
             byte s = (byte)(slot + 1);
             _tcp?.SendPacket(ClientPackets.WriteGuildBankDepositItem(s, (short)_state.Inventory[slot].Amount));
             return true;
@@ -535,11 +537,7 @@ public partial class Main
         _dialogManager.CreateEscapeMenu(this);
         _dialogManager.CreateMensajeDialog(GetNode<CanvasLayer>("UILayer"));
         _dialogManager.CreateDropDialog(_gameUI!);
-        _dialogManager.OnLogout = () =>
-        {
-            _tcp?.SendPacket(ClientPackets.WriteTalk("/salir"));
-            HandleDisconnect("");
-        };
+        _dialogManager.OnLogout = RequestLogoutToCharacterSelect;
         _dialogManager.OnQuit = () => GetTree().Quit();
         _dialogManager.OnOptions = () => _optionsPanel?.Open();
         _dialogManager.OnRestoreFullscreen = () => EnterFullscreen();

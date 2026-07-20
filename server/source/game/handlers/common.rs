@@ -634,12 +634,23 @@ pub(super) fn chrono_like_date() -> String {
 // =====================================================================
 
 pub(super) fn rand_simple_u32() -> u32 {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
+
+    static RNG_STATE: AtomicU64 = AtomicU64::new(0x9E37_79B9_7F4A_7C15);
+
+    let time_mix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_nanos() as u32;
-    nanos.wrapping_mul(1103515245).wrapping_add(12345) % 1000
+        .as_nanos() as u64;
+    let mut x = RNG_STATE
+        .fetch_add(0xA076_1D64_78BD_642F, Ordering::Relaxed)
+        .wrapping_add(time_mix);
+
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    (x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 32) as u32
 }
 
 pub(crate) fn rand_range(min: i32, max: i32) -> i32 {
@@ -647,23 +658,17 @@ pub(crate) fn rand_range(min: i32, max: i32) -> i32 {
         return min;
     }
     let range = (max - min + 1) as u32;
-    min + (rand_simple_u32() % range) as i32
+    let rejection_zone = u32::MAX - (u32::MAX % range);
+    loop {
+        let value = rand_simple_u32();
+        if value < rejection_zone {
+            return min + (value % range) as i32;
+        }
+    }
 }
 
 pub(super) fn random_number(min: i32, max: i32) -> i32 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    if min >= max {
-        return min;
-    }
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    let val = seed
-        .wrapping_mul(6364136223846793005)
-        .wrapping_add(1442695040888963407);
-    let range = (max - min + 1) as u64;
-    min + (val % range) as i32
+    rand_range(min, max)
 }
 
 // =====================================================================
@@ -683,7 +688,29 @@ pub(super) fn ini_write(path: &std::path::Path, section: &str, key: &str, value:
 // =====================================================================
 
 pub(super) async fn close_connection(state: &mut GameState, conn_id: ConnectionId) {
-    if let Some(mut writer) = state.writers.remove(&conn_id) {
+    let save_snapshot = state.users.get(&conn_id).and_then(|user| {
+        (user.logged && !user.char_name.is_empty())
+            .then(|| (user.char_name.clone(), super::build_char_save_data(user)))
+    });
+    if let Some((char_name, data)) = save_snapshot {
+        if let Err(e) = crate::db::charfile::save_charfile(&state.pool, &char_name, &data).await {
+            tracing::warn!(
+                "[CLOSE] Failed to save {} before closing connection #{}: {}",
+                char_name,
+                conn_id,
+                e
+            );
+        }
+    }
+
+    let writer = state.writers.remove(&conn_id);
+    state.recv_buffers.remove(&conn_id);
+    state.packet_counts.remove(&conn_id);
+    state.flood_strikes.remove(&conn_id);
+    state.security_kick_queue.retain(|&queued| queued != conn_id);
+    state.remove_connection(conn_id);
+
+    if let Some(mut writer) = writer {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         writer.shutdown().await;
     }
@@ -1409,6 +1436,8 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
     if poisoned {
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.poisoned = false;
+            user.poisoned_by = None;
+            user.poisoned_skill_id = 0;
         }
     }
 }

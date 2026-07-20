@@ -245,6 +245,7 @@ public partial class Main : Control
 		Center(_guildAlignmentPanel);
 		Center(_peaceProposalPanel);
 		Center(_guildMemberPanel);
+		Center(_itemSearchPanel);
 		Center(_tutorialPanel);
 	}
 
@@ -407,6 +408,9 @@ public partial class Main : Control
 	// Aura viewer/test panel
 	private AuraViewerPanel? _auraViewerPanel;
 
+	// Item search panel
+	private ItemSearchPanel? _itemSearchPanel;
+
 	// World map panel
 	private WorldMapPanel? _worldMapPanel;
 
@@ -448,6 +452,17 @@ public partial class Main : Control
 
 	// Track screen transitions
 	private Screen _lastScreen = Screen.Login;
+	private const long PostLoginProbeMs = 30000;
+	private const long PostLoginTimeoutMs = 60000;
+	private const int MaxAutoReconnectAttempts = 3;
+	private long _lastHealthProbeMs;
+	private string _lastLoginAccount = "";
+	private string _lastLoginPassword = "";
+	private string _lastCharacterName = "";
+	private bool _autoReconnectPending;
+	private bool _autoSelectingCharacter;
+	private bool _logoutToCharSelectPending;
+	private int _autoReconnectAttempts;
 
 	// Startup preload system
 	private LoadingScreen? _startupLoadingScreen;
@@ -461,6 +476,8 @@ public partial class Main : Control
 	private void CreatePacketHandler()
 	{
 		_packetHandler = new PacketHandler(_state);
+		_packetHandler.OnSendPacket = data => _tcp?.SendPacket(data) ?? false;
+		_packetHandler.OnServerDisconnect = HandleDisconnect;
 		_packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
 		if (_soundManager != null)
 		{
@@ -478,6 +495,30 @@ public partial class Main : Control
 			if (floatingLayer == null) return;
 			var color = Color.FromHtml(colorHex);
 			floatingLayer.AddText(charIndex, text, color);
+		};
+	}
+
+	private void CreateTcpSession()
+	{
+		_tcp?.Dispose();
+		_tcp = new AoTcpClient();
+		_auraViewerPanel?.SetTcp(_tcp);
+		_itemSearchPanel?.SetTcp(_tcp);
+		CreatePacketHandler();
+		_inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
+		if (_inputRouter != null) _inputRouter.InputHandler = _inputHandler;
+		_inputHandler.OnPlaySoundAt = (id, x, y) =>
+			_soundManager?.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
+		_inputHandler.OnToggleMusic = () =>
+		{
+			_state.Config.MusicEnabled = !_state.Config.MusicEnabled;
+			if (_soundManager != null)
+			{
+				_soundManager.MusicEnabled = _state.Config.MusicEnabled;
+				if (_soundManager.MusicEnabled && _state.MusicId > 0)
+					_soundManager.PlayMusic(_state.MusicId);
+			}
+			_state.Config.Save(_dataPath);
 		};
 	}
 
@@ -588,6 +629,7 @@ public partial class Main : Control
 		// The app opens on Login and _lastScreen already starts there, so
 		// HandleScreenChange never fires for it — activate the backdrop here.
 		_loginBackdrop.SetActive(_state.CurrentScreen != Screen.Game);
+		ApplyLoginBackdropFramePolicy(_state.CurrentScreen != Screen.Game);
 
 		// Grab Login UI nodes
 		// Login form (programmatic — replaces scene LoginPanel)
@@ -596,24 +638,13 @@ public partial class Main : Control
 		GetNode("UILayer").AddChild(_loginForm);
 		_loginForm.OnLoginRequest = (account, password) =>
 		{
-			_tcp = new AoTcpClient();
-			_auraViewerPanel?.SetTcp(_tcp);
-			CreatePacketHandler();
-			_inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
-			if (_inputRouter != null) _inputRouter.InputHandler = _inputHandler;
-			_inputHandler.OnPlaySoundAt = (id, x, y) =>
-				_soundManager?.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
-			_inputHandler.OnToggleMusic = () =>
-			{
-				_state.Config.MusicEnabled = !_state.Config.MusicEnabled;
-				if (_soundManager != null)
-				{
-					_soundManager.MusicEnabled = _state.Config.MusicEnabled;
-					if (_soundManager.MusicEnabled && _state.MusicId > 0)
-						_soundManager.PlayMusic(_state.MusicId);
-				}
-				_state.Config.Save(_dataPath);
-			};
+			_lastLoginAccount = account;
+			_lastLoginPassword = password;
+			_lastCharacterName = "";
+			_autoReconnectPending = false;
+			_autoSelectingCharacter = false;
+			_autoReconnectAttempts = 0;
+			CreateTcpSession();
 			_loginForm!.Connecting = true;
 			_connecting = true;
 			_ = ConnectAndLogin(account, password);
@@ -692,6 +723,8 @@ public partial class Main : Control
 		_chatSystem.OnSpellMacroToggle = () => _inventoryUI?.HandleSpellMacroToggle();
 		_chatSystem.OnPasswdCommand = () => _state.ShowChangePassword = true;
 		_chatSystem.OnGmPanelToggle = () => _gmPanel?.Toggle();
+		_chatSystem.OnItemSearchCommand = query => _itemSearchPanel?.OpenWithQuery(query);
+		_chatSystem.OnLogoutCommand = RequestLogoutToCharacterSelect;
 		_chatSystem.OnSosPanelToggle = () => _sosPanel?.Open();
 		_chatSystem.OnSlashCommand = (cmd) =>
 		{
@@ -1000,6 +1033,7 @@ public partial class Main : Control
 		if (_tcp == null || _packetHandler == null) return;
 		if (ProcessConnection()) return;
 		ProcessPackets();
+		if (ProcessConnectionHealth()) return;
 		ProcessScreenTransitions();
 		ProcessErrors(delta);
 		ProcessGameLoop(delta);
@@ -1096,10 +1130,32 @@ public partial class Main : Control
 			}
 
 			if (_loginForm?.ConnectButton != null) _loginForm!.ConnectButton.Disabled = false;
+			if (_autoReconnectPending)
+				BeginAutoReconnect(Screen.Game, "No se pudo reconectar.");
 			return true;
 		}
 		HandleDisconnect("Conexión perdida con el servidor.");
 		return true;
+	}
+
+	private bool ProcessConnectionHealth()
+	{
+		if (_tcp == null || !_tcp.IsConnected || !_state.IsLogged) return false;
+
+		long now = (long)Time.GetTicksMsec();
+		long silentMs = now - _tcp.LastReceiveMs;
+		if (silentMs >= PostLoginTimeoutMs)
+		{
+			HandleDisconnect("Sin respuesta del servidor. Intentando reconectar...");
+			return true;
+		}
+
+		if (silentMs >= PostLoginProbeMs && now - _lastHealthProbeMs >= 5000)
+		{
+			_lastHealthProbeMs = now;
+			_tcp.SendPacket(ClientPackets.WritePong());
+		}
+		return false;
 	}
 
 	// Poll and process inbound binary data.
@@ -1115,6 +1171,12 @@ public partial class Main : Control
 				return;
 			}
 		}
+		if (_state.IsLogged)
+		{
+			_autoReconnectPending = false;
+			_autoSelectingCharacter = false;
+			_autoReconnectAttempts = 0;
+		}
 
 		// Update spatial audio listener position each frame
 		_soundManager?.UpdateListenerPosition(_state.UserPosX, _state.UserPosY);
@@ -1128,6 +1190,30 @@ public partial class Main : Control
 			HandleScreenChange(_state.CurrentScreen);
 			_lastScreen = _state.CurrentScreen;
 		}
+		TryAutoSelectReconnectCharacter();
+	}
+
+	private void TryAutoSelectReconnectCharacter()
+	{
+		if (!_autoReconnectPending || _autoSelectingCharacter) return;
+		if (_tcp == null || !_tcp.IsConnected || _state.CurrentScreen != Screen.CharSelect) return;
+		if (string.IsNullOrWhiteSpace(_lastCharacterName) || string.IsNullOrWhiteSpace(_state.SecurityCode)) return;
+
+		bool found = false;
+		foreach (var preview in _state.CharacterList)
+		{
+			if (string.Equals(preview.Name, _lastCharacterName, StringComparison.OrdinalIgnoreCase))
+			{
+				found = true;
+				break;
+			}
+		}
+		if (!found) return;
+
+		_autoSelectingCharacter = true;
+		_state.UserName = _lastCharacterName;
+		_charSelectForm!.NoticeLabel!.Text = "Reconectando personaje...";
+		_tcp.SendPacket(ClientPackets.WriteCharacterLogin(_lastCharacterName, _lastLoginAccount, _state.SecurityCode));
 	}
 
 	// Show login/server errors and Mensaje dialogs; handle account creation timer.

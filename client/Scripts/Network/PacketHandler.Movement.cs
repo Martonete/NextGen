@@ -49,6 +49,7 @@ public partial class PacketHandler
         _state.GroundObjects.Clear();
         _state.MapParticles.Clear();
         _state.MapLights.Clear();
+        _state.MapLightIndex.Clear();
         _state.LightsDirty = true;
 
         _state.ScreenOffsetX = 0;
@@ -906,8 +907,14 @@ public partial class PacketHandler
         // re-entering a zone). Update the existing light in place instead of
         // stacking duplicates — otherwise MapLights grows unbounded every frame,
         // forcing a full lightmap recalc each time and leaking memory.
-        var existing = _state.MapLights.Find(l => l.X == x && l.Y == y);
-        if (existing != null)
+        if (_state.MapLightIndex.Count != _state.MapLights.Count)
+        {
+            _state.MapLightIndex.Clear();
+            foreach (var light in _state.MapLights)
+                _state.MapLightIndex[(light.X, light.Y)] = light;
+        }
+
+        if (_state.MapLightIndex.TryGetValue((x, y), out var existing))
         {
             existing.Range = range;
             existing.R = r; existing.G = g; existing.B = b;
@@ -915,11 +922,13 @@ public partial class PacketHandler
         }
         else
         {
-            _state.MapLights.Add(new MapLight
+            var light = new MapLight
             {
                 X = x, Y = y, Range = range,
                 R = r, G = g, B = b, Active = true,
-            });
+            };
+            _state.MapLights.Add(light);
+            _state.MapLightIndex[(x, y)] = light;
         }
         _state.LightsDirty = true;
     }
@@ -965,27 +974,16 @@ public partial class PacketHandler
         short zoneX2 = bq.ReadInteger();
         short zoneY2 = bq.ReadInteger();
 
-        // Optional ambient RGB (3 bytes appended by newer server versions)
-        byte ambR = 0, ambG = 0, ambB = 0;
-        if (bq.Available >= 3)
-        {
-            ambR = bq.ReadByte();
-            ambG = bq.ReadByte();
-            ambB = bq.ReadByte();
-        }
+        byte ambR = bq.ReadByte();
+        byte ambG = bq.ReadByte();
+        byte ambB = bq.ReadByte();
 
-        // Optional fog bytes (6 bytes appended by newer server versions)
-        byte fogDensity = 0, fogR = 128, fogG = 140, fogB = 160;
-        sbyte fogSpeedX = 5, fogSpeedY = 2;
-        if (bq.Available >= 6)
-        {
-            fogDensity = bq.ReadByte();
-            fogR = bq.ReadByte();
-            fogG = bq.ReadByte();
-            fogB = bq.ReadByte();
-            fogSpeedX = (sbyte)bq.ReadByte();
-            fogSpeedY = (sbyte)bq.ReadByte();
-        }
+        byte fogDensity = bq.ReadByte();
+        byte fogR = bq.ReadByte();
+        byte fogG = bq.ReadByte();
+        byte fogB = bq.ReadByte();
+        sbyte fogSpeedX = (sbyte)bq.ReadByte();
+        sbyte fogSpeedY = (sbyte)bq.ReadByte();
 
         _state.CurrentZoneName = zoneName;
         _state.CurrentZoneType = zoneType;

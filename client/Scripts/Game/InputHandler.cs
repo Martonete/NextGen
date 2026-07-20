@@ -159,7 +159,7 @@ public class InputHandler
 		else if (_keys.IsActionPressed(GameAction.UseItem))
 		{
 			int slot = _state.SelectedInvSlot;
-			if (slot >= 0 && slot < 25)
+			if (slot >= 0 && slot < _state.MaxInventorySlots)
 			{
 				_tcp.SendPacket(ClientPackets.WriteUseItem((byte)(slot + 1)));
 				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
@@ -169,7 +169,7 @@ public class InputHandler
 		else if (_keys.IsActionPressed(GameAction.EquipItem))
 		{
 			int slot = _state.SelectedInvSlot;
-			if (slot >= 0 && slot < 25)
+			if (slot >= 0 && slot < _state.MaxInventorySlots)
 			{
 				_tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
 				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
@@ -179,7 +179,7 @@ public class InputHandler
 		else if (_keys.IsActionPressed(GameAction.Drop))
 		{
 			int slot = _state.SelectedInvSlot;
-			if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
+			if (slot >= 0 && slot < _state.MaxInventorySlots && _state.Inventory[slot].ObjIndex > 0)
 			{
 				if (_state.Inventory[slot].Amount == 1)
 				{

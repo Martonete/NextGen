@@ -79,6 +79,8 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_darpartido(state, conn_id, target).await;
     } else if cmd_upper == "/ONLINE" {
         handle_slash_online(state, conn_id).await;
+    } else if cmd_upper == "/ONLINEUSERS" {
+        handle_slash_onlineusers(state, conn_id).await;
     } else if cmd_upper == "/PING" {
         state.send_bytes(conn_id, &binary_packets::write_pong_response());
     } else if cmd_upper == "/BALANCE" {
@@ -292,9 +294,25 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_viajar(state, conn_id, city).await;
     } else if cmd_upper == "/ENTRENAR" {
         handle_slash_entrenar(state, conn_id).await;
+    } else if cmd_upper == "/CENTINELA" {
+        handle_slash_centinela(state, conn_id, "").await;
     } else if cmd_upper.starts_with("/CENTINELA ") {
         let code = cmd[11..].trim();
         handle_slash_centinela(state, conn_id, code).await;
+    } else if cmd_upper == "/CENTINELASTATUS" {
+        handle_slash_centinela_status(state, conn_id, None).await;
+    } else if cmd_upper.starts_with("/CENTINELASTATUS ") {
+        let target = cmd["/CENTINELASTATUS ".len()..].trim();
+        handle_slash_centinela_status(state, conn_id, Some(target)).await;
+    } else if cmd_upper == "/CENTINELACLEAR" {
+        state.send_console(
+            conn_id,
+            "Uso: /CENTINELACLEAR <usuario>",
+            font_index::INFO,
+        );
+    } else if cmd_upper.starts_with("/CENTINELACLEAR ") {
+        let target = cmd["/CENTINELACLEAR ".len()..].trim();
+        handle_slash_centinela_clear(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/IR ") {
         let dest = &cmd[4..];
         handle_slash_ir(state, conn_id, dest).await;

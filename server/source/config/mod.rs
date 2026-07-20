@@ -98,6 +98,12 @@ pub struct ServerConfig {
     pub ip_max_connections: Option<u32>,     // Max simultaneous connections per IP (default 10)
     pub ip_min_interval_ms: Option<u64>, // Min ms between connections from same IP (default 500)
     pub flood_strike_limit: Option<u32>, // Strikes before disconnect (default 3)
+    pub centinela_enabled: Option<bool>,  // Enable anti-bot Centinela checks (default true)
+    pub centinela_min_seconds: Option<i32>, // Min seconds between automatic checks (default 300)
+    pub centinela_max_seconds: Option<i32>, // Max seconds between automatic checks (default 900)
+    pub centinela_macro_seconds: Option<i32>, // Max delay after macro suspicion (default 90)
+    pub centinela_answer_seconds: Option<i32>, // Seconds to answer an active challenge (default 120)
+    pub centinela_max_fails: Option<i32>, // Failed/expired checks before disconnect (default 3)
 }
 
 impl ServerConfig {
@@ -166,6 +172,32 @@ impl ServerConfig {
             flood_strike_limit: ini
                 .get("Security", "FloodStrikeLimit")
                 .and_then(|s| s.trim().parse().ok()),
+            centinela_enabled: ini
+                .get("Security", "CentinelaEnabled")
+                .and_then(|s| parse_bool_flag(&s)),
+            centinela_min_seconds: ini
+                .get("Security", "CentinelaMinSeconds")
+                .and_then(|s| s.trim().parse().ok()),
+            centinela_max_seconds: ini
+                .get("Security", "CentinelaMaxSeconds")
+                .and_then(|s| s.trim().parse().ok()),
+            centinela_macro_seconds: ini
+                .get("Security", "CentinelaMacroSeconds")
+                .and_then(|s| s.trim().parse().ok()),
+            centinela_answer_seconds: ini
+                .get("Security", "CentinelaAnswerSeconds")
+                .and_then(|s| s.trim().parse().ok()),
+            centinela_max_fails: ini
+                .get("Security", "CentinelaMaxFails")
+                .and_then(|s| s.trim().parse().ok()),
         })
+    }
+}
+
+fn parse_bool_flag(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" | "si" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
     }
 }

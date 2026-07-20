@@ -211,7 +211,7 @@ public class PanelStateSync
         if (_state.ShowPartyPanel)
         {
             _state.ShowPartyPanel = false;
-            _partyPanel?.OpenPanel();
+            _partyPanel?.OpenPanel(_state.PartyPanelType);
         }
 
         // Guild bank panel

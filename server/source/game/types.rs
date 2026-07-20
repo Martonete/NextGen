@@ -146,6 +146,8 @@ pub struct UserState {
     pub immobilized: bool, // VB6 flags.Inmovilizado — separate from paralyzed
     pub meditating: bool,
     pub poisoned: bool,
+    pub poisoned_by: Option<ConnectionId>,
+    pub poisoned_skill_id: i32,
     pub invisible: bool,
     pub cursed: bool,       // VB6: flags.Maldicion
     pub blessed: bool,      // VB6: flags.Bendicion
@@ -340,6 +342,7 @@ pub struct UserState {
     pub centinela_number: i32, // Number the player must type (0 = no active check)
     pub centinela_timer: i32,  // Ticks remaining to answer (0 = inactive)
     pub centinela_fails: i32,  // Number of failed attempts
+    pub centinela_next_check: i32, // Seconds until the next automatic check (0 = due)
 
     // SOS help request (/GM)
     pub gm_request_pending: bool, // Has pending /GM request
@@ -449,6 +452,8 @@ impl UserState {
             immobilized: false,
             meditating: false,
             poisoned: false,
+            poisoned_by: None,
+            poisoned_skill_id: 0,
             invisible: false,
             cursed: false,
             blessed: false,
@@ -586,6 +591,7 @@ impl UserState {
             centinela_number: 0,
             centinela_timer: 0,
             centinela_fails: 0,
+            centinela_next_check: 300,
             gm_request_pending: false,
             usuarios_matados: 0,
             npcs_muertos: 0,
@@ -773,6 +779,8 @@ pub struct GameState {
     pub next_npc_index: NpcIndex,
     /// Indices of active (alive) NPCs — avoids scanning all 10,000 slots every tick.
     pub active_npc_indices: HashSet<usize>,
+    /// Dead respawning NPCs waiting for their original tile to be free.
+    pub pending_respawn_npc_indices: HashSet<usize>,
 
     // Party system (runtime only, not persisted)
     pub parties: Vec<Option<PartyState>>,
@@ -803,6 +811,12 @@ pub struct GameState {
     pub ip_max_connections: u32,                              // Max connections per IP (default 10)
     pub ip_min_interval_ms: u64, // Min ms between connections (default 500)
     pub flood_strike_limit: u32, // Strikes before disconnect (default 3)
+    pub centinela_enabled: bool, // Enable anti-bot Centinela checks
+    pub centinela_min_seconds: i32, // Min seconds between automatic checks
+    pub centinela_max_seconds: i32, // Max seconds between automatic checks
+    pub centinela_macro_seconds: i32, // Max delay after macro suspicion
+    pub centinela_answer_seconds: i32, // Seconds to answer an active challenge
+    pub centinela_max_fails: i32, // Failed/expired checks before disconnect
 
     pub chat_global: bool, // Global chat enabled (toggled by /NOGLOBAL)
 
@@ -967,6 +981,18 @@ impl GameState {
         let ip_min_ms = config.ip_min_interval_ms.unwrap_or(500);
         let flood_strikes_limit = config.flood_strike_limit.unwrap_or(3);
         let max_pps = config.max_packets_per_second.unwrap_or(60);
+        let centinela_enabled = config.centinela_enabled.unwrap_or(true);
+        let centinela_min_seconds = config.centinela_min_seconds.unwrap_or(300).clamp(30, 86400);
+        let centinela_max_seconds = config
+            .centinela_max_seconds
+            .unwrap_or(900)
+            .clamp(centinela_min_seconds, 86400);
+        let centinela_macro_seconds = config
+            .centinela_macro_seconds
+            .unwrap_or(90)
+            .clamp(5, centinela_max_seconds);
+        let centinela_answer_seconds = config.centinela_answer_seconds.unwrap_or(120).clamp(10, 600);
+        let centinela_max_fails = config.centinela_max_fails.unwrap_or(3).clamp(1, 10);
 
         // Load anti-cheat intervals
         let intervals = load_intervals(&base_path);
@@ -1010,6 +1036,7 @@ impl GameState {
             npcs: vec![None; 10000], // Pre-allocate (VB6: MAXNPCS)
             next_npc_index: 1,
             active_npc_indices: HashSet::new(),
+            pending_respawn_npc_indices: HashSet::new(),
             parties: vec![None; MAX_PARTIES + 1], // 1-indexed
             next_party_index: 1,
             num_users: 0,
@@ -1024,6 +1051,12 @@ impl GameState {
             ip_max_connections: ip_max_conn,
             ip_min_interval_ms: ip_min_ms,
             flood_strike_limit: flood_strikes_limit,
+            centinela_enabled,
+            centinela_min_seconds,
+            centinela_max_seconds,
+            centinela_macro_seconds,
+            centinela_answer_seconds,
+            centinela_max_fails,
             chat_global: true,
             timbero_ganancias: 0,
             timbero_perdidas: 0,
@@ -1098,10 +1131,14 @@ impl GameState {
             // Decrement IP connection count (SecurityIp.bas)
             if let Some(count) = self.ip_connection_count.get_mut(&user.ip) {
                 *count = count.saturating_sub(1);
+                if *count == 0 {
+                    self.ip_last_connect.remove(&user.ip);
+                }
             }
 
             if user.logged {
                 self.num_users = self.num_users.saturating_sub(1);
+                self.world.free_char_index(user.char_index);
                 if !user.char_name.is_empty() {
                     self.online_names.remove(&user.char_name.to_uppercase());
                 }
@@ -1664,7 +1701,14 @@ impl GameState {
 
     /// Remove an NPC from the world (death). Does NOT deallocate — for respawn.
     pub fn kill_npc(&mut self, npc_idx: NpcIndex) {
+        let mut respawns = false;
+        let mut char_index_to_free = None;
         if let Some(npc) = self.npcs.get_mut(npc_idx).and_then(|n| n.as_mut()) {
+            respawns = npc.respawn;
+            if !respawns {
+                char_index_to_free = Some(npc.char_index);
+                npc.char_index = CharIndex(0);
+            }
             npc.active = false;
             npc.min_hp = 0;
             // Remove from grid
@@ -1676,6 +1720,11 @@ impl GameState {
             }
         }
         self.active_npc_indices.remove(&npc_idx);
+        if respawns {
+            self.pending_respawn_npc_indices.insert(npc_idx);
+        } else if let Some(char_index) = char_index_to_free {
+            self.world.free_char_index(char_index);
+        }
     }
 
     /// Respawn an NPC at its original position.
@@ -1727,6 +1776,7 @@ impl GameState {
         }
 
         self.active_npc_indices.insert(npc_idx);
+        self.pending_respawn_npc_indices.remove(&npc_idx);
         true
     }
 

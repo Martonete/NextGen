@@ -1350,6 +1350,8 @@ pub(super) async fn npc_attack_user(
             if let Some(user) = state.users.get_mut(&target_conn) {
                 user.poisoned = true;
                 user.counter_poison = 0;
+                user.poisoned_by = None;
+                user.poisoned_skill_id = 0;
             }
             state.send_msg_id(target_conn, 171, &npc_name);
         }

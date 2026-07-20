@@ -252,6 +252,9 @@ pub struct WorldState {
 
     /// Next character index to assign.
     next_char_index: i32,
+
+    /// Character indices released by disconnected users or non-respawning NPCs.
+    free_char_indices: Vec<i32>,
 }
 
 impl WorldState {
@@ -264,14 +267,26 @@ impl WorldState {
         Self {
             grids,
             next_char_index: 1,
+            free_char_indices: Vec::new(),
         }
     }
 
     /// Allocate a new unique character index.
     pub fn alloc_char_index(&mut self) -> CharIndex {
+        if let Some(idx) = self.free_char_indices.pop() {
+            return CharIndex(idx);
+        }
+
         let idx = CharIndex(self.next_char_index);
         self.next_char_index += 1;
         idx
+    }
+
+    /// Return a character index to the reusable pool.
+    pub fn free_char_index(&mut self, char_index: CharIndex) {
+        if char_index.0 > 0 && char_index.0 < self.next_char_index {
+            self.free_char_indices.push(char_index.0);
+        }
     }
 
     /// Ensure a grid exists for a reloaded map.

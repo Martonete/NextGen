@@ -81,7 +81,7 @@ pub use events::{ip_security_accept, pretoriano_check_death};
 
 // Many functions/constants are declared for VB6 parity but not yet wired up.
 
-use tracing::info;
+use tracing::{debug, info};
 
 use super::types::{GameState, privilege_level};
 use super::world;
@@ -209,6 +209,36 @@ enum PacketResult {
     Error,
 }
 
+fn is_pre_login_binary_packet(packet_id: ClientPacketID) -> bool {
+    matches!(
+        packet_id,
+        ClientPacketID::HardwareCheck
+            | ClientPacketID::AccountLogin
+            | ClientPacketID::CreateCharacter
+            | ClientPacketID::CharacterLogin
+            | ClientPacketID::CharacterSelect
+            | ClientPacketID::CreateAccount
+            | ClientPacketID::ChangePassword
+            | ClientPacketID::AccountRecovery
+            | ClientPacketID::RollDice
+            | ClientPacketID::DeleteCharacter
+            | ClientPacketID::Pong
+    )
+}
+
+fn is_pre_login_text_packet(data: &str) -> bool {
+    data.starts_with(client_opcodes::KERD22)
+        || data.starts_with(client_opcodes::ALOGIN)
+        || data.starts_with(client_opcodes::NACCNT)
+        || data.starts_with(client_opcodes::THCJXD)
+        || data.starts_with(client_opcodes::OOLOGI)
+        || data.starts_with(client_opcodes::NLOGIN)
+        || data.starts_with(client_opcodes::TIRDAD)
+        || data.starts_with(client_opcodes::TBRP)
+        || data.starts_with(client_opcodes::REPASS)
+        || data.starts_with(client_opcodes::REECUH)
+}
+
 /// Route a single binary packet from the ByteQueue.
 ///
 /// 13.3-style binary protocol: reads 1-byte opcode, then typed fields via ByteQueue.
@@ -237,6 +267,15 @@ async fn handle_one_packet(
     // VB6 M21: Reset idle counter on every received packet so only truly idle users get kicked.
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.idle_count = 0;
+    }
+
+    let logged = state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false);
+    if !logged && !is_pre_login_binary_packet(packet_id) {
+        debug!(
+            "[SEC] Dropping pre-login binary packet {:?} from #{}",
+            packet_id, conn_id
+        );
+        return PacketResult::Ok;
     }
 
     // Bridge: read binary fields, call typed handlers directly.
@@ -353,6 +392,7 @@ async fn handle_one_packet(
                 .unwrap_or_default();
             auth::handle_delete_character(state, conn_id, &char_name, &account, &codex).await;
         }
+        ClientPacketID::Pong => {}
 
         // Movement
         ClientPacketID::Walk => {
@@ -729,6 +769,11 @@ async fn handle_one_packet(
 
 /// Route a decrypted packet to the appropriate handler.
 pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let logged = state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false);
+    if !logged && !is_pre_login_text_packet(data) {
+        debug!("[SEC] Dropping pre-login text packet from #{}", conn_id);
+        return;
+    }
     // Log for debugging — only unhandled packets and slash commands
     // (movement/attack/click packets are too frequent to log)
 
@@ -807,10 +852,10 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         let pin = read_field(2, payload, ',');
         auth::handle_account_recovery(state, conn_id, &account_name, &pin).await;
     } else if data.starts_with(client_opcodes::COMMERCE_CLOSE) {
-        info!("[DISPATCH] #{} FINCOM", conn_id);
+        debug!("[DISPATCH] #{} FINCOM", conn_id);
         handle_commerce_close(state, conn_id).await;
     } else if data.starts_with(client_opcodes::COMMERCE_BUY) {
-        info!("[DISPATCH] #{} COMP raw='{}'", conn_id, data);
+        debug!("[DISPATCH] #{} COMP raw='{}'", conn_id, data);
         let payload = strip_opcode(data, 5); // "COMP," = 5
         let slot: usize = match read_field(1, payload, ',').parse() {
             Ok(v) if v >= 1 => v,
@@ -822,7 +867,7 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         };
         handle_commerce_buy(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::COMMERCE_SELL) {
-        info!("[DISPATCH] #{} VEND raw='{}'", conn_id, data);
+        debug!("[DISPATCH] #{} VEND raw='{}'", conn_id, data);
         let payload = strip_opcode(data, 5); // "VEND," = 5
         let slot: usize = match read_field(1, payload, ',').parse() {
             Ok(v) if v >= 1 => v,

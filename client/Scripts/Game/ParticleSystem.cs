@@ -27,7 +27,7 @@ public class ParticleSystem
         }
 
         byte[] rawBytes = resources.ReadBytes(relativePath);
-        string rawText = System.Text.Encoding.UTF8.GetString(rawBytes);
+        string rawText = System.Text.Encoding.Latin1.GetString(rawBytes);
         var lines = rawText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         int total = 0;
 
@@ -143,6 +143,24 @@ public class ParticleSystem
             case "colorset2": ParseColor(val, out def.ColR2, out def.ColG2, out def.ColB2); break;
             case "colorset3": ParseColor(val, out def.ColR3, out def.ColG3, out def.ColB3); break;
             case "colorset4": ParseColor(val, out def.ColR4, out def.ColG4, out def.ColB4); break;
+            // Legacy VB6 fields — resize/rx/ry unused by the classic simulation, kept
+            // for round-trip; ResizeX/ResizeY double as the extended motor's
+            // scale-over-life start/end when ScaleOverLife is on.
+            case "resize": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.Resize); break;
+            case "rx": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.ResizeX); break;
+            case "ry": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.ResizeY); break;
+            // Extended motor fields — absent in every shipped def, so old files
+            // parse to all-false and look byte-identical to before.
+            case "fade_alpha": def.FadeAlpha = val == "1"; break;
+            case "rotate_visual": def.RotateVisual = val == "1"; break;
+            case "scale_over_life": def.ScaleOverLife = val == "1"; break;
+            case "color_gradient": def.ColorGradient = val == "1"; break;
+            case "turbulence": def.Turbulence = val == "1"; break;
+            case "turbulence_strength": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.TurbulenceStrength); break;
+            case "attract_to_point": def.AttractToPoint = val == "1"; break;
+            case "attract_x": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.AttractX); break;
+            case "attract_y": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.AttractY); break;
+            case "attract_strength": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.AttractStrength); break;
         }
     }
 
@@ -294,7 +312,7 @@ public class ParticleSystem
             if (def.Gravity > 0)
             {
                 p.VelY += def.GravStrength;
-                if (p.Y > 0)
+                if (p.Y > MathF.Max(def.Y1, def.Y2) + 32f)
                 {
                     // VB6: bounce — set velocity to bounce_strength
                     p.VelY = def.BounceStrength;
@@ -311,9 +329,43 @@ public class ParticleSystem
             if (def.YMove)
                 p.VelY = RandRange(def.MoveY1, def.MoveY2);
 
+            // Extended motor: organic drift (smoke/mist) — perturbs velocity with
+            // coherent noise sampled at the particle's own position + a slowly
+            // advancing per-particle phase, so it drifts smoothly instead of
+            // jittering randomly like XMove/YMove does.
+            if (def.Turbulence)
+            {
+                p.NoisePhase += 0.05f;
+                float nx = ParticleNoise.Sample(p.X * 0.05f, p.Y * 0.05f, p.NoisePhase) * 2f - 1f;
+                float ny = ParticleNoise.Sample(p.X * 0.05f + 100f, p.Y * 0.05f + 100f, p.NoisePhase) * 2f - 1f;
+                p.VelX += nx * def.TurbulenceStrength;
+                p.VelY += ny * def.TurbulenceStrength;
+            }
+
+            // Extended motor: attraction (positive strength, vortex/implosion) or
+            // repulsion (negative, radial explosion) toward a fixed point.
+            if (def.AttractToPoint)
+            {
+                float dx = def.AttractX - p.X;
+                float dy = def.AttractY - p.Y;
+                float dist = MathF.Sqrt(dx * dx + dy * dy);
+                if (dist > 1f)
+                {
+                    p.VelX += dx / dist * def.AttractStrength;
+                    p.VelY += dy / dist * def.AttractStrength;
+                }
+            }
+
             // VB6: position += velocity / friction (integer division)
             p.X += (int)(p.VelX / friction);
             p.Y += (int)(p.VelY / friction);
+
+            // Extended motor: re-evaluate the gradient every tick so an aging
+            // particle visibly shifts color. Classic (ColorGradient=false)
+            // particles never touch this — color stays the one from spawn,
+            // matching VB6 exactly.
+            if (def.ColorGradient)
+                ApplyColor(p, def);
 
             // VB6: decrement alive_counter by 1, respawn immediately when dead (no gap frame)
             p.Life -= 1;
@@ -321,7 +373,9 @@ public class ParticleSystem
             {
                 SpawnParticle(p, def);
             }
-            // VB6 does NOT fade alpha — particles snap in/out. Alpha stays 1f (set at spawn).
+            // VB6 does NOT fade alpha — particles snap in/out by default. Extended
+            // motor's FadeAlpha (opt-in) is applied at DRAW time from Life/MaxLife,
+            // not here — see WorldRenderer's particle collection.
         }
     }
 
@@ -350,21 +404,105 @@ public class ParticleSystem
         if (def.GrhList.Length > 0)
             p.GrhIndex = def.GrhList[Rng.Next(def.GrhList.Length)];
 
-        // VB6 quirk: particle colors use RGB() which produces 0x00BBGGRR (BGR order),
-        // but D3D vertex color interprets it as ARGB = 0xAARRGGBB.
-        // This effectively swaps R↔B. The INI color values were authored with this
-        // swap in mind, so we must replicate it: store INI's R as Blue, INI's B as Red.
-        //
-        // VB6 uses all 4 ColorSets as the 4 vertex colors of the quad (gradient).
-        // We average the 4 sets since Godot only supports a single modulate color.
-        p.ColR = (byte)((def.ColB1 + def.ColB2 + def.ColB3 + def.ColB4) / 4); // INI Blue → render Red
-        p.ColG = (byte)((def.ColG1 + def.ColG2 + def.ColG3 + def.ColG4) / 4);
-        p.ColB = (byte)((def.ColR1 + def.ColR2 + def.ColR3 + def.ColR4) / 4); // INI Red → render Blue
+        ApplyColor(p, def);
+    }
+
+    /// <summary>
+    /// Particle color, with the VB6 BGR quirk (RGB() produces 0x00BBGGRR, but D3D
+    /// vertex color interprets it as ARGB = 0xAARRGGBB, effectively swapping R↔B —
+    /// the INI values were authored with this swap in mind) always applied.
+    ///
+    /// Classic (ColorGradient=false, the VB6-identical default): average of the 4
+    /// ColorSet vertices, resolved once at spawn — Godot only supports a single
+    /// modulate color, so this replicates VB6's 4-vertex quad gradient as a flat mix.
+    ///
+    /// Extended (ColorGradient=true): interpolate Set1→Set2→Set3→Set4 across the
+    /// particle's lifetime instead, so it visibly shifts color as it ages (fire
+    /// yellow→orange→red→smoke). Called every tick from UpdateStream when active.
+    /// </summary>
+    private static void ApplyColor(Particle p, ParticleStreamDef def)
+    {
+        if (!def.ColorGradient)
+        {
+            p.ColR = (byte)((def.ColB1 + def.ColB2 + def.ColB3 + def.ColB4) / 4);
+            p.ColG = (byte)((def.ColG1 + def.ColG2 + def.ColG3 + def.ColG4) / 4);
+            p.ColB = (byte)((def.ColR1 + def.ColR2 + def.ColR3 + def.ColR4) / 4);
+            return;
+        }
+
+        float t = p.MaxLife > 0 ? Math.Clamp(1f - p.Life / p.MaxLife, 0f, 1f) : 0f;
+        LerpColorSets(def, t, out byte iniR, out byte iniG, out byte iniB);
+        p.ColR = iniB; p.ColG = iniG; p.ColB = iniR;
+    }
+
+    /// <summary>Interpolate across the 4 raw INI ColorSets at t in [0,1] (Set1→Set2→Set3→Set4, 3 equal segments).</summary>
+    private static void LerpColorSets(ParticleStreamDef def, float t, out byte r, out byte g, out byte b)
+    {
+        float seg = t * 3f;
+        int i0 = Math.Clamp((int)seg, 0, 2);
+        float f = Math.Clamp(seg - i0, 0f, 1f);
+
+        (byte r, byte g, byte b) a = i0 switch
+        {
+            0 => (def.ColR1, def.ColG1, def.ColB1),
+            1 => (def.ColR2, def.ColG2, def.ColB2),
+            _ => (def.ColR3, def.ColG3, def.ColB3),
+        };
+        (byte r, byte g, byte b) c = i0 switch
+        {
+            0 => (def.ColR2, def.ColG2, def.ColB2),
+            1 => (def.ColR3, def.ColG3, def.ColB3),
+            _ => (def.ColR4, def.ColG4, def.ColB4),
+        };
+
+        r = (byte)Math.Clamp(a.r + (c.r - a.r) * f, 0, 255);
+        g = (byte)Math.Clamp(a.g + (c.g - a.g) * f, 0, 255);
+        b = (byte)Math.Clamp(a.b + (c.b - a.b) * f, 0, 255);
     }
 
     private static float RandRange(float min, float max)
     {
         if (min > max) (min, max) = (max, min);
         return min + (float)(Rng.NextDouble() * (max - min));
+    }
+}
+
+/// <summary>
+/// Small deterministic value-noise helper for the Turbulence extended-motor
+/// effect. Not a shader/texture noise (those are for rendering) — this is plain
+/// C# so both the client and editor simulations get identical, cheap, coherent
+/// drift without depending on a Godot Resource inside the hot particle loop.
+/// Mirrors tools/world-editor/Scripts/Data/ParticleEngine.cs's ParticleNoise —
+/// keep both in sync.
+/// </summary>
+internal static class ParticleNoise
+{
+    /// <summary>Smooth pseudo-random value in [0,1], coherent across nearby (x,y,z).</summary>
+    public static float Sample(float x, float y, float z)
+    {
+        int xi = (int)MathF.Floor(x), yi = (int)MathF.Floor(y), zi = (int)MathF.Floor(z);
+        float xf = x - xi, yf = y - yi, zf = z - zi;
+        float u = Fade(xf), v = Fade(yf), w = Fade(zf);
+
+        float c000 = Hash(xi, yi, zi), c100 = Hash(xi + 1, yi, zi);
+        float c010 = Hash(xi, yi + 1, zi), c110 = Hash(xi + 1, yi + 1, zi);
+        float c001 = Hash(xi, yi, zi + 1), c101 = Hash(xi + 1, yi, zi + 1);
+        float c011 = Hash(xi, yi + 1, zi + 1), c111 = Hash(xi + 1, yi + 1, zi + 1);
+
+        float x00 = Lerp(c000, c100, u), x10 = Lerp(c010, c110, u);
+        float x01 = Lerp(c001, c101, u), x11 = Lerp(c011, c111, u);
+        float y0 = Lerp(x00, x10, v), y1 = Lerp(x01, x11, v);
+        return Lerp(y0, y1, w);
+    }
+
+    private static float Fade(float t) => t * t * t * (t * (t * 6f - 15f) + 10f);
+    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
+
+    private static float Hash(int x, int y, int z)
+    {
+        int h = x * 374761393 + y * 668265263 + z * 2147483647;
+        h = (h ^ (h >> 13)) * 1274126177;
+        h ^= h >> 16;
+        return (h & 0xFFFFFF) / (float)0xFFFFFF;
     }
 }

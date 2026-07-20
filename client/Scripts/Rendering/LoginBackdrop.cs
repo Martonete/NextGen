@@ -27,8 +27,8 @@ public partial class LoginBackdrop : Control
 	// Map shown behind the menu.
 	private const int BackdropMap = 28;
 
-	// Camera pan: tiles/second. Slow enough to read as ambient drift.
-	private const float PanSpeed = 0.55f;
+	// Camera pan: 24px/sec, slow enough to feel like ambient drift.
+	private const float PanSpeed = 24f / ResolutionManager.TileSize;
 	// Keep the camera this many tiles away from the map edge, so the pan never
 	// reveals the void past the map border.
 	private const int EdgeMargin = 10;
@@ -79,6 +79,8 @@ public partial class LoginBackdrop : Control
 		_camY = (_minY + _maxY) / 2f;
 
 		MouseFilter = MouseFilterEnum.Ignore;
+		ProcessMode = ProcessModeEnum.Always;
+		ProcessPriority = -100;
 
 		var size = BackdropSize();
 		_viewport = new SubViewport
@@ -90,12 +92,18 @@ public partial class LoginBackdrop : Control
 		};
 		AddChild(_viewport);
 
-		var world = new Node2D { Name = "BackdropWorld" };
+		var world = new Node2D
+		{
+			Name = "BackdropWorld",
+			TextureFilter = CanvasItem.TextureFilterEnum.Linear,
+		};
 		_viewport.AddChild(world);
 
 		_renderer = new WorldRenderer();
 		_renderer.Init(_state, data, _animator, resources);
 		_renderer.SetRenderWindow(size);
+		_renderer.SetSubpixelCamera(true);
+		_renderer.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
 		world.AddChild(_renderer);
 
 		// The viewport is already window-sized, so draw it 1:1 with no stretching.
@@ -104,7 +112,7 @@ public partial class LoginBackdrop : Control
 		{
 			Texture = _viewport.GetTexture(),
 			StretchMode = TextureRect.StretchModeEnum.Keep,
-			TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+			TextureFilter = CanvasItem.TextureFilterEnum.Linear,
 			MouseFilter = MouseFilterEnum.Ignore,
 		};
 		_display.SetAnchorsPreset(LayoutPreset.FullRect);
@@ -160,6 +168,8 @@ public partial class LoginBackdrop : Control
 	/// </summary>
 	private void SpawnMapNpcs(IResourceProvider resources, MapData map)
 	{
+		_state.Characters.Clear();
+
 		var defs = NpcAppearance.LoadTable(resources);
 		if (defs.Count == 0) return;
 
@@ -169,14 +179,22 @@ public partial class LoginBackdrop : Control
 		var placements = LoadLegacyNpcPlacements(resources, map);
 
 		int nextIndex = 1;
+		int positionCount = 0;
+		int missingAppearance = 0;
 		for (int y = 1; y <= map.Height; y++)
 		{
 			for (int x = 1; x <= map.Width; x++)
 			{
 				int npcNum = map.Tiles[x, y].NpcIndex;
 				if (npcNum <= 0) placements.TryGetValue((x, y), out npcNum);
-				if (npcNum <= 0 || !defs.TryGetValue(npcNum, out var def)) continue;
-				if (def.Body <= 0 && def.Head <= 0) continue;
+				if (npcNum <= 0) continue;
+
+				positionCount++;
+				if (!defs.TryGetValue(npcNum, out var def) || (def.Body <= 0 && def.Head <= 0))
+				{
+					missingAppearance++;
+					continue;
+				}
 
 				_state.Characters[nextIndex] = new Character
 				{
@@ -188,11 +206,12 @@ public partial class LoginBackdrop : Control
 					PosY = y,
 					Name = "",
 					NpcNumber = npcNum,
+					FovAlpha = 1f,
 				};
 				nextIndex++;
 			}
 		}
-		GD.Print($"[LOGIN-BG] Spawned {nextIndex - 1} backdrop NPCs on map {BackdropMap}.");
+		GD.Print($"[LOGIN-BG] Backdrop NPCs on map {BackdropMap}: positions={positionCount}, spawned={nextIndex - 1}, missingAppearance={missingAppearance}.");
 	}
 
 	/// <summary>

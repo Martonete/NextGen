@@ -69,6 +69,15 @@ async fn main() {
                 cfg.ip_min_interval_ms.unwrap_or(500),
                 cfg.flood_strike_limit.unwrap_or(3)
             );
+            info!(
+                "  Centinela: enabled={}, interval={}..{}s, macro={}s, answer={}s, max_fails={}",
+                cfg.centinela_enabled.unwrap_or(true),
+                cfg.centinela_min_seconds.unwrap_or(300),
+                cfg.centinela_max_seconds.unwrap_or(900),
+                cfg.centinela_macro_seconds.unwrap_or(90),
+                cfg.centinela_answer_seconds.unwrap_or(120),
+                cfg.centinela_max_fails.unwrap_or(3)
+            );
             cfg
         }
         Err(e) => {
@@ -302,20 +311,12 @@ async fn main() {
                     debug!("[DISC] #{} disconnected (no login)", conn_id);
                 }
 
-                // Decrement IP connection count
-                if let Some(user) = state.users.get(&conn_id) {
-                    let ip = user.ip.clone();
-                    if let Some(count) = state.ip_connection_count.get_mut(&ip) {
-                        if *count > 0 {
-                            *count -= 1;
-                        }
-                    }
-                }
-
                 state.remove_connection(conn_id);
 
                 // VB6 MostrarNumUsers: broadcast updated online count to all remaining players
-                let on_pkt = protocol::binary_packets::write_online_count(state.num_users as i16);
+                let on_pkt = protocol::binary_packets::write_online_count(
+                    state.num_users.min(i16::MAX as u32) as i16,
+                );
                 state.send_data_bytes(game::types::SendTarget::ToAll, &on_pkt);
             }
         }
@@ -360,14 +361,6 @@ async fn main() {
                     state.recv_buffers.remove(&conn_id);
                     state.packet_counts.remove(&conn_id);
                     state.flood_strikes.remove(&conn_id);
-
-                    // Decrement IP connection count
-                    if let Some(user) = state.users.get(&conn_id) {
-                        let ip = user.ip.clone();
-                        if let Some(count) = state.ip_connection_count.get_mut(&ip) {
-                            *count = count.saturating_sub(1);
-                        }
-                    }
 
                     state.remove_connection(conn_id);
                     info!("[SEC] Connection #{} kicked for flood", conn_id);

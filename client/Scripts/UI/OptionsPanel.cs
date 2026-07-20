@@ -430,11 +430,12 @@ public partial class OptionsPanel : RpgBaseForm
 
         // Niebla: [label] [slider] [%]
         var fogRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
-        var fogLabel = RpgTheme.CreateInfoLabel("Niebla", 13);
-        RpgTheme.SetMinW(fogLabel, 70);
+        var fogLabel = RpgTheme.CreateInfoLabel("Opac. niebla", 13);
+        RpgTheme.SetMinW(fogLabel, 95);
         fogRow.AddChild(fogLabel);
         _sldFogIntensity = RpgTheme.CreateRpgSlider(30, 0, 100, 40);
         _sldFogIntensity.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _sldFogIntensity.TooltipText = "0% sin niebla, 100% casi negro";
         fogRow.AddChild(_sldFogIntensity);
         _lblFogIntensity = RpgTheme.CreateInfoLabel("30%", 11);
         fogRow.AddChild(_lblFogIntensity);

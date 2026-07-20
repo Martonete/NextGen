@@ -1,6 +1,6 @@
 //! Combat-related skills: taming, ranged attacks.
 
-use super::{try_level_skill, try_level_skill_with_hit};
+use super::{skill_id, try_level_skill, try_level_skill_with_hit};
 use crate::game::handlers::common::*;
 use crate::game::handlers::{
     calc_armor_absorption, calc_attack_power_with_balance, check_user_level, poder_evasion,
@@ -749,6 +749,8 @@ async fn resolve_ranged_attack_user(
             if let Some(victim) = state.users.get_mut(&victim_id) {
                 victim.poisoned = true;
                 victim.counter_poison = 0;
+                victim.poisoned_by = Some(conn_id);
+                victim.poisoned_skill_id = skill_id::PROYECTILES;
             }
             state.send_msg_id(victim_id, 171, &attacker_name);
             state.send_msg_id(conn_id, 172, &victim_name);

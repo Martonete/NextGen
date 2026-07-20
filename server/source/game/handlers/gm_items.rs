@@ -227,8 +227,11 @@ pub(super) async fn handle_slash_mata(state: &mut GameState, conn_id: Connection
                 }
                 let bp = binary_packets::write_character_remove(ci.0 as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp);
-                state.npcs[npc_idx] = None;
+                if let Some(npc) = state.npcs[npc_idx].take() {
+                    state.world.free_char_index(npc.char_index);
+                }
                 state.active_npc_indices.remove(&npc_idx);
+                state.pending_respawn_npc_indices.remove(&npc_idx);
                 state.send_console(
                     conn_id,
                     &format!("NPC #{} eliminado.", npc_idx),
@@ -281,8 +284,11 @@ pub(super) async fn handle_slash_masskill(state: &mut GameState, conn_id: Connec
             state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &bp);
             killed += 1;
         }
-        state.npcs[idx] = None;
+        if let Some(npc) = state.npcs[idx].take() {
+            state.world.free_char_index(npc.char_index);
+        }
         state.active_npc_indices.remove(&idx);
+        state.pending_respawn_npc_indices.remove(&idx);
     }
 
     state.send_console(

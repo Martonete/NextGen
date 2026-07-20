@@ -170,16 +170,7 @@ public static partial class CharRenderer
         if (aura.GrhIndex <= 0) return;
 
         int grhIndex = aura.GrhIndex;
-        int frame = 0;
-        if (grhIndex > 0 && grhIndex < data.Grhs.Length)
-        {
-            var grh = data.Grhs[grhIndex];
-            if (grh.NumFrames > 1)
-            {
-                float speed = grh.Speed > 0 ? grh.Speed : 100f;
-                frame = (int)(globalTimeMs / speed % grh.NumFrames);
-            }
-        }
+        int frame = GetTimedGrhFrame(data, grhIndex, globalTimeMs);
 
         // Pass the NORMAL aura position (with Offset) + mirrorAdj-adjusted mirrorY.
         // The DrawSetTransform mirror naturally reverses the Offset direction:
@@ -188,7 +179,7 @@ public static partial class CharRenderer
         // mirrorAdj ensures the aura's mirror line matches the body's.
         float auraX = pos.X + headOffset.X;
         float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
-        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.25f);
+        Color color = new Color(ByteToFloat.Table[aura.R], ByteToFloat.Table[aura.G], ByteToFloat.Table[aura.B], 0.25f);
 
         worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
                                          aura.Giratoria ? angle : 0f, mirrorY);

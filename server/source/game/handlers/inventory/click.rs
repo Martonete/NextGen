@@ -770,6 +770,8 @@ pub(crate) async fn handle_right_click(
                                 let max = user.max_hp;
                                 user.min_hp = max;
                                 user.poisoned = false;
+                                user.poisoned_by = None;
+                                user.poisoned_skill_id = 0;
                             }
                             send_stats_hp(state, conn_id).await;
                         }
@@ -796,6 +798,8 @@ pub(crate) async fn handle_right_click(
                             if let Some(user) = state.users.get_mut(&conn_id) {
                                 if user.poisoned {
                                     user.poisoned = false;
+                                    user.poisoned_by = None;
+                                    user.poisoned_skill_id = 0;
                                     state.send_console(
                                         conn_id,
                                         "El cirujano te ha curado el veneno.",

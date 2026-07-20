@@ -95,10 +95,9 @@ pub(crate) async fn handle_account_login(
     password: &str,
 ) {
     info!(
-        "[AUTH] Login attempt: account='{}' pass_len={} pass_bytes={:?} from #{}",
+        "[AUTH] Login attempt: account='{}' pass_len={} from #{}",
         account_name,
         password.len(),
-        password.as_bytes(),
         conn_id
     );
 
@@ -1388,7 +1387,7 @@ pub(crate) async fn connect_user(
     // VB6 MostrarNumUsers: broadcast online count to ALL players (General.bas:628)
     state.send_data_bytes(
         SendTarget::ToAll,
-        &binary_packets::write_online_count(state.num_users as i16),
+        &binary_packets::write_online_count(state.num_users.min(i16::MAX as u32) as i16),
     );
 
     // --- PHASE 13: Scroll timers (VB6 lines 1781-1783) ---
@@ -1398,6 +1397,12 @@ pub(crate) async fn connect_user(
 
     // --- PHASE 14: Inventory (VB6 lines 1785-1786) ---
     state.send_bytes(conn_id, &binary_packets::write_inv_init());
+    let current_slots = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.current_inventory_slots.min(MAX_INVENTORY_SLOTS) as u8)
+        .unwrap_or(MAX_NORMAL_INVENTORY_SLOTS as u8);
+    state.send_bytes(conn_id, &binary_packets::write_add_slots(current_slots));
     send_full_inventory(state, conn_id).await;
 
     // --- PHASE 15: Spells (VB6 line 1787) ---

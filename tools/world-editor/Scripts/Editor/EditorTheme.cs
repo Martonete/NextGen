@@ -69,6 +69,9 @@ public static class EditorTheme
     public static readonly Color OVERLAY_OBJECT    = new(0.7f, 0.3f, 1f, 0.35f);
     public static readonly Color OVERLAY_PARTICLE  = new(0.3f, 1f, 0.8f, 0.30f);
     public static readonly Color OVERLAY_TRIGGER   = new(0.8f, 0.8f, 0.3f, 0.25f);
+    // Map bounds border — always visible, marks where the map's real
+    // Width/Height ends so painting outside it is never a silent no-op.
+    public static readonly Color OVERLAY_MAP_BOUNDS = new(1f, 0.15f, 0.15f, 0.9f);
 
     // ── Font sizes ───────────────────────────────────────────────────
     public const int FONT_XS = 10;

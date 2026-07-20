@@ -54,6 +54,20 @@ public partial class TilePalette : VBoxContainer
         _searchBox.TextChanged += OnSearchChanged;
         AddChild(_searchBox);
 
+        // Brush size — circular radius applied to Paint/Erase/Block so large
+        // terrain areas don't have to be painted one tile at a time. 0 = single
+        // tile (classic behavior). Same UX pattern as HumoConfigPanel's fog brush.
+        var brushRow = new HBoxContainer();
+        brushRow.AddThemeConstantOverride("separation", 6);
+        brushRow.AddChild(EditorTheme.MakeLabel("Pincel:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        var brushSpin = new SpinBox { MinValue = 0, MaxValue = 20, Value = 0, Step = 1 };
+        brushSpin.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        brushSpin.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        brushSpin.TooltipText = "Radio del pincel en tiles (0 = un tile por click)";
+        brushSpin.ValueChanged += v => { if (State != null) State.PaintBrushRadius = (int)v; };
+        brushRow.AddChild(brushSpin);
+        AddChild(brushRow);
+
         // Category buttons (wrapped flow — always fully visible, no scrollbar)
         _categoryFlow = new FlowContainer();
         _categoryFlow.SizeFlagsHorizontal = SizeFlags.ExpandFill;

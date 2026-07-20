@@ -141,10 +141,13 @@ pub async fn tick_player_passive(state: &mut GameState) {
     let mut idle_kick: Vec<ConnectionId> = Vec::new();
     for &cid in &user_ids {
         if let Some(u) = state.users.get_mut(&cid) {
-            if u.logged && u.privileges == 0 {
-                u.idle_count += 1;
-                if u.idle_count >= IDLE_LIMIT_SECS {
-                    idle_kick.push(cid);
+            if u.logged {
+                u.uptime = u.uptime.saturating_add(1);
+                if u.privileges == 0 {
+                    u.idle_count += 1;
+                    if u.idle_count >= IDLE_LIMIT_SECS {
+                        idle_kick.push(cid);
+                    }
                 }
             }
         }
@@ -174,6 +177,8 @@ pub async fn tick_player_passive(state: &mut GameState) {
         let user_data = match state.users.get(&conn_id) {
             Some(u) if u.logged && !u.dead => Some((
                 u.poisoned,
+                u.poisoned_by,
+                u.poisoned_skill_id,
                 u.meditating,
                 u.min_hp,
                 u.max_hp,
@@ -205,6 +210,8 @@ pub async fn tick_player_passive(state: &mut GameState) {
 
         let (
             poisoned,
+            poisoned_by,
+            poisoned_skill_id,
             meditating,
             min_hp,
             max_hp,
@@ -306,7 +313,18 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 let new_hp = min_hp - dmg;
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.counter_poison = 0;
-                    u.min_hp = new_hp;
+                    u.min_hp = new_hp.max(0);
+                }
+                if let Some(attacker_id) = poisoned_by {
+                    if attacker_id != conn_id && poisoned_skill_id > 0 {
+                        if let Some(attacker) = state.users.get_mut(&attacker_id) {
+                            try_level_skill_with_hit(
+                                attacker,
+                                poisoned_skill_id as usize,
+                                true,
+                            );
+                        }
+                    }
                 }
                 // VB6: "Estás envenenado, si no te curas morirás." (FONTTYPE_VENENO)
                 state.send_console(
@@ -376,7 +394,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                         font_index::INFO,
                     );
                     if let Some(u) = state.users.get_mut(&conn_id) {
-                        u.min_hp = new_hp;
+                        u.min_hp = new_hp.max(0);
                     }
                     send_stats_hp(state, conn_id).await;
                     if new_hp <= 0 {
@@ -429,7 +447,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     );
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         u.counter_lava = 0;
-                        u.min_hp = new_hp;
+                        u.min_hp = new_hp.max(0);
                     }
                     send_stats_hp(state, conn_id).await;
                     if new_hp <= 0 {

@@ -477,6 +477,22 @@ pub(super) async fn handle_slash_centinela(
     super::parity_gm::handle_centinela_improved(state, conn_id, code).await;
 }
 
+pub(super) async fn handle_slash_centinela_status(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: Option<&str>,
+) {
+    super::parity_gm::handle_centinela_status(state, conn_id, target).await;
+}
+
+pub(super) async fn handle_slash_centinela_clear(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
+    super::parity_gm::handle_centinela_clear(state, conn_id, target).await;
+}
+
 /// /IR — Premium travel. VB6: requires target Traveler NPC, distance <= 5.
 /// Destinations match VB6 13.3 travel system.
 pub(super) async fn handle_slash_ir(
@@ -786,7 +802,9 @@ pub(super) async fn handle_slash_voto(
 
     // Check candidate is valid
     let candidate_name = {
-        let election = state.guild_elections.get(&guild_idx).unwrap();
+        let Some(election) = state.guild_elections.get(&guild_idx) else {
+            return;
+        };
         election
             .candidates
             .iter()
@@ -806,12 +824,10 @@ pub(super) async fn handle_slash_voto(
     };
 
     // Record vote
-    state
-        .guild_elections
-        .get_mut(&guild_idx)
-        .unwrap()
-        .votes
-        .insert(voter_name, candidate_name.clone());
+    let Some(election) = state.guild_elections.get_mut(&guild_idx) else {
+        return;
+    };
+    election.votes.insert(voter_name, candidate_name.clone());
     state.send_console(
         conn_id,
         &format!("Has votado por {}.", candidate_name),
@@ -827,7 +843,9 @@ pub(super) async fn handle_slash_voto(
         .collect();
 
     let all_voted = {
-        let election = state.guild_elections.get(&guild_idx).unwrap();
+        let Some(election) = state.guild_elections.get(&guild_idx) else {
+            return;
+        };
         !online_members.is_empty()
             && online_members
                 .iter()
@@ -837,7 +855,9 @@ pub(super) async fn handle_slash_voto(
     if all_voted {
         // Tally votes
         let tally = {
-            let election = state.guild_elections.get(&guild_idx).unwrap();
+            let Some(election) = state.guild_elections.get(&guild_idx) else {
+                return;
+            };
             let mut counts: std::collections::HashMap<String, i32> =
                 std::collections::HashMap::new();
             for name in election.votes.values() {

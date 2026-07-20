@@ -27,6 +27,8 @@ public partial class GmPanel : RpgBaseForm
     // Tab 0: User Info
     private LineEdit? _userSearchEdit;
     private Label? _userInfoLabel;
+    private ItemList? _onlineUserList;
+    private readonly List<string> _onlineUsers = new();
 
     // Tab 1: Teleport
     private LineEdit? _teleMapEdit;
@@ -38,6 +40,7 @@ public partial class GmPanel : RpgBaseForm
     private LineEdit? _spawnNpcIndexEdit;
     private LineEdit? _spawnNpcCountEdit;
     private LineEdit? _spawnItemIndexEdit;
+    private LineEdit? _spawnItemSearchEdit;
 
     // Tab 3: Moderation
     private LineEdit? _modPlayerEdit;
@@ -161,6 +164,24 @@ public partial class GmPanel : RpgBaseForm
         _userInfoLabel.AddThemeColorOverride("font_color", Colors.White);
         vbox.AddChild(_userInfoLabel);
 
+        var onlineRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        vbox.AddChild(onlineRow);
+
+        var refreshOnlineBtn = RpgTheme.CreateRpgButton("Actualizar online", false, 12);
+        refreshOnlineBtn.CustomMinimumSize = new Vector2(140, 28);
+        refreshOnlineBtn.Pressed += () => { SendGmCommand("/ONLINEUSERS"); AddLog("Requested online user list"); };
+        onlineRow.AddChild(refreshOnlineBtn);
+
+        var inspectOnlineBtn = RpgTheme.CreateRpgButton("Mirar seleccionado", false, 12);
+        inspectOnlineBtn.CustomMinimumSize = new Vector2(150, 28);
+        inspectOnlineBtn.Pressed += InspectSelectedOnlineUser;
+        onlineRow.AddChild(inspectOnlineBtn);
+
+        _onlineUserList = RpgTheme.CreateRpgItemList(0, 140);
+        _onlineUserList.ItemSelected += OnOnlineUserSelected;
+        _onlineUserList.ItemActivated += _ => InspectSelectedOnlineUser();
+        vbox.AddChild(_onlineUserList);
+
         return scroll;
     }
 
@@ -279,6 +300,19 @@ public partial class GmPanel : RpgBaseForm
         vbox.AddChild(RpgTheme.CreateSeparator());
 
         vbox.AddChild(RpgTheme.CreateInfoLabel("Spawn Item:", 12));
+        var searchItemRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        vbox.AddChild(searchItemRow);
+
+        searchItemRow.AddChild(RpgTheme.CreateInfoLabel("Buscar:", 12));
+        _spawnItemSearchEdit = RpgTheme.CreateRpgInput("nombre del item", 180);
+        _spawnItemSearchEdit.TextSubmitted += _ => SearchItemByName();
+        searchItemRow.AddChild(_spawnItemSearchEdit);
+
+        var searchItemBtn = RpgTheme.CreateRpgButton("Buscar", false, 13);
+        searchItemBtn.CustomMinimumSize = new Vector2(90, 30);
+        searchItemBtn.Pressed += SearchItemByName;
+        searchItemRow.AddChild(searchItemBtn);
+
         var itemRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
         vbox.AddChild(itemRow);
 
@@ -308,9 +342,19 @@ public partial class GmPanel : RpgBaseForm
     /// <summary>Event raised when the spawn list button is pressed.</summary>
     public Action? OnOpenSpawnListRequested;
 
+    /// <summary>Event raised when the item search button is pressed.</summary>
+    public Action<string>? OnItemSearchRequested;
+
     private void OnOpenSpawnList()
     {
         OnOpenSpawnListRequested?.Invoke();
+    }
+
+    private void SearchItemByName()
+    {
+        string query = _spawnItemSearchEdit?.Text.Trim() ?? "";
+        OnItemSearchRequested?.Invoke(query);
+        AddLog(query.Length > 0 ? $"Item search: {query}" : "Item search");
     }
 
     // ── Tab 3: Moderation ─────────────────────────────────────
@@ -417,7 +461,7 @@ public partial class GmPanel : RpgBaseForm
 
         var btnOnline = RpgTheme.CreateRpgButton("Ver Online", false, 13);
         btnOnline.CustomMinimumSize = new Vector2(160, 30);
-        btnOnline.Pressed += () => { SendGmCommand("/ONLINE"); AddLog("Requested online list"); };
+        btnOnline.Pressed += () => { SendGmCommand("/ONLINEUSERS"); AddLog("Requested online user list"); };
         vbox.AddChild(btnOnline);
 
         var btnReload = RpgTheme.CreateRpgButton("Recargar NPCs", false, 13);
@@ -548,19 +592,47 @@ public partial class GmPanel : RpgBaseForm
     /// <summary>
     /// Display the online user list from the UserNameList packet.
     /// Format: "name1,name2,name3,..."
-    /// Shown in the User Info tab label area as a scrollable text block.
-    /// TODO: replace with a proper ItemList control when a dedicated tab is needed.
     /// </summary>
     public void PopulateUserList(string data)
     {
-        if (_userInfoLabel == null) return;
-        if (string.IsNullOrEmpty(data))
+        _onlineUsers.Clear();
+        _onlineUserList?.Clear();
+
+        if (string.IsNullOrWhiteSpace(data))
         {
-            _userInfoLabel.Text = "(no users online)";
+            if (_userInfoLabel != null) _userInfoLabel.Text = "(no users online)";
             return;
         }
-        var names = data.Split(',', StringSplitOptions.RemoveEmptyEntries);
-        _userInfoLabel.Text = $"Online ({names.Length}):\n" + string.Join(", ", names);
+
+        var names = data.Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var rawName in names)
+        {
+            string name = rawName.Trim();
+            if (name.Length == 0) continue;
+            _onlineUsers.Add(name);
+            _onlineUserList?.AddItem(name);
+        }
+
+        if (_userInfoLabel != null)
+            _userInfoLabel.Text = $"Online ({_onlineUsers.Count})";
+    }
+
+    private void OnOnlineUserSelected(long index)
+    {
+        if (index < 0 || index >= _onlineUsers.Count || _userSearchEdit == null) return;
+        _userSearchEdit.Text = _onlineUsers[(int)index];
+    }
+
+    private void InspectSelectedOnlineUser()
+    {
+        if (_onlineUserList == null) return;
+        int[] selected = _onlineUserList.GetSelectedItems();
+        if (selected.Length == 0 || selected[0] < 0 || selected[0] >= _onlineUsers.Count) return;
+
+        string name = _onlineUsers[selected[0]];
+        if (_userSearchEdit != null) _userSearchEdit.Text = name;
+        SendGmCommand($"/MIRAR {name}");
+        AddLog($"Inspected online user: {name}");
     }
 
     // ── Open / Close ──────────────────────────────────────────

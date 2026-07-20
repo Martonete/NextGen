@@ -18,6 +18,7 @@ public class GameData
     public WeaponAnimDirs[] Weapons = Array.Empty<WeaponAnimDirs>();
     public WeaponAnimDirs[] Shields = Array.Empty<WeaponAnimDirs>();
     public AuraData[] Auras = Array.Empty<AuraData>();
+    public ObjInfo[] Objects = Array.Empty<ObjInfo>();
     public TextMessage[] TextMessages = Array.Empty<TextMessage>();
     public TextureManager? Textures;
 
@@ -140,6 +141,16 @@ public class GameData
         {
             GD.PrintErr($"[DATA] Failed to load auras: {ex.Message}");
             Auras = new AuraData[] { new() };
+        }
+
+        try
+        {
+            Objects = ObjectLoader.Load(resources);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[DATA] Failed to load objects: {ex.Message}");
+            Objects = new ObjInfo[] { new() };
         }
 
         IsLoaded = true;

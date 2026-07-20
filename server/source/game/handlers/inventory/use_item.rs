@@ -1194,6 +1194,8 @@ pub(crate) fn apply_consumable(
             5 => {
                 // Purple potion — Cure poison
                 user.poisoned = false;
+                user.poisoned_by = None;
+                user.poisoned_skill_id = 0;
             }
             6 => {
                 // Black potion — handled above (instant death for non-GMs)
@@ -1223,6 +1225,8 @@ pub(crate) fn apply_consumable(
         // Cure poison flag (for UseOnce items that have CuraVeneno=1 but no TipoPocion)
         if obj.cura_veneno && obj.tipo_pocion != 5 {
             user.poisoned = false;
+            user.poisoned_by = None;
+            user.poisoned_skill_id = 0;
         }
     }
 }

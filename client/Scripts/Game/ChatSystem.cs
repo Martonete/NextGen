@@ -35,6 +35,12 @@ public class ChatSystem
     /// <summary>Callback to toggle GM panel.</summary>
     public Action? OnGmPanelToggle;
 
+    /// <summary>Callback to open the local item search panel.</summary>
+    public Action<string>? OnItemSearchCommand;
+
+    /// <summary>Callback for voluntary logout (/SALIR).</summary>
+    public Action? OnLogoutCommand;
+
     /// <summary>Callback to toggle SOS panel.</summary>
     public Action? OnSosPanelToggle;
 
@@ -125,9 +131,23 @@ public class ChatSystem
                 HideChat();
                 return;
             }
+            else if (TryReadCommandArgument(text, "/BUSCARITEMS", out string itemQuery)
+                || TryReadCommandArgument(text, "/BUSCARITEM", out itemQuery)
+                || TryReadCommandArgument(text, "/ITEMS", out itemQuery))
+            {
+                OnItemSearchCommand?.Invoke(itemQuery);
+                HideChat();
+                return;
+            }
             else if (text.Equals("/SOSPANEL", StringComparison.OrdinalIgnoreCase))
             {
                 OnSosPanelToggle?.Invoke();
+                HideChat();
+                return;
+            }
+            else if (text.Equals("/SALIR", StringComparison.OrdinalIgnoreCase))
+            {
+                OnLogoutCommand?.Invoke();
                 HideChat();
                 return;
             }
@@ -161,6 +181,22 @@ public class ChatSystem
         }
 
         HideChat();
+    }
+
+    private static bool TryReadCommandArgument(string text, string command, out string argument)
+    {
+        argument = "";
+        if (!text.StartsWith(command, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (text.Length == command.Length)
+            return true;
+
+        if (!char.IsWhiteSpace(text[command.Length]))
+            return false;
+
+        argument = text[(command.Length + 1)..].Trim();
+        return true;
     }
 
     public void SetChatMode(int mode)

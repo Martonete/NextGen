@@ -154,11 +154,7 @@ pub(super) async fn handle_slash_liberarmascota(state: &mut GameState, conn_id: 
     remove_pet_from_owner(state, conn_id, target_npc);
 
     // Kill the NPC (despawn)
-    if let Some(Some(npc)) = state.npcs.get_mut(target_npc) {
-        npc.min_hp = 0;
-        npc.active = false;
-    }
-    state.active_npc_indices.remove(&target_npc);
+    state.kill_npc(target_npc);
 
     state.send_console(conn_id, "Has liberado a tu mascota.", font_index::INFO);
 }

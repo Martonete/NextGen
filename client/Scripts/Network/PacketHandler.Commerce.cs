@@ -178,6 +178,10 @@ public partial class PacketHandler
     {
         list.Clear();
         int count = bq.ReadInteger();
+        if (count < 0 || count > 200)
+        {
+            throw new InvalidOperationException($"Invalid craft list count: {count}");
+        }
         for (int i = 0; i < count; i++)
         {
             var entry = new CraftEntry();

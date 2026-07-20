@@ -35,6 +35,8 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
             user.min_hp = 0;
             user.dead = true;
             user.poisoned = false;
+            user.poisoned_by = None;
+            user.poisoned_skill_id = 0;
             user.paralyzed = false;
             user.immobilized = false;
             user.meditating = false;

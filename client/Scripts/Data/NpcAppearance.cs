@@ -1,15 +1,17 @@
 #nullable enable
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
-using Godot;
 using ArgentumNextgen.Data.Resources;
+using Godot;
 
 namespace ArgentumNextgen.Data;
 
 /// <summary>
-/// Minimal NPC appearance table (Body/Head/Heading per NPC number), parsed from the
-/// server's NPCs.dat INI. Used only by the login backdrop to draw a map's NPCs — the
-/// gameplay client gets NPC appearance from the server at runtime, not from this file.
+/// Minimal NPC appearance table (Body/Head/Heading per NPC number), parsed from
+/// NPCs.dat. Used only by the login backdrop; the gameplay client gets NPC
+/// appearance from the server at runtime.
 /// </summary>
 public readonly struct NpcAppearance
 {
@@ -25,33 +27,20 @@ public readonly struct NpcAppearance
 	}
 
 	/// <summary>
-	/// Load NPCs.dat and return a map of NPC number → appearance. Returns an empty
-	/// map (never throws) if the file is missing or unreadable — callers treat that
-	/// as "no NPCs to draw".
-	///
-	/// NPCs.dat is not part of the .aopak archives, so it's read as a loose file from
-	/// the data directory (BasePath/INIT/NPCs.dat), which is where it's shipped.
+	/// Load NPCs.dat and return a map of NPC number to appearance. Returns an
+	/// empty map if the file is missing or unreadable.
 	/// </summary>
 	public static Dictionary<int, NpcAppearance> LoadTable(IResourceProvider resources)
 	{
 		var result = new Dictionary<int, NpcAppearance>();
 
-		string path = resources.BasePath + "/INIT/NPCs.dat";
-		if (!Godot.FileAccess.FileExists(path))
+		if (!TryReadNpcDat(resources, out var bytes, out var source))
 		{
-			GD.PrintErr($"[NPC-APPEARANCE] NPCs.dat not found at {path} — no backdrop NPCs.");
+			GD.PrintErr("[NPC-APPEARANCE] NPCs.dat not found in resources, client/Data/INIT, resources/data/INIT or server/dat; no backdrop NPCs.");
 			return result;
 		}
 
-		byte[] bytes;
-		using (var f = Godot.FileAccess.Open(path, Godot.FileAccess.ModeFlags.Read))
-		{
-			if (f == null) return result;
-			bytes = f.GetBuffer((long)f.GetLength());
-		}
-
-		// NPCs.dat is Latin-1 (VB6 era), matching the rest of the .dat files.
-		string text = Encoding.Latin1.GetString(bytes);
+		string text = DecodeDat(bytes);
 
 		int currentNpc = 0;
 		int body = 0, head = 0, heading = 3;
@@ -66,17 +55,21 @@ public readonly struct NpcAppearance
 		foreach (var rawLine in text.Split('\n'))
 		{
 			string line = rawLine.Trim();
-			if (line.Length == 0 || line[0] == '\'') continue; // blank / VB6 comment
+			if (line.Length == 0 || line[0] == '\'') continue;
 
 			if (line[0] == '[')
 			{
 				Flush();
 				int end = line.IndexOf(']');
 				string tag = end > 1 ? line.Substring(1, end - 1) : "";
-				// Sections look like [NPC123]; ignore anything else.
-				currentNpc = tag.StartsWith("NPC") && int.TryParse(tag.Substring(3), out var n) ? n : 0;
+				currentNpc = tag.StartsWith("NPC", StringComparison.OrdinalIgnoreCase)
+					&& int.TryParse(tag.Substring(3), out var n)
+						? n
+						: 0;
 				inSection = currentNpc > 0;
-				body = 0; head = 0; heading = 3;
+				body = 0;
+				head = 0;
+				heading = 3;
 				continue;
 			}
 
@@ -84,18 +77,81 @@ public readonly struct NpcAppearance
 
 			int eq = line.IndexOf('=');
 			if (eq <= 0) continue;
+
 			string key = line.Substring(0, eq).Trim();
 			string val = line.Substring(eq + 1).Trim();
-			// Strip trailing inline comments (VB6: value 'comment).
-			int q = val.IndexOf('\'');
-			if (q >= 0) val = val.Substring(0, q).Trim();
+			int comment = val.IndexOf('\'');
+			if (comment >= 0) val = val.Substring(0, comment).Trim();
 
-			if (key.Equals("Body", System.StringComparison.OrdinalIgnoreCase)) int.TryParse(val, out body);
-			else if (key.Equals("Head", System.StringComparison.OrdinalIgnoreCase)) int.TryParse(val, out head);
-			else if (key.Equals("Heading", System.StringComparison.OrdinalIgnoreCase)) int.TryParse(val, out heading);
+			if (key.Equals("Body", StringComparison.OrdinalIgnoreCase)) int.TryParse(val, out body);
+			else if (key.Equals("Head", StringComparison.OrdinalIgnoreCase)) int.TryParse(val, out head);
+			else if (key.Equals("Heading", StringComparison.OrdinalIgnoreCase)) int.TryParse(val, out heading);
 		}
 		Flush();
 
+		GD.Print($"[NPC-APPEARANCE] Loaded {result.Count} NPC appearances from {source}.");
 		return result;
+	}
+
+	private static bool TryReadNpcDat(IResourceProvider resources, out byte[] bytes, out string source)
+	{
+		const string relativePath = "INIT/NPCs.dat";
+		if (resources.Exists(relativePath))
+		{
+			bytes = resources.ReadBytes(relativePath);
+			source = relativePath;
+			return true;
+		}
+
+		foreach (var path in LooseNpcDatCandidates(resources.BasePath))
+		{
+			if (!File.Exists(path)) continue;
+			bytes = File.ReadAllBytes(path);
+			source = path;
+			return true;
+		}
+
+		bytes = Array.Empty<byte>();
+		source = "";
+		return false;
+	}
+
+	private static IEnumerable<string> LooseNpcDatCandidates(string basePath)
+	{
+		foreach (var candidate in DataRelativeCandidates(basePath))
+			yield return candidate;
+
+		string projectPath = ProjectSettings.GlobalizePath("res://");
+		foreach (var candidate in DataRelativeCandidates(projectPath))
+			yield return candidate;
+
+		var dir = new DirectoryInfo(Path.GetFullPath(projectPath));
+		for (int depth = 0; dir != null && depth < 8; depth++, dir = dir.Parent)
+		{
+			yield return Path.Combine(dir.FullName, "client", "Data", "INIT", "NPCs.dat");
+			yield return Path.Combine(dir.FullName, "resources", "data", "INIT", "NPCs.dat");
+			yield return Path.Combine(dir.FullName, "server", "dat", "NPCs.dat");
+		}
+	}
+
+	private static IEnumerable<string> DataRelativeCandidates(string basePath)
+	{
+		if (string.IsNullOrWhiteSpace(basePath)) yield break;
+
+		string full = Path.GetFullPath(basePath);
+		yield return Path.Combine(full, "INIT", "NPCs.dat");
+		yield return Path.Combine(full, "Data", "INIT", "NPCs.dat");
+	}
+
+	private static string DecodeDat(byte[] bytes)
+	{
+		if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+			return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+		if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+			return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+		if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+			return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+
+		return Encoding.Latin1.GetString(bytes);
 	}
 }

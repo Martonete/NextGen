@@ -14,11 +14,12 @@ namespace ArgentumNextgen.Rendering;
 /// </summary>
 public partial class FogOverlayLayer : Node2D
 {
-    // Dark gray-blue fog tint: reads as gloom/murk closing in rather than a pale
-    // haze, and doesn't fight the day/tarde/noche tints either.
-    private static readonly Color FogColor = new Color(0.13f, 0.15f, 0.19f, 1f);
-    // Transition width in design pixels (~1 tile = 32px, at 1/4 res = 8 texels)
-    private const float TransitionPx = 32f;
+    // Neutral near-black. Low opacity settings stay subtle through the curve
+    // below, while 100% can close the extended viewport almost completely.
+    private static readonly Color FogColor = new Color(0.045f, 0.05f, 0.06f, 1f);
+    // Very wide feather keeps the overlay from reading as a moving rectangle.
+    private const float TransitionPx = 118f;
+    private const int MaskScale = 2;
 
     private GameState? _state;
     private ImageTexture? _maskTex;
@@ -37,7 +38,13 @@ public partial class FogOverlayLayer : Node2D
         GD.Print($"[FOG] shader loaded: {shader != null}");
         if (shader != null)
         {
-            var noise = new FastNoiseLite { Seed = 7, FractalOctaves = 3 };
+            var noise = new FastNoiseLite
+            {
+                Seed = 7,
+                Frequency = 0.012f,
+                FractalOctaves = 3,
+                FractalGain = 0.45f,
+            };
             var noiseTexture = new NoiseTexture2D
             {
                 Noise = noise,
@@ -48,6 +55,7 @@ public partial class FogOverlayLayer : Node2D
             _material = new ShaderMaterial { Shader = shader };
             _material.SetShaderParameter("noise_texture", noiseTexture);
             _material.SetShaderParameter("fog_color", FogColor);
+            _material.SetShaderParameter("edge_color", new Color(0.075f, 0.085f, 0.10f, 1f));
             Material = _material;
         }
         else
@@ -82,9 +90,11 @@ public partial class FogOverlayLayer : Node2D
         }
 
         int intensity = _state?.Config?.FogIntensity ?? 30;
-        // Dark and dense at 100%: up to ~0.75 alpha so the terrain is barely
-        // legible through it, per the requested "bastante oscuro" look.
-        _material?.SetShaderParameter("max_alpha", (intensity / 100f) * 0.75f);
+        // Non-linear opacity: the default 30% remains subtle, while 100%
+        // reaches near-black as requested from the Video options slider.
+        float t = System.Math.Clamp(intensity / 100f, 0f, 1f);
+        float maxAlpha = System.MathF.Pow(t, 1.7f) * 0.985f;
+        _material?.SetShaderParameter("max_alpha", maxAlpha);
         QueueRedraw();
     }
 
@@ -100,22 +110,21 @@ public partial class FogOverlayLayer : Node2D
 
     /// <summary>
     /// Build the fog MASK only (red channel = 0..1 shape): transparent inside
-    /// core, thin gradient at core edge, then flat 1.0 everywhere else. The
+    /// core, wide rounded gradient at core edge, then flat 1.0 outside. The
     /// actual color/alpha/noise is applied by vision_fog.gdshader at draw time.
-    /// Built at 1/4 resolution.
+    /// Built at half resolution.
     /// </summary>
     private static ImageTexture BuildFogMask(int vpW, int vpH)
     {
-        int texW = vpW / 4;
-        int texH = vpH / 4;
-        int coreW = 544 / 4;  // 136
-        int coreH = 416 / 4;  // 104
+        int texW = System.Math.Max(1, vpW / MaskScale);
+        int texH = System.Math.Max(1, vpH / MaskScale);
+        int coreW = 544 / MaskScale;
+        int coreH = 416 / MaskScale;
         float centerX = texW / 2f;
         float centerY = texH / 2f;
         float halfCoreW = coreW / 2f;
         float halfCoreH = coreH / 2f;
-        // Transition width in texture pixels (1/4 of design pixels)
-        float transition = TransitionPx / 4f;
+        float transition = TransitionPx / MaskScale;
 
         var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
 
@@ -123,10 +132,11 @@ public partial class FogOverlayLayer : Node2D
         {
             for (int px = 0; px < texW; px++)
             {
-                // Distance from the core edge (0 = inside core, >0 = outside)
+                // Rounded distance from the core edge (0 = inside core, >0 = outside).
+                // Using length instead of max() softens the corners of the curtain.
                 float dx = System.Math.Max(0, System.Math.Abs(px - centerX) - halfCoreW);
                 float dy = System.Math.Max(0, System.Math.Abs(py - centerY) - halfCoreH);
-                float dist = System.Math.Max(dx, dy);
+                float dist = System.MathF.Sqrt(dx * dx + dy * dy);
 
                 float mask;
                 if (dist <= 0f)
@@ -136,7 +146,7 @@ public partial class FogOverlayLayer : Node2D
                 else if (dist < transition)
                 {
                     float t = dist / transition;
-                    t = t * t * (3f - 2f * t); // smooth-step
+                    t = t * t * t * (t * (t * 6f - 15f) + 10f); // smoother-step
                     mask = t;
                 }
                 else

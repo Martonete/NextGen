@@ -498,22 +498,22 @@ public static partial class CharRenderer
 		// VB6 color: static R,G,B. Alpha reduced when invisible (pulsing with body).
 		Color color = new Color(ByteToFloat.Table[aura.R], ByteToFloat.Table[aura.G], ByteToFloat.Table[aura.B], alphaOverride);
 
-		// Resolve animated GRH frame
 		int grhIndex = aura.GrhIndex;
-		int frame = 0;
-		if (grhIndex > 0 && grhIndex < data.Grhs.Length)
-		{
-			var grh = data.Grhs[grhIndex];
-			if (grh.NumFrames > 1)
-			{
-				float speed = grh.Speed > 0 ? grh.Speed : 100f;
-				frame = (int)(globalTimeMs / speed % grh.NumFrames);
-			}
-		}
+		int frame = GetTimedGrhFrame(data, grhIndex, globalTimeMs);
 
 		// Queue to WorldRenderer's aura additive layer
 		worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
 									 aura.Giratoria ? angle : 0f);
+	}
+
+	private static int GetTimedGrhFrame(GameData data, int grhIndex, double globalTimeMs)
+	{
+		if (grhIndex <= 0 || grhIndex >= data.Grhs.Length) return 0;
+		var grh = data.Grhs[grhIndex];
+		if (grh.NumFrames <= 1) return 0;
+
+		float speed = grh.Speed > 0 ? grh.Speed : 100f;
+		return (int)(globalTimeMs / speed % grh.NumFrames);
 	}
 
 	private static void DrawFx(
@@ -558,6 +558,7 @@ public static partial class CharRenderer
 		{
 			if (!stream.Active || stream.CharIndex != charIdx) continue;
 			if (stream.DefIndex < 1 || stream.DefIndex >= state.ParticleDefs.Length) continue;
+			var def = state.ParticleDefs[stream.DefIndex];
 
 			// VB6: particles render at screenPos + particle offset (no centering)
 			// Particle X1/Y1/X2/Y2 in Particles.ini already define the spawn offset
@@ -565,8 +566,14 @@ public static partial class CharRenderer
 			foreach (var p in stream.Particles)
 			{
 				if (!p.Alive || p.GrhIndex <= 0) continue;
-				var color = new Color(ByteToFloat.Table[p.ColR], ByteToFloat.Table[p.ColG], ByteToFloat.Table[p.ColB], p.Alpha);
+				float alpha = def.FadeAlpha && p.MaxLife > 0
+					? p.Alpha * Math.Clamp(p.Life / p.MaxLife, 0f, 1f)
+					: p.Alpha;
+				var color = new Color(ByteToFloat.Table[p.ColR], ByteToFloat.Table[p.ColG], ByteToFloat.Table[p.ColB], alpha);
 				Vector2 pPos = pos + new Vector2(p.X, p.Y);
+				float angle = def.RotateVisual ? Mathf.DegToRad(p.Angle) : 0f;
+				float scale = (!def.ScaleOverLife || p.MaxLife <= 0) ? 1f
+					: def.ResizeX + (def.ResizeY - def.ResizeX) * Math.Clamp(1f - p.Life / p.MaxLife, 0f, 1f);
 
 				// Use animated GRH frame (VB6: particles animate)
 				int frame = 0;
@@ -583,7 +590,7 @@ public static partial class CharRenderer
 				if (worldRenderer != null)
 				{
 					// Queue onto additive blend layer for proper glow
-					worldRenderer.QueueCharParticleDraw(p.GrhIndex, frame, pPos, color);
+					worldRenderer.QueueCharParticleDraw(p.GrhIndex, frame, pPos, color, angle, scale);
 				}
 				else
 				{

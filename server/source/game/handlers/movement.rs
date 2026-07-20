@@ -10,7 +10,7 @@ use crate::game::types::{GameState, SendTarget};
 use crate::game::world;
 use crate::net::ConnectionId;
 use crate::protocol::{binary_packets, font_index};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 // =====================================================================
 // Helpers
@@ -263,7 +263,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         traveling,
     ) = user_data;
 
-    info!(
+    debug!(
         "[MOVE] Walk recv #{}: map {} ({},{}) heading {}",
         conn_id, map, old_x, old_y, heading
     );

@@ -29,7 +29,9 @@ public partial class Main
         _charCreateScreen?.HideDeleteConfirm();
 
         // Live world backdrop sits behind every menu screen, off once in game.
-        _loginBackdrop?.SetActive(newScreen != Screen.Game);
+        bool backdropActive = newScreen != Screen.Game;
+        _loginBackdrop?.SetActive(backdropActive);
+        ApplyLoginBackdropFramePolicy(backdropActive);
 
         switch (newScreen)
         {
@@ -116,6 +118,7 @@ public partial class Main
                     // Wire TCP to new panels
                     _gmPanel?.SetTcp(_tcp);
                     _spawnListPanel?.SetTcp(_tcp);
+                    _itemSearchPanel?.SetTcp(_tcp);
                     _sosPanel?.SetTcp(_tcp);
                     _motdEditorPanel?.SetTcp(_tcp);
                     _guildAlignmentPanel?.SetTcp(_tcp);
@@ -208,6 +211,7 @@ public partial class Main
 
         // Apply FPS limit
         Engine.MaxFps = cfg.FpsLimit > 0 ? cfg.FpsLimit : 0;
+        ApplyLoginBackdropFramePolicy(_state.CurrentScreen != Screen.Game);
 
         // Apply display mode
         if (cfg.Fullscreen)
@@ -236,8 +240,56 @@ public partial class Main
         GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Fullscreen={cfg.Fullscreen}, Aspect={cfg.AspectRatioMode}");
     }
 
+    private void ApplyLoginBackdropFramePolicy(bool backdropActive)
+    {
+        var cfg = _state.Config;
+        if (backdropActive && cfg.FpsLimit is > 0 and < 60)
+        {
+            Engine.MaxFps = 60;
+            return;
+        }
+
+        Engine.MaxFps = cfg.FpsLimit > 0 ? cfg.FpsLimit : 0;
+    }
+
     /// <summary>
-    /// VB6 Socket1_Disconnect: clean up everything and return to login.
+    /// Voluntary logout from the game world. The server closes the TCP session for
+    /// /SALIR, so the client marks the next disconnect as intentional and rebuilds
+    /// only the account session to land back at character selection.
+    /// </summary>
+    private void RequestLogoutToCharacterSelect()
+    {
+        if (_state.CurrentScreen != Screen.Game)
+        {
+            HandleDisconnect("");
+            return;
+        }
+
+        if (_logoutToCharSelectPending) return;
+
+        _logoutToCharSelectPending = true;
+        _autoReconnectPending = false;
+        _autoSelectingCharacter = false;
+        _autoReconnectAttempts = 0;
+
+        HideEscapeMenu();
+        _chatSystem?.HideChat();
+        if (_charSelectForm?.NoticeLabel != null)
+            _charSelectForm.NoticeLabel.Text = "";
+
+        if (_tcp == null || !_tcp.IsConnected)
+        {
+            HandleDisconnect("");
+            return;
+        }
+
+        _tcp.SendPacket(ClientPackets.WriteTalk("/salir"));
+        _tcp.FlushOutbound();
+    }
+
+    /// <summary>
+    /// VB6 Socket1_Disconnect: clean up everything and return to login, except for
+    /// voluntary /SALIR where we return to character selection without auto-entering.
     /// Called when TCP connection is lost (server close, error, timeout).
     /// </summary>
     private void HandleDisconnect(string message)
@@ -247,6 +299,11 @@ public partial class Main
         // Save server error and current screen before reset clears them
         string serverError = _state.LoginError;
         Screen previousScreen = _state.CurrentScreen;
+        bool returnToCharSelect = _logoutToCharSelectPending
+            && previousScreen == Screen.Game
+            && !string.IsNullOrWhiteSpace(_lastLoginAccount)
+            && !string.IsNullOrWhiteSpace(_lastLoginPassword);
+        _logoutToCharSelectPending = false;
 
         // Clean up TCP resources (VB6: Socket1.Disconnect + Socket1.Cleanup)
         _tcp?.Dispose();
@@ -272,6 +329,8 @@ public partial class Main
 
         // Close all game panels and reset tracking state
         _panelSync?.CloseAll();
+        _itemSearchPanel?.HideForm();
+        _itemSearchPanel?.SetTcp(null);
         CloseDropDialog();
         if (_blindOverlay != null) _blindOverlay.Color = new Color(0, 0, 0, 0);
 
@@ -296,9 +355,104 @@ public partial class Main
         string displayMsg = !string.IsNullOrEmpty(serverError) ? serverError : message;
         if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = displayMsg;
         if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
+        if (returnToCharSelect)
+            BeginReturnToCharSelect();
+        else
+            BeginAutoReconnect(previousScreen, displayMsg);
 
         // VB6: frmConnect.MousePointer = 1 (normal cursor)
         Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
+    }
+
+    private void BeginReturnToCharSelect()
+    {
+        _lastCharacterName = "";
+        _autoReconnectPending = false;
+        _autoSelectingCharacter = false;
+        _autoReconnectAttempts = 0;
+
+        if (_loginForm?.StatusLabel != null)
+            _loginForm.StatusLabel.Text = "Volviendo a seleccion de personaje...";
+        if (_loginForm?.ConnectButton != null)
+            _loginForm.ConnectButton.Disabled = true;
+
+        _ = ReturnToCharSelectAsync();
+    }
+
+    private async Task ReturnToCharSelectAsync()
+    {
+        await Task.Delay(150);
+        if (_connecting || _state.CurrentScreen != Screen.Login) return;
+
+        try
+        {
+            CreateTcpSession();
+            _connecting = true;
+            if (_loginForm != null) _loginForm.Connecting = true;
+            await ConnectAndLogin(_lastLoginAccount, _lastLoginPassword);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Return to char select failed: {ex.Message}");
+            _connecting = false;
+            if (_loginForm != null) _loginForm.Connecting = false;
+            if (_loginForm?.StatusLabel != null)
+                _loginForm.StatusLabel.Text = "No se pudo volver a seleccion de personaje.";
+            if (_loginForm?.ConnectButton != null)
+                _loginForm.ConnectButton.Disabled = false;
+        }
+    }
+
+    private void BeginAutoReconnect(Screen previousScreen, string message)
+    {
+        if (previousScreen != Screen.Game) return;
+        if (string.IsNullOrWhiteSpace(_lastLoginAccount)
+            || string.IsNullOrWhiteSpace(_lastLoginPassword)
+            || string.IsNullOrWhiteSpace(_lastCharacterName))
+            return;
+        if (_autoReconnectAttempts >= MaxAutoReconnectAttempts)
+        {
+            if (_loginForm?.StatusLabel != null)
+                _loginForm.StatusLabel.Text = $"{message} No se pudo reconectar automaticamente.";
+            return;
+        }
+
+        _autoReconnectAttempts++;
+        _autoReconnectPending = true;
+        _autoSelectingCharacter = false;
+        if (_loginForm?.StatusLabel != null)
+            _loginForm.StatusLabel.Text = $"Reconectando... intento {_autoReconnectAttempts}/{MaxAutoReconnectAttempts}";
+        if (_loginForm?.ConnectButton != null)
+            _loginForm.ConnectButton.Disabled = true;
+
+        StartAutoReconnectDeferred();
+    }
+
+    private void StartAutoReconnectDeferred()
+    {
+        _ = AutoReconnectAsync();
+    }
+
+    private async Task AutoReconnectAsync()
+    {
+        int delayMs = Math.Min(5000, 1000 * _autoReconnectAttempts);
+        await Task.Delay(delayMs);
+        if (!_autoReconnectPending || _connecting || _state.CurrentScreen != Screen.Login) return;
+
+        try
+        {
+            CreateTcpSession();
+            _connecting = true;
+            if (_loginForm != null) _loginForm.Connecting = true;
+            await ConnectAndLogin(_lastLoginAccount, _lastLoginPassword);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Auto reconnect failed: {ex.Message}");
+            _connecting = false;
+            if (_loginForm != null) _loginForm.Connecting = false;
+            BeginAutoReconnect(Screen.Game, "No se pudo reconectar.");
+        }
     }
 
     /// <summary>
@@ -386,7 +540,7 @@ public partial class Main
         Array.Clear(_state.SkillPct, 0, _state.SkillPct.Length);
 
         // Inventory & spells
-        for (int i = 0; i < 25; i++)
+        for (int i = 0; i < _state.Inventory.Length; i++)
             _state.Inventory[i] = new InventorySlot();
         for (int i = 0; i < 20; i++)
             _state.Spells[i] = new SpellSlot();
@@ -534,6 +688,12 @@ public partial class Main
 
     private void LoadCurrentMap()
     {
+        if (_resources == null)
+        {
+            GD.PrintErr("[MAIN] Cannot load map: resources not initialized");
+            return;
+        }
+
         string mapDir;
         if (OS.HasFeature("editor"))
             mapDir = ProjectSettings.GlobalizePath("res://Data/Maps");
@@ -570,6 +730,7 @@ public partial class Main
 
         state.MapParticles.Clear();
         state.MapLights.Clear();
+        state.MapLightIndex.Clear();
         state.LightsDirty = true;
 
         var map = state.MapData;
@@ -644,6 +805,10 @@ public partial class Main
                 string charName = charPreview.Name;
                 string account = _state.AccountName;
                 string code = _state.SecurityCode;
+                _lastCharacterName = charName;
+                _autoReconnectAttempts = 0;
+                _autoReconnectPending = false;
+                _autoSelectingCharacter = false;
 
                 // Pre-populate name/class/race from preview (server may overwrite later)
                 _state.UserName = charPreview.Name;
@@ -768,6 +933,8 @@ public partial class Main
             _dialogManager?.ShowMensaje(FriendlyConnectionError(ex), GetViewportRect().Size);
             if (_loginForm?.ConnectButton != null)
                 _loginForm.ConnectButton.Disabled = false;
+            if (_autoReconnectPending)
+                BeginAutoReconnect(Screen.Game, "No se pudo reconectar.");
         }
     }
 
@@ -789,6 +956,8 @@ public partial class Main
 
             _tcp = new AoTcpClient();
             _packetHandler = new PacketHandler(_state);
+            _packetHandler.OnSendPacket = data => _tcp?.SendPacket(data) ?? false;
+            _packetHandler.OnServerDisconnect = HandleDisconnect;
             _packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
             _connecting = true;
 

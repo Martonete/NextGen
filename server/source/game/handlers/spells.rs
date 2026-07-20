@@ -276,7 +276,9 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     // Route to NPC or User handling
     if has_npc_target && !has_user_target {
         // ===== NPC TARGET =====
-        let npc_idx = target_npc.unwrap();
+        let Some(npc_idx) = target_npc else {
+            return;
+        };
 
         // VB6: PuedeAtacarNPC — validate DAMAGE spells on NPC targets.
         // Status spells (paralizar, inmovilizar, envenenar) bypass this check
@@ -318,7 +320,9 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         consume_spell_mana(state, conn_id, &spell, privileges).await;
     } else if has_user_target {
         // ===== USER TARGET =====
-        let target_id = target_conn.unwrap();
+        let Some(target_id) = target_conn else {
+            return;
+        };
 
         // VB6: Self-attack check (HechizoEstadoUsuario line 725, HechizoPropUsuario line 1425)
         if is_offensive && target_id == conn_id {

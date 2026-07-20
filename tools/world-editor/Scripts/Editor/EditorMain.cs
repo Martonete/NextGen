@@ -18,6 +18,7 @@ public partial class EditorMain : Control
     private TextureCatalog? _catalog;
     private MapData? _map;
     private ParticleEngine? _particles;
+    private string _particlesIniPath = "";
     private int[]? _objGrhs;
     private int[]? _npcBodyGrhs;
     private int[]? _npcHeadOfsX;
@@ -61,6 +62,7 @@ public partial class EditorMain : Control
     private FileDialog? _insertFileDialog;
     private LegacyMapFormat _insertFormat;
     private PopupMenu? _viewMenu;
+    private PopupMenu? _lightPreviewMenu;
 
     // Export dialogs
     private ConfirmationDialog? _exportConfirmDialog;
@@ -235,6 +237,8 @@ public partial class EditorMain : Control
         _viewMenu.AddSeparator();
         _viewMenu.AddItem("Modo Caminata (F5)", 11);
         _viewMenu.AddItem("Panel de Partículas", 12);
+        _viewMenu.AddItem("Encuadrar Mapa Completo (Home)", 13);
+        _viewMenu.AddItem("Abrir Mapa de Consulta...", 14);
         for (int id = 0; id <= 10; id++)
         {
             int idx = _viewMenu.GetItemIndex(id);
@@ -242,6 +246,17 @@ public partial class EditorMain : Control
         }
         _viewMenu.IdPressed += OnViewMenuId;
         _menuBar.AddChild(_viewMenu);
+
+        // "Luz avanzada" preview always defaulted to a hardcoded night-blue tint
+        // regardless of the map's own daylight ambient — this submenu lets you
+        // force Día/Tarde/Noche for the preview only (never touches the saved map).
+        _lightPreviewMenu = new PopupMenu { Name = "Vista de Luz" };
+        _lightPreviewMenu.AddRadioCheckItem("Día", 0);
+        _lightPreviewMenu.AddRadioCheckItem("Tarde", 1);
+        _lightPreviewMenu.AddRadioCheckItem("Noche", 2);
+        _lightPreviewMenu.SetItemChecked(0, true);
+        _lightPreviewMenu.IdPressed += OnLightPreviewMenuId;
+        _menuBar.AddChild(_lightPreviewMenu);
 
         _mapsMenu = new PopupMenu { Name = "Mapas" };
         _mapsMenu.IdPressed += OnMapsMenuId;
@@ -410,6 +425,7 @@ public partial class EditorMain : Control
 
         _particlePalette = new ParticlePalette { Name = "Partículas", State = _state };
         _particlePalette.ParticleSelected += OnParticlePaletteSelected;
+        _particlePalette.DefinitionsChanged += OnParticleDefinitionsChanged;
         _sidebarTabs.AddChild(_particlePalette);
 
         _zonePanel = new ZonePanel { Name = "Zonas", State = _state, ZoneData = _mapZones };
@@ -475,6 +491,7 @@ public partial class EditorMain : Control
             _lightPanel?.RefreshFromMap();
             _state.MarkDirty();
         };
+        _viewport.OnOutOfBounds += SetStatus;
         AddChild(_viewport);
 
         // Opaque header background — covers viewport overflow in toolbar/navbar area
@@ -1597,6 +1614,7 @@ public partial class EditorMain : Control
 
         // Load particle definitions
         string particlesIni = Path.Combine(dataPath, "INIT", "Particles.ini");
+        _particlesIniPath = particlesIni;
         _particles = new ParticleEngine();
         if (File.Exists(particlesIni))
             _particles.LoadDefinitions(particlesIni);
@@ -1799,6 +1817,8 @@ public partial class EditorMain : Control
             case 10: _state.ShowLights = !_state.ShowLights; break;
             case 11: OpenWalkMode(); return; // not a checkbox — early return
             case 12: if (_sidebarTabs != null) _sidebarTabs.CurrentTab = 3; return;
+            case 13: _viewport?.ZoomToFit(); return; // not a checkbox — early return
+            case 14: OpenAuxMapWindow(); return; // not a checkbox — early return
         }
 
         if (_viewMenu != null)
@@ -1816,6 +1836,21 @@ public partial class EditorMain : Control
             if (idx >= 0) _viewMenu.SetItemChecked(idx, val);
         }
 
+        _viewport?.QueueRedraw();
+    }
+
+    private void OnLightPreviewMenuId(long id)
+    {
+        _state.LightPreview = id switch
+        {
+            0 => LightPreviewMode.Day,
+            1 => LightPreviewMode.Evening,
+            2 => LightPreviewMode.Night,
+            _ => LightPreviewMode.Day,
+        };
+        if (_lightPreviewMenu != null)
+            for (int i = 0; i < 3; i++)
+                _lightPreviewMenu.SetItemChecked(i, i == (int)id);
         _viewport?.QueueRedraw();
     }
 
@@ -1839,9 +1874,87 @@ public partial class EditorMain : Control
         }
     }
 
+    /// Smallest map number ≥1 that has no .aomap/.map file on disk — the sensible
+    /// default for "Nuevo Mapa" instead of reusing whatever map is currently open
+    /// (which previously caused an unwanted overwrite-confirmation on the open map).
+    private int NextFreeMapNumber()
+    {
+        bool ExistsOnDisk(int n) =>
+            !string.IsNullOrEmpty(_state.MapDir) && Directory.Exists(_state.MapDir) &&
+            (File.Exists(Path.Combine(_state.MapDir, $"Mapa{n}.aomap")) ||
+             File.Exists(Path.Combine(_state.MapDir, $"Mapa{n}.map")));
+
+        int n = 1;
+        while (ExistsOnDisk(n) || _state.AvailableMaps.Contains(n))
+            n++;
+        return n;
+    }
+
     private void RequestNewMap()
     {
-        CheckDirtyThen(() => CreateNewMap(_state.CurrentMapNumber));
+        CheckDirtyThen(() =>
+        {
+            int mapNumber = NextFreeMapNumber();
+
+            // "Nuevo Mapa" used to silently overwrite an existing map's files on
+            // save with no warning — that's exactly how Mapa28 (real content: NPCs,
+            // objects, lights) got replaced by a blank grid. Check disk directly
+            // (not the AvailableMaps cache, which can be stale within a session)
+            // and require an explicit confirmation before proceeding.
+            bool existsOnDisk = !string.IsNullOrEmpty(_state.MapDir) && Directory.Exists(_state.MapDir) &&
+                (File.Exists(Path.Combine(_state.MapDir, $"Mapa{mapNumber}.aomap")) ||
+                 File.Exists(Path.Combine(_state.MapDir, $"Mapa{mapNumber}.map")));
+
+            if (existsOnDisk)
+            {
+                var confirm = new ConfirmationDialog
+                {
+                    DialogText = $"El Mapa {mapNumber} ya existe en disco y puede tener contenido " +
+                                 "(NPCs, objetos, zonas, luces).\n\n¿Reemplazarlo por un mapa en blanco?",
+                    Size = new Vector2I(400, 150),
+                    OkButtonText = "Reemplazar",
+                    CancelButtonText = "Cancelar",
+                };
+                confirm.Confirmed += () => CreateNewMap(mapNumber);
+                AddChild(confirm);
+                confirm.PopupCentered();
+            }
+            else
+            {
+                CreateNewMap(mapNumber);
+            }
+        });
+    }
+
+    // Read-mostly secondary window (pan/select/copy only) so the user can consult
+    // another map and copy tiles from it into the main map without a full editable
+    // multi-tab refactor (see plan doc — EditorMain has 370+ direct references to
+    // _map/_state/_viewport/_undo, too risky to redirect through a session concept).
+    private AuxMapWindow? _auxMapWindow;
+
+    private void OpenAuxMapWindow()
+    {
+        if (_auxMapWindow != null)
+        {
+            _auxMapWindow.GrabFocus();
+            return;
+        }
+        _auxMapWindow = new AuxMapWindow(
+            _grhs!,
+            _textures!,
+            _state.MapDir,
+            _state,
+            _npcBodies,
+            _npcHeads,
+            _npcBodyGrhs,
+            _npcHeadOfsX,
+            _npcHeadOfsY,
+            _headGrhs,
+            _npcDb);
+        _auxMapWindow.CloseRequested += () => _auxMapWindow = null;
+        _auxMapWindow.TreeExiting += () => _auxMapWindow = null;
+        AddChild(_auxMapWindow);
+        _auxMapWindow.PopupCentered();
     }
 
     private void RequestOpenMap()
@@ -1860,22 +1973,36 @@ public partial class EditorMain : Control
         CheckDirtyThen(() => LoadMapByNumber(mapNumber));
     }
 
+    // The server reads maps as a hardcoded 100x100 grid (MAP_WIDTH/MAP_HEIGHT in
+    // server/source/game/world.rs) — any other size silently won't work in-game,
+    // so new maps are always created at exactly this size.
+    private const int MapWidth = 100;
+    private const int MapHeight = 100;
+
     private void CreateNewMap(int mapNumber)
     {
-        _map = new MapData(1000, 1000);
+        _map = new MapData(MapWidth, MapHeight);
         _map.MapNumber = mapNumber;
         _map.Name = $"Mapa {mapNumber}";
 
-        for (int y = 1; y <= 1000; y++)
-            for (int x = 1; x <= 1000; x++)
+        for (int y = 1; y <= MapHeight; y++)
+            for (int x = 1; x <= MapWidth; x++)
                 _map.Tiles[x, y].Layer1 = 1;
 
         _state.CurrentMapNumber = mapNumber;
         _undo.Clear();
         _state.ResetDirty();
         UpdateViewport();
+        // UpdateViewport only recenters CameraOffset — it doesn't touch Zoom. If the
+        // previous session was zoomed in, the fresh map's red bounds border can end
+        // up far outside the visible area, reading as if it doesn't exist.
+        // Fit the whole new map in view so it's immediately visible. Deferred: at
+        // startup this runs before the viewport's Control layout has sized it, so
+        // Size would still read (0,0) if called synchronously.
+        if (_viewport != null)
+            Callable.From(() => _viewport.ZoomToFit()).CallDeferred();
         UpdateNavBar();
-        SetStatus($"Mapa {mapNumber} nuevo (100x100)");
+        SetStatus($"Mapa {mapNumber} nuevo ({MapWidth}x{MapHeight})");
     }
 
     private void LoadMapByNumber(int mapNumber)
@@ -1900,6 +2027,12 @@ public partial class EditorMain : Control
         if (_zonePanel != null) { _zonePanel.ZoneData = _mapZones; _zonePanel.RebuildList(); }
         if (_viewport != null) { _viewport.ZoneData = _mapZones; _viewport.MarkFogMaskDirty(); _viewport.MarkLightsDirty(); }
         UpdateViewport();
+        // Recalibrate zoom to this map's actual size — otherwise the zoom level
+        // carries over from whatever map was open before, so a small map opened
+        // after a huge one looks "shrunk" (and vice versa), even though tiles are
+        // always 32px. Deferred: layout may not have sized the viewport yet.
+        if (_viewport != null)
+            Callable.From(() => _viewport.ZoomToFit()).CallDeferred();
         UpdateNavBar();
         int zoneCount = _mapZones?.Zones.Count ?? 0;
         SetStatus($"Mapa {mapNumber} cargado ({_map.Width}x{_map.Height}) — {_map.Name} — {zoneCount} zonas");
@@ -1923,6 +2056,8 @@ public partial class EditorMain : Control
                 _undo.Clear();
                 _state.ResetDirty();
                 UpdateViewport();
+                if (_viewport != null)
+                    Callable.From(() => _viewport.ZoomToFit()).CallDeferred();
                 UpdateNavBar();
                 SetStatus($"Mapa {mapNum} cargado — {_map.Name}");
                 return;
@@ -2096,9 +2231,11 @@ public partial class EditorMain : Control
     private void SyncParticlePaletteData()
     {
         if (_particlePalette == null) return;
-        _particlePalette.Engine   = _particles;
-        _particlePalette.Grhs     = _grhs;
-        _particlePalette.Textures = _textures;
+        _particlePalette.Engine           = _particles;
+        _particlePalette.Grhs             = _grhs;
+        _particlePalette.Textures         = _textures;
+        _particlePalette.NpcBodyGrhs      = _npcBodyGrhs;
+        _particlePalette.ParticlesIniPath = _particlesIniPath;
         _particlePalette.Rebuild();
     }
 
@@ -2121,6 +2258,15 @@ public partial class EditorMain : Control
         SetActiveTool(EditorTool.Particle);
         _state.SelectedParticleGroup = groupId;
         SetStatus($"Partícula #{groupId} seleccionada — click para pintar, click derecho para borrar");
+    }
+
+    /// <summary>Rebuild map particle streams after any definition CRUD so edited
+    /// physics/life/sprite fields show up on tiles already painted with that group.</summary>
+    private void OnParticleDefinitionsChanged()
+    {
+        if (_particles != null && _map != null)
+            _particles.BuildStreamsFromMap(_map);
+        _viewport?.QueueRedraw();
     }
 
     private void OnExitFollow(int mapNum, int x, int y)
@@ -2816,18 +2962,12 @@ public partial class EditorMain : Control
     private void OnMapsMenuId(long id)
     {
         if (id <= 0) return;
-        CheckDirtyThen(() =>
-        {
-            if (string.IsNullOrEmpty(_state.MapDir) || !System.IO.Directory.Exists(_state.MapDir)) return;
-            _map = MapLoader.Load(_state.MapDir, (int)id);
-            if (_map == null) { SetStatus($"No se pudo cargar Mapa {id}"); return; }
-            _state.CurrentMapNumber = (int)id;
-            _undo.Clear();
-            _state.ResetDirty();
-            UpdateViewport();
-            UpdateNavBar();
-            SetStatus($"Mapa {id} cargado");
-        });
+        // Route through the same full load path as "Abrir Mapa..."/navbar — this
+        // used to reimplement a stripped-down version (terrain only, no zones/fog/
+        // light data reload), which left stale zone/fog/light overlays from the
+        // PREVIOUS map on screen and made freshly-opened maps look broken/empty
+        // even though the terrain had loaded correctly.
+        CheckDirtyThen(() => LoadMapByNumber((int)id));
     }
 
     #endregion
@@ -2886,6 +3026,7 @@ public partial class EditorMain : Control
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.F5: OpenWalkMode(); break;
+                case Key.Home: _viewport?.ZoomToFit(); break;
                 case Key.F12: ExportMapAsPng(); break;
                 case Key.Key1: _state.ActiveLayer = 1; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
                 case Key.Key2: _state.ActiveLayer = 2; SyncLayerTabs(); _viewport?.QueueRedraw(); break;

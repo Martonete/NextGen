@@ -1012,33 +1012,72 @@ pub(super) async fn handle_slash_elecciones(state: &mut GameState, conn_id: Conn
 // 9. Stubbed Features — Improved Implementations
 // =====================================================================
 
-/// Improved /CENTINELA handler — basic number verification.
-/// VB6: Centinela module sends a random number, player must type it back.
+/// Improved /CENTINELA handler.
+/// Player usage: /CENTINELA <code>.
+/// GM usage: /CENTINELA <player> forces a challenge when the GM has no pending challenge.
 pub(super) async fn handle_centinela_improved(
     state: &mut GameState,
     conn_id: ConnectionId,
     code: &str,
 ) {
-    let expected = state
-        .users
-        .get(&conn_id)
-        .map(|u| u.centinela_number)
-        .unwrap_or(0);
-
-    if expected == 0 {
-        // No active centinela check — just acknowledge
-        state.send_console(conn_id, "Centinela verificado.", font_index::INFO);
+    if !state.centinela_enabled {
+        state.send_console(conn_id, "Centinela esta desactivado.", font_index::INFO);
         return;
     }
 
-    let typed: i32 = code.trim().parse().unwrap_or(-1);
+    let arg = code.trim();
+    let (expected, my_privileges) = state
+        .users
+        .get(&conn_id)
+        .map(|u| (u.centinela_number, u.privileges))
+        .unwrap_or((0, privilege_level::USER));
+
+    if expected == 0 {
+        if arg.is_empty() {
+            handle_centinela_status(state, conn_id, None).await;
+            return;
+        }
+
+        if arg.parse::<i32>().is_err() && my_privileges >= privilege_level::SEMIDIOS {
+            handle_centinela_force(state, conn_id, arg).await;
+            return;
+        }
+
+        state.send_console(
+            conn_id,
+            "No tenes una verificacion Centinela pendiente.",
+            font_index::INFO,
+        );
+        return;
+    }
+
+    if arg.is_empty() {
+        let seconds = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.centinela_timer)
+            .unwrap_or(0);
+        state.send_console(
+            conn_id,
+            &format!(
+                "Centinela pendiente: escribi /CENTINELA {} antes de {} segundos.",
+                expected, seconds
+            ),
+            font_index::CENTINELA,
+        );
+        return;
+    }
+
+    let typed = arg.parse::<i32>().unwrap_or(i32::MIN);
 
     if typed == expected {
-        // Correct answer — clear centinela
+        let next_check = rand_range(state.centinela_min_seconds, state.centinela_max_seconds);
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.centinela_number = 0;
             u.centinela_timer = 0;
             u.centinela_fails = 0;
+            u.centinela_next_check = next_check;
+            u.tiene_macro = 0;
         }
         state.send_console(
             conn_id,
@@ -1046,7 +1085,7 @@ pub(super) async fn handle_centinela_improved(
             font_index::CENTINELA,
         );
     } else {
-        // Wrong answer
+        let max_fails = state.centinela_max_fails;
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.centinela_fails += 1;
         }
@@ -1055,16 +1094,15 @@ pub(super) async fn handle_centinela_improved(
             .get(&conn_id)
             .map(|u| u.centinela_fails)
             .unwrap_or(0);
-        if fails >= 3 {
-            // Too many fails — kick
+        if fails >= max_fails {
             let name = state
                 .users
                 .get(&conn_id)
                 .map(|u| u.char_name.clone())
                 .unwrap_or_default();
             info!(
-                "[CENTINELA] {} kicked for 3 failed centinela attempts",
-                name
+                "[CENTINELA] {} kicked for {} failed centinela attempts",
+                name, max_fails
             );
             state.send_console(
                 conn_id,
@@ -1075,7 +1113,10 @@ pub(super) async fn handle_centinela_improved(
         } else {
             state.send_console(
                 conn_id,
-                &format!("Respuesta incorrecta. Intentos restantes: {}.", 3 - fails),
+                &format!(
+                    "Respuesta incorrecta. Intentos restantes: {}.",
+                    max_fails - fails
+                ),
                 font_index::WARNING,
             );
         }
@@ -1084,21 +1125,207 @@ pub(super) async fn handle_centinela_improved(
 
 /// Send centinela challenge to a specific player.
 /// VB6: Centinela module sends a random number that the player must type back via /CENTINELA.
-pub(super) async fn send_centinela_challenge(state: &mut GameState, target_conn: ConnectionId) {
-    let number = super::common::rand_range(1000, 9999);
-    if let Some(u) = state.users.get_mut(&target_conn) {
-        u.centinela_number = number;
-        u.centinela_timer = 60; // 60 ticks to respond (decremented in tick_player_passive)
-        // Don't reset fails — accumulate across challenges
+pub(crate) fn send_centinela_challenge(state: &mut GameState, target_conn: ConnectionId) -> bool {
+    if !state.centinela_enabled {
+        return false;
     }
+
+    let number = rand_range(1000, 9999);
+    let answer_seconds = state.centinela_answer_seconds;
+    let max_fails = state.centinela_max_fails;
+    let Some((name, attempts_remaining)) = state.users.get_mut(&target_conn).and_then(|u| {
+        if !u.logged || u.privileges != privilege_level::USER {
+            return None;
+        }
+        u.centinela_number = number;
+        u.centinela_timer = answer_seconds;
+        Some((u.char_name.clone(), (max_fails - u.centinela_fails).max(1)))
+    }) else {
+        return false;
+    };
+
+    info!(
+        "[CENTINELA] challenge sent to {} ({}s, {} attempt(s) remaining)",
+        name, answer_seconds, attempts_remaining
+    );
     state.send_console(
         target_conn,
         &format!(
-            "CENTINELA: Escribe /CENTINELA {} para verificar que no eres un macro.",
+            "CENTINELA: escribi /CENTINELA {} para verificar que estas jugando.",
             number
         ),
         font_index::CENTINELA,
     );
+    state.send_console(
+        target_conn,
+        &format!(
+            "Tenes {} segundos. Intentos restantes: {}.",
+            answer_seconds, attempts_remaining
+        ),
+        font_index::CENTINELA,
+    );
+    true
+}
+
+pub(super) async fn handle_centinela_force(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
+    if !centinela_gm_allowed(state, conn_id) {
+        state.send_console(
+            conn_id,
+            "No tenes permisos para usar este comando.",
+            font_index::INFO,
+        );
+        return;
+    }
+
+    let target_conn = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
+            return;
+        }
+    };
+
+    if send_centinela_challenge(state, target_conn) {
+        let target_name = state
+            .users
+            .get(&target_conn)
+            .map(|u| u.char_name.clone())
+            .unwrap_or_else(|| target.to_string());
+        state.send_console(
+            conn_id,
+            &format!("Centinela enviado a {}.", target_name),
+            font_index::INFO,
+        );
+    } else {
+        state.send_console(
+            conn_id,
+            "No se pudo enviar Centinela al objetivo.",
+            font_index::WARNING,
+        );
+    }
+}
+
+pub(super) async fn handle_centinela_status(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: Option<&str>,
+) {
+    let target_conn = match target.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(target_name) => {
+            if !centinela_gm_allowed(state, conn_id) {
+                state.send_console(
+                    conn_id,
+                    "No tenes permisos para consultar otros usuarios.",
+                    font_index::INFO,
+                );
+                return;
+            }
+            match state.find_user_by_name(target_name) {
+                Some(id) => id,
+                None => {
+                    state.send_console(
+                        conn_id,
+                        &format!("Jugador '{}' no encontrado.", target_name),
+                        font_index::INFO,
+                    );
+                    return;
+                }
+            }
+        }
+        None => conn_id,
+    };
+
+    let Some(u) = state.users.get(&target_conn) else {
+        return;
+    };
+
+    if u.centinela_number > 0 {
+        state.send_console(
+            conn_id,
+            &format!(
+                "Centinela {}: pendiente, {}s restantes, fallos {}/{}.",
+                u.char_name, u.centinela_timer, u.centinela_fails, state.centinela_max_fails
+            ),
+            font_index::CENTINELA,
+        );
+    } else {
+        state.send_console(
+            conn_id,
+            &format!(
+                "Centinela {}: sin desafio pendiente. Proximo chequeo en {}s, fallos {}/{}.",
+                u.char_name, u.centinela_next_check, u.centinela_fails, state.centinela_max_fails
+            ),
+            font_index::INFO,
+        );
+    }
+}
+
+pub(super) async fn handle_centinela_clear(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    target: &str,
+) {
+    if !centinela_gm_allowed(state, conn_id) {
+        state.send_console(
+            conn_id,
+            "No tenes permisos para usar este comando.",
+            font_index::INFO,
+        );
+        return;
+    }
+
+    let target_conn = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_console(
+                conn_id,
+                &format!("Jugador '{}' no encontrado.", target),
+                font_index::INFO,
+            );
+            return;
+        }
+    };
+
+    let next_check = rand_range(state.centinela_min_seconds, state.centinela_max_seconds);
+    let target_name = if let Some(u) = state.users.get_mut(&target_conn) {
+        u.centinela_number = 0;
+        u.centinela_timer = 0;
+        u.centinela_fails = 0;
+        u.centinela_next_check = next_check;
+        u.tiene_macro = 0;
+        u.char_name.clone()
+    } else {
+        return;
+    };
+
+    state.send_console(
+        conn_id,
+        &format!("Centinela limpiado para {}.", target_name),
+        font_index::INFO,
+    );
+    if target_conn != conn_id {
+        state.send_console(
+            target_conn,
+            "Tu verificacion Centinela fue limpiada por un GM.",
+            font_index::INFO,
+        );
+    }
+}
+
+fn centinela_gm_allowed(state: &GameState, conn_id: ConnectionId) -> bool {
+    state
+        .users
+        .get(&conn_id)
+        .map(|u| u.logged && u.privileges >= privilege_level::SEMIDIOS)
+        .unwrap_or(false)
 }
 
 /// AlertarFaccionarios — Alert all online faction members.

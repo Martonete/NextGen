@@ -67,6 +67,14 @@ pub fn write_multi_user_hitted_user(victim_index: i16, body_part: u8, damage: i1
 
 // ── Safe Toggle ───────────────────────────────────────────
 
+/// ID 94: Online username list for the GM panel.
+pub fn write_user_name_list(names: &str) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::UserNameList.to_byte());
+    pkt.write_ascii_string(names);
+    pkt.into_bytes()
+}
+
 /// ID 130: Safe mode on.
 pub fn write_safe_on() -> Vec<u8> {
     let mut pkt = ByteQueue::new();

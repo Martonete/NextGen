@@ -24,9 +24,12 @@ public class AoTcpClient : IDisposable
     private volatile bool _connected;
     private readonly List<byte[]> _outboundQueue = new();
     private readonly object _writeLock = new();
+    private readonly object _disconnectLock = new();
+    private long _lastReceiveMs;
 
     public bool IsConnected => _connected;
     public int PendingPackets => _inboundQueue.Count;
+    public long LastReceiveMs => Interlocked.Read(ref _lastReceiveMs);
 
     /// <summary>
     /// Connect to the AO server asynchronously.
@@ -47,6 +50,7 @@ public class AoTcpClient : IDisposable
             true);
         _stream = _client.GetStream();
         _connected = true;
+        Interlocked.Exchange(ref _lastReceiveMs, (long)Time.GetTicksMsec());
 
         // Start reading in background
         _ = Task.Run(() => ReadLoop(_cts.Token));
@@ -136,6 +140,7 @@ public class AoTcpClient : IDisposable
                     Disconnect();
                     return;
                 }
+                Interlocked.Exchange(ref _lastReceiveMs, (long)Time.GetTicksMsec());
 
                 // Enqueue the raw bytes for the packet handler
                 byte[] data = new byte[bytesRead];
@@ -159,17 +164,32 @@ public class AoTcpClient : IDisposable
 
     public void Disconnect()
     {
-        _connected = false;
-        _cts?.Cancel();
-        _stream?.Dispose();
-        _client?.Dispose();
-        _stream = null;
-        _client = null;
+        CancellationTokenSource? cts;
+        NetworkStream? stream;
+        TcpClient? client;
+
+        lock (_disconnectLock)
+        {
+            if (!_connected && _stream == null && _client == null && _cts == null)
+                return;
+
+            _connected = false;
+            cts = _cts;
+            stream = _stream;
+            client = _client;
+            _cts = null;
+            _stream = null;
+            _client = null;
+        }
+
+        try { cts?.Cancel(); } catch { }
+        stream?.Dispose();
+        client?.Dispose();
+        cts?.Dispose();
     }
 
     public void Dispose()
     {
         Disconnect();
-        _cts?.Dispose();
     }
 }

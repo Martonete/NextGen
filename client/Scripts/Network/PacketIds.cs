@@ -79,6 +79,9 @@ public static class ClientPacketId
     public const byte ConstructCarp = 91;
     public const byte TrainCreature = 92;
 
+    // Connection keepalive
+    public const byte Pong = 88;
+
     // Guild (100-119)
     public const byte GuildInfo = 100;
     public const byte GuildCreate = 101;

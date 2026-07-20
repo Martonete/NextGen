@@ -156,15 +156,21 @@ en disco). Los 6 paks viven en `client/Data/`: `fonts`, `graficos`, `init`, `map
 
 ## Estado actual del trabajo
 
-- **Foco reciente: sistema de iluminación 2D** (últimos ~25 commits). Hubo reverts (shadow atlas
-  1D revertido) y una unificación final donde el walk-mode reusa el `LightRenderer` (shader) del
-  World Editor. Dos sistemas conviven: `LightSystem.cs` (CPU legacy, fiel a VB6) + Advanced Lights
-  (formato `.aolight` por mapa, shader-based).
-- **Reorganización masiva de assets sin commitear:** ~7478 archivos afectados (miles de PNG en
-  `resources/data/Graficos/`, MP3 en Sounds, los 6 `.aopak` regenerados).
+- **Estado 2026-07-20:** se cerro una tanda grande de gameplay, UI, rendering y tooling:
+  buscador de items GM con preview/creacion, mochila/equipamiento, preview de login con NPCs,
+  `/salir` hacia seleccion de personaje, niebla configurable, drag-and-drop de inventario,
+  haz de hechizo nuevo y Centinela anti-bot configurable en servidor.
+- **Servidor:** Centinela quedo integrado a `tick_security`, comandos GM, respuesta de usuario y
+  `TENGOMACROS`; tambien hay mejoras recientes en limpieza de conexiones, char indices, respawn
+  de NPCs, comercio/crafteo, envenenar por ticks y validaciones varias.
+- **Cliente:** el login backdrop usa mapa/NPCs con camara suave; UI incluye buscador de items,
+  panel GM online mejorado, opciones de video para niebla, inventario con arrastre y render de
+  hechizos/niebla refinado.
+- **World editor/assets:** hay herramientas nuevas de particulas, pickers auxiliares, ventanas de
+  mapa/color/GRH y assets/mapas regenerados para acompañar el cliente.
 
-⚠️ **NO correr `git clean`, `git checkout .`, ni `git reset --hard`** — hay una cantidad enorme de
-trabajo no commiteado que se perdería. Cualquier operación destructiva de git es de alto riesgo.
+Nota operativa: el repo suele tener cambios masivos de assets. Antes de limpiar, resetear o borrar
+archivos, confirmar siempre con Martin; las operaciones destructivas siguen siendo de alto riesgo.
 
 ---
 

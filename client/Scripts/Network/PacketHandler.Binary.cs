@@ -402,7 +402,7 @@ public partial class PacketHandler
             case ServerPacketId.AddSlots: // 103
                 {
                     byte slots = bq.ReadByte();
-                    _state.MaxInventorySlots = slots;
+                    _state.MaxInventorySlots = Math.Clamp(slots, 1, _state.Inventory.Length);
                 }
                 break;
             case ServerPacketId.MultiMessage: // 104
@@ -414,6 +414,7 @@ public partial class PacketHandler
             case ServerPacketId.ShowPartyForm: // 106
                 {
                     byte pType = bq.ReadByte();
+                    _state.PartyPanelType = pType;
                     _state.ShowPartyPanel = true;
                 }
                 break;

@@ -79,6 +79,14 @@ pub fn write_change_spell_slot(slot: u8, spell_index: i16, name: &str) -> Vec<u8
     pkt.into_bytes()
 }
 
+/// ID 103: current visible inventory slots.
+pub fn write_add_slots(slots: u8) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::AddSlots.to_byte());
+    pkt.write_byte(slots);
+    pkt.into_bytes()
+}
+
 /// ID 51: Change NPC inventory slot.
 pub fn write_change_npc_inv_slot(
     slot: u8,

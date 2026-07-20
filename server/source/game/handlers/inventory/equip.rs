@@ -265,6 +265,12 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
                     user.backpack_slot = 0;
                     user.current_inventory_slots = crate::game::types::MAX_NORMAL_INVENTORY_SLOTS;
                 }
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_add_slots(
+                        crate::game::types::MAX_NORMAL_INVENTORY_SLOTS as u8,
+                    ),
+                );
                 send_inventory_slot(state, conn_id, idx).await;
                 return;
             }
@@ -275,6 +281,12 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
                     user.backpack_slot = 0;
                     user.current_inventory_slots = crate::game::types::MAX_NORMAL_INVENTORY_SLOTS;
                 }
+                state.send_bytes(
+                    conn_id,
+                    &binary_packets::write_add_slots(
+                        crate::game::types::MAX_NORMAL_INVENTORY_SLOTS as u8,
+                    ),
+                );
                 send_inventory_slot(state, conn_id, bp_slot - 1).await;
             }
             // Equip new backpack: CurrentInventorySlots = 20 + MochilaType * 5
@@ -287,6 +299,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
                 user.backpack_slot = slot;
                 user.current_inventory_slots = new_slots;
             }
+            state.send_bytes(conn_id, &binary_packets::write_add_slots(new_slots as u8));
             send_inventory_slot(state, conn_id, idx).await;
             state.send_console(
                 conn_id,

@@ -38,6 +38,23 @@ public class ChatMessage
 	public ChatType Type = ChatType.System;
 }
 
+public sealed class CappedQueue<T> : Queue<T>
+{
+	private readonly int _capacity;
+
+	public CappedQueue(int capacity)
+	{
+		_capacity = Math.Max(1, capacity);
+	}
+
+	public new void Enqueue(T item)
+	{
+		base.Enqueue(item);
+		while (Count > _capacity)
+			Dequeue();
+	}
+}
+
 /// <summary>
 /// A forum post entry received from the server (AddForumMsg packet).
 /// ForumType: 0=General, 1=GeneralSticky, 2=Caos, 3=CaosSticky, 4=Real, 5=RealSticky
@@ -256,9 +273,11 @@ public class GameState
 	public string HelmLabel = "0/0";
 
 
-	// Inventory (36 slots max, visible count driven by MaxInventorySlots / AddSlots packet)
-	public InventorySlot[] Inventory = new InventorySlot[36];
-	public int MaxInventorySlots = 25;
+	// Inventory (30 slots max, visible count driven by MaxInventorySlots / AddSlots packet)
+	public const int MaxInventoryCapacity = 30;
+	public InventorySlot[] Inventory = new InventorySlot[MaxInventoryCapacity];
+	public int MaxInventorySlots = 20;
+	public int UserIndex;
 	public int SelectedInvSlot = -1; // Currently selected inventory slot (0-based, -1 = none)
 
 	// Spells (20 slots)
@@ -330,6 +349,7 @@ public class GameState
 	public string UserGuildName = ""; // Current user's guild name (from CC tag)
 	// Party
 	public bool ShowPartyPanel;       // Trigger to open party panel (from ShowPartyForm packet)
+	public byte PartyPanelType;       // ShowPartyForm pType
 
 	public string GuildNewsText = ""; // Guild news from server
 	public string GuildMotdText = ""; // Guild MOTD from server
@@ -376,13 +396,14 @@ public class GameState
 
 	// Light system
 	public List<MapLight> MapLights = new();
+	public Dictionary<(int X, int Y), MapLight> MapLightIndex = new();
 	public Color AmbientLightColor = new Color(0.627f, 0.627f, 0.627f); // RGB(160,160,160)
 	public ChunkedLightColors? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
 	public bool LightsDirty;
 
 	// Chat message queue — drained by Main.cs each frame (capped to prevent unbounded growth)
-	public Queue<ChatMessage> ChatMessages = new();
 	public const int MaxChatQueueSize = 500;
+	public CappedQueue<ChatMessage> ChatMessages = new(MaxChatQueueSize);
 
 	// Chat tab filter: -1 = All, otherwise index into ChatType enum (0-5)
 	public int ActiveChatFilter = -1;
@@ -473,7 +494,7 @@ public class GameState
 
 	public GameState()
 	{
-		for (int i = 0; i < 25; i++)
+		for (int i = 0; i < Inventory.Length; i++)
 			Inventory[i] = new InventorySlot();
 		for (int i = 0; i < 20; i++)
 			Spells[i] = new SpellSlot();
@@ -577,6 +598,32 @@ public class ParticleStreamDef
 	public byte ColR2, ColG2, ColB2; // ColorSet2
 	public byte ColR3, ColG3, ColB3; // ColorSet3
 	public byte ColR4, ColG4, ColB4; // ColorSet4
+	// Legacy VB6 fields (INI: resize/rx/ry) — Resize/ResizeX/ResizeY unused by the
+	// classic simulation, kept for round-trip; ResizeX/ResizeY double as the
+	// extended motor's scale-over-life start/end when ScaleOverLife is on.
+	public float Resize, ResizeX, ResizeY;
+
+	// ── Extended motor fields (opt-in, "more than VB6") ────────────────────
+	// All default to false = byte-identical to classic VB6 behavior. Mirrors
+	// tools/world-editor/Scripts/Data/ParticleEngine.cs — keep both in sync.
+	/// <summary>Fade alpha 1→0 over the particle's lifetime instead of snapping in/out.</summary>
+	public bool FadeAlpha;
+	/// <summary>Draw the particle rotated by its simulated spin angle.</summary>
+	public bool RotateVisual;
+	/// <summary>Scale the sprite from ResizeX to ResizeY over the particle's lifetime.</summary>
+	public bool ScaleOverLife;
+	/// <summary>Interpolate between the 4 ColorSets over lifetime instead of averaging once at spawn.</summary>
+	public bool ColorGradient;
+	/// <summary>Perturb velocity with organic noise each tick (drifting smoke/mist instead of straight lines).</summary>
+	public bool Turbulence;
+	/// <summary>Noise perturbation magnitude (px/tick added to velocity).</summary>
+	public float TurbulenceStrength = 10f;
+	/// <summary>Pull (positive) or push (negative) particles toward/from a point each tick.</summary>
+	public bool AttractToPoint;
+	/// <summary>Attractor position, in the same space as X1/Y1 (px, relative to the stream origin).</summary>
+	public float AttractX, AttractY;
+	/// <summary>Force magnitude; negative = repulsion (explosion), positive = attraction (vortex/implosion).</summary>
+	public float AttractStrength = 5f;
 }
 
 /// <summary>
@@ -593,6 +640,8 @@ public class Particle
 	public float Alpha;
 	public bool Alive;
 	public byte ColR, ColG, ColB; // chosen color
+	/// <summary>Per-particle advancing time offset for Turbulence noise sampling — keeps each particle's drift independent even when spawned at the same position.</summary>
+	public float NoisePhase;
 }
 
 /// <summary>
@@ -646,8 +695,8 @@ public class SpellBeam
 	public int CasterCharIndex;
 	public int TargetCharIndex;
 	public float ElapsedMs;
-	public float DurationMs = 575f; // instant strike + ~0.45s hold + fade window
-	public int JitterSeed;          // base seed for the electric wobble
+	public float DurationMs = 360f; // fast arcane streak + brief impact fade
+	public int JitterSeed;          // base seed for the subtle trail curve
 }
 
 /// A craftable item entry (blacksmith weapons/armors, carpenter items).

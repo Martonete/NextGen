@@ -70,10 +70,16 @@ mod db_tests {
             start_y: 50,
             notice: notice.to_string(),
             pretoriano_map: 0,
-            intervalo_paralizado: 500,
-            intervalo_invisible: 500,
-            intervalo_oculto: 500,
-            npc_ai_interval_ms: 1300,
+            max_packets_per_second: None,
+            ip_max_connections: None,
+            ip_min_interval_ms: None,
+            flood_strike_limit: None,
+            centinela_enabled: None,
+            centinela_min_seconds: None,
+            centinela_max_seconds: None,
+            centinela_macro_seconds: None,
+            centinela_answer_seconds: None,
+            centinela_max_fails: None,
         }
     }
 

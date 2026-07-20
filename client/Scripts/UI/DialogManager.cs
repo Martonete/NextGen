@@ -354,7 +354,7 @@ public class DialogManager
     private void OnDropDialogAll()
     {
         int slot = _state.DropDialogSlot;
-        if (slot >= 0 && slot < 25)
+        if (slot >= 0 && slot < _state.MaxInventorySlots)
         {
             int qty = _state.Inventory[slot].Amount;
             OnDropItem?.Invoke(slot, qty);
@@ -388,7 +388,7 @@ public class DialogManager
         if (_state.DropDialogOpen && _dropDialog != null && !_dropDialog.Visible)
         {
             int slot = _state.DropDialogSlot;
-            string itemName = (slot >= 0 && slot < 25) ? _state.Inventory[slot].Name : "item";
+            string itemName = (slot >= 0 && slot < _state.MaxInventorySlots) ? _state.Inventory[slot].Name : "item";
             _dropDialogLabel!.Text = $"Tirar: {itemName}";
             _dropDialogInput!.Text = "1";
             _dropDialog.Visible = true;

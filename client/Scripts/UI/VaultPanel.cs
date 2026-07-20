@@ -54,7 +54,7 @@ public partial class VaultPanel : RpgBaseForm
     private int _invScrollRow;
 
     // Filtered user inventory (non-empty slots)
-    private int[] _userSlots = new int[25];
+    private int[] _userSlots = new int[GameState.MaxInventoryCapacity];
     private int _userSlotCount;
 
     // UI controls
@@ -211,7 +211,7 @@ public partial class VaultPanel : RpgBaseForm
 
         // Rebuild filtered user inventory
         _userSlotCount = 0;
-        for (int i = 0; i < 25; i++)
+        for (int i = 0; i < _state.MaxInventorySlots; i++)
         {
             if (_state.Inventory[i].ObjIndex > 0)
                 _userSlots[_userSlotCount++] = i;

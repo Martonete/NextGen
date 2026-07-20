@@ -583,7 +583,7 @@ public static class MapLoader
             $"G={mapData.AmbientG}",
             $"B={mapData.AmbientB}"
         };
-        File.WriteAllLines(path, lines);
+        File.WriteAllLines(path, lines, Encoding.GetEncoding("iso-8859-1"));
     }
 
     #endregion
