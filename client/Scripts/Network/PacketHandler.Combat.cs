@@ -364,32 +364,37 @@ public partial class PacketHandler
                 _state.EnqueueChat(new ChatMessage { Text = "Has bloqueado el ataque con el escudo!", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, "Escudo!", "6699FF");
                 break;
-            case 3: // BlockedWithShieldOther
+            case 3: // BlockedWithShieldOther — enemy shielded our attack
                 _state.EnqueueChat(new ChatMessage { Text = "El escudo del enemigo bloqueo tu ataque!", Color = "FF0000", Type = ChatType.Combat });
+                OnFloatingText?.Invoke(_state.UserCharIndex, "Bloqueado!", "6699FF");
                 break;
-            case 4: // UserSwing
+            case 4: // UserSwing — user missed NPC/player
                 _state.EnqueueChat(new ChatMessage { Text = "Has fallado el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
+                OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
                 break;
-            case 5: // SafeModeOn
+            // Sub-types 5-10 exist in the VB6 enum but the server sends them
+            // via dedicated standalone opcodes (130/131/132/133) or send_console.
+            // These cases are unreachable with the current server but kept for safety.
+            case 5: // SafeModeOn (server uses opcode 130 instead)
                 _state.SafeMode = true;
                 _state.EnqueueChat(new ChatMessage { Text = ">>SEGURO ACTIVADO<<", Color = "00FF00" });
                 break;
-            case 6: // SafeModeOff
+            case 6: // SafeModeOff (server uses opcode 131 instead)
                 _state.SafeMode = false;
                 _state.EnqueueChat(new ChatMessage { Text = ">>SEGURO DESACTIVADO<<", Color = "FF0000" });
                 break;
-            case 7: // ResuscitationSafeOff
+            case 7: // ResuscitationSafeOff (server uses opcode 133 instead)
                 _state.SeguroResu = false;
                 _state.EnqueueChat(new ChatMessage { Text = ">>SEGURO DE RESURRECCION DESACTIVADO<<", Color = "FF0000" });
                 break;
-            case 8: // ResuscitationSafeOn
+            case 8: // ResuscitationSafeOn (server uses opcode 132 instead)
                 _state.SeguroResu = true;
                 _state.EnqueueChat(new ChatMessage { Text = ">>SEGURO DE RESURRECCION ACTIVADO<<", Color = "00FF00" });
                 break;
-            case 9: // NobilityLost
+            case 9: // NobilityLost (server uses send_console instead)
                 _state.EnqueueChat(new ChatMessage { Text = "Has perdido tu nobleza!", Color = "FF0000" });
                 break;
-            case 10: // CantUseWhileMeditating
+            case 10: // CantUseWhileMeditating (server uses send_console instead)
                 _state.EnqueueChat(new ChatMessage { Text = "No puedes usar eso mientras meditas!", Color = "FF0000" });
                 break;
             case 12: // NPCHitUser
@@ -444,42 +449,22 @@ public partial class PacketHandler
                 OnFloatingText?.Invoke(victimIndex, $"-{damage}", "FFFF66");
                 break;
             }
-            case 17: // WorkRequestTarget
+            // Sub-types 17-23: VB6 leftovers. The server sends these via send_console,
+            // send_stats_exp, or standalone opcodes — never as MultiMessage sub-types.
+            // Kept as no-ops so an accidental receive doesn't corrupt the stream.
+            case 17: // WorkRequestTarget (server uses opcode 45 instead)
+            case 20: // EarnExp (server uses send_stats_exp instead)
+            case 22: // CancelGoHome (server uses send_console instead)
+            case 23: // FinishHome (server uses send_console/warp instead)
                 break;
-            case 18: // HaveKilledUser
-            {
-                short killedIndex = bq.ReadInteger();
-                int expGained = bq.ReadLong();
-                string killedName = "";
-                if (_state.Characters.TryGetValue(killedIndex, out var killed))
-                    killedName = killed.Name;
-                _state.EnqueueChat(new ChatMessage { Text = $"Has matado a {killedName}! Ganaste {expGained} exp.", Color = "FF0000", Type = ChatType.Combat });
+            case 18: // HaveKilledUser (server uses send_console instead) — no payload
+                _state.EnqueueChat(new ChatMessage { Text = "Has matado a la criatura!", Color = "FFFF00", Type = ChatType.Combat });
                 break;
-            }
-            case 19: // UserKill
-            {
-                short killerIndex = bq.ReadInteger();
-                string killerName = "";
-                if (_state.Characters.TryGetValue(killerIndex, out var killer))
-                    killerName = killer.Name;
-                _state.EnqueueChat(new ChatMessage { Text = $"{killerName} te ha matado!!!", Color = "FF0000", Type = ChatType.Combat });
+            case 19: // UserKill (server uses send_console instead) — no payload
+                _state.EnqueueChat(new ChatMessage { Text = "Has sido eliminado!", Color = "FF0000", Type = ChatType.Combat });
                 break;
-            }
-            case 20: // EarnExp
-                break;
-            case 21: // GoHome
-            {
-                byte distance = bq.ReadByte();
-                short time = bq.ReadInteger();
-                string homeCity = bq.ReadString();
-                _state.EnqueueChat(new ChatMessage { Text = $"Regresando a {homeCity} en {time}s (distancia: {distance})...", Color = "00FF00" });
-                break;
-            }
-            case 22: // CancelGoHome
-                _state.EnqueueChat(new ChatMessage { Text = "Regreso a hogar cancelado.", Color = "FF0000" });
-                break;
-            case 23: // FinishHome
-                _state.EnqueueChat(new ChatMessage { Text = "Has regresado a tu hogar.", Color = "00FF00" });
+            case 21: // GoHome (server uses send_console instead) — no payload
+                _state.EnqueueChat(new ChatMessage { Text = "Regresando a tu hogar...", Color = "00FF00" });
                 break;
             default:
                 GD.PrintErr($"[PKT] MultiMessage unknown sub-type={subType}, stream may be corrupted");
