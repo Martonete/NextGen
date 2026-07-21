@@ -50,6 +50,15 @@ public partial class PacketHandler
     /// Callback to stop all SFX (called on position warp within same map).
     public Action? OnStopSfx;
 
+    /// Callback when the server forcibly disconnects the client (e.g. ban, kick).
+    public Action<string>? OnServerDisconnect;
+
+    /// Callback when visual config changes (e.g. lights toggle) — triggers a render-dirty.
+    public Action? OnVisualStateChanged;
+
+    /// Callback when the day/night phase changes. Arg: 0=day, 1=evening, 2=night.
+    public Action<byte>? OnDayPhaseChanged;
+
     /// Callback when an inventory slot changes (drop, pickup, equip, use).
     public Action? OnInventoryChanged;
 

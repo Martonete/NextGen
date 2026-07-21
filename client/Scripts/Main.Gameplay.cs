@@ -94,6 +94,7 @@ public partial class Main
                     _craftPanel!.Init(_state, _gameData, _tcp);
                     _travelPanel!.Init(_state, _tcp, _dataPath, _resources);
                     _deathPanel!.Init(_state, _tcp, _dataPath, _resources);
+                    _centinelaPanel!.Init(_state, _tcp);
                     _guildPanel!.Init(_state, _tcp);
                     _guildFoundationPanel!.Init(_state, _tcp);
                     _forumPanel!.Init(_state, _tcp);
@@ -494,6 +495,8 @@ public partial class Main
         _state.Trading = false;
         _state.Dead = false;
         _state.ShowDeathPanel = false;
+        _state.ShowCentinelaPanel = false;
+        _state.CentinelaChallenge = 0;
         _state.Resting = false;
         _state.Meditating = false;
         _state.SafeMode = false;

@@ -31,6 +31,7 @@ public class PanelStateSync
     private ChangePasswordPanel? _changePasswordPanel;
     private CharInfoPopup? _charInfoPopup;
     private DeathPanel? _deathPanel;
+    private CentinelaPanel? _centinelaPanel;
     private OptionsPanel? _optionsPanel;
     private TooltipPanel? _tooltipPanel;
     private ColorRect? _blindOverlay;
@@ -118,6 +119,8 @@ public class PanelStateSync
         _tutorialPanel = tutorialPanel;
         _signalPanel = signalPanel;
     }
+
+    public void BindCentinelaPanel(CentinelaPanel? panel) => _centinelaPanel = panel;
 
     /// <summary>Reset edge-detection tracking state (on disconnect).</summary>
     public void ResetTracking()
@@ -297,6 +300,16 @@ public class PanelStateSync
         if (!_state.Dead && _deathPanel != null && _deathPanel.Visible)
         {
             _deathPanel.Hide();
+        }
+
+        // Centinela anti-bot challenge panel
+        if (_state.ShowCentinelaPanel)
+        {
+            _state.ShowCentinelaPanel = false;
+            _centinelaPanel?.ShowChallenge(
+                _state.CentinelaChallenge,
+                _state.CentinelaSecondsLeft,
+                _state.CentinelaAttemptsLeft);
         }
 
         // Drop quantity dialog (VB6: frmCantidad)

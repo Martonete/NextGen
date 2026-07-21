@@ -335,6 +335,7 @@ public partial class Main
         _partyPanel = AddPanel<PartyPanel>(new Vector2(480, 150));
         _travelPanel = AddPanel<TravelPanel>(new Vector2(55, 177));
         _deathPanel = AddPanel<DeathPanel>(new Vector2(148, 302));
+        _centinelaPanel = AddPanel<CentinelaPanel>();
         _charInfoPopup = AddPanel<CharInfoPopup>();
         _changePasswordPanel = AddPanel<ChangePasswordPanel>();
 
@@ -558,6 +559,7 @@ public partial class Main
         _panelSync.UpdateDropDialogVisibility = () => _dialogManager?.UpdateDropDialogVisibility();
         _panelSync.BindNewPanels(_gmPanel, _spawnListPanel, _sosPanel, _peaceProposalPanel, _guildAlignmentPanel,
             _motdEditorPanel, _guildMemberPanel, _dayNightCycle, _loadingScreen, _tutorialPanel, _signalPanel);
+        _panelSync.BindCentinelaPanel(_centinelaPanel);
 
         // Input router
         _inputRouter = new InputRouter(_state);

@@ -47,6 +47,8 @@ public partial class PacketHandler
 
         _state.GroundObjects.Clear();
         _state.MapParticles.Clear();
+        _state.ActiveArrows.Clear();
+        _state.ActiveBeams.Clear();
         _state.ClearMapLights();
         _state.LightsDirty = true;
 
@@ -584,6 +586,23 @@ public partial class PacketHandler
                 Active = true,
             });
         }
+    }
+
+    private static float _beamJitterCounter;
+
+    private void HandleBinSpellBeam(ByteQueue bq)
+    {
+        short casterIndex = bq.ReadInteger();
+        short targetIndex = bq.ReadInteger();
+        _beamJitterCounter += 1.7f;
+        _state.ActiveBeams.Add(new SpellBeam
+        {
+            CasterCharIndex = casterIndex,
+            TargetCharIndex = targetIndex,
+            ElapsedMs = 0f,
+            DurationMs = 600f,
+            JitterSeed = _beamJitterCounter,
+        });
     }
 
     /// <summary>

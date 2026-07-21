@@ -61,6 +61,41 @@ public partial class PacketHandler
         else if (fontIndex == 27 || fontIndex == 31) type = ChatType.Clan;
         else if (fontIndex == 3 || fontIndex == 43 || fontIndex == 44 || fontIndex == 45) type = ChatType.Global;
         _state.EnqueueChat(new ChatMessage { Text = chat, Color = color, Type = type });
+
+        // Centinela anti-bot: font_index 36 carries challenge/response messages.
+        // Message 1: "CENTINELA: escribi /CENTINELA <number> para verificar..."
+        // Message 2: "Tenes <N> segundos. Intentos restantes: <M>."
+        if (fontIndex == 36)
+            ParseCentinelaMessage(chat);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex _centinelaNumRx =
+        new(@"CENTINELA: escribi /CENTINELA (\d{4})", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex _centinelaTimerRx =
+        new(@"Tenes (\d+) segundos.*Intentos restantes: (\d+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private void ParseCentinelaMessage(string msg)
+    {
+        var numMatch = _centinelaNumRx.Match(msg);
+        if (numMatch.Success && int.TryParse(numMatch.Groups[1].Value, out int number))
+        {
+            _state.CentinelaChallenge = number;
+            _state.CentinelaSecondsLeft = 120; // default; overwritten by second message
+            _state.CentinelaAttemptsLeft = 0;
+            // Panel will open when we receive the timer message (or immediately as fallback)
+            return;
+        }
+
+        var timerMatch = _centinelaTimerRx.Match(msg);
+        if (timerMatch.Success
+            && int.TryParse(timerMatch.Groups[1].Value, out int secs)
+            && int.TryParse(timerMatch.Groups[2].Value, out int attempts))
+        {
+            _state.CentinelaSecondsLeft = secs;
+            _state.CentinelaAttemptsLeft = attempts;
+            if (_state.CentinelaChallenge > 0)
+                _state.ShowCentinelaPanel = true;
+        }
     }
 
 
@@ -392,7 +427,7 @@ public partial class PacketHandler
     {
         _state.PingSentMs = Time.GetTicksMsec();
         // Reply immediately with Pong (opcode 88) — 1-byte packet, no payload
-        SendPacket?.Invoke(new byte[] { ClientPacketId.Pong });
+        SendPacket(new byte[] { ClientPacketId.Pong });
     }
 
     // ── Arena ─────────────────────────────────────────────────────

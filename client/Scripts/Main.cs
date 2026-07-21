@@ -231,6 +231,7 @@ public partial class Main : Control
 		Center(_partyPanel);
 		Center(_travelPanel);
 		Center(_deathPanel);
+		Center(_centinelaPanel);
 		Center(_macroPanel);
 		Center(_statsPanel);
 		Center(_optionsPanel);
@@ -354,6 +355,7 @@ public partial class Main : Control
 
 	// Death panel (frmMuertito)
 	private DeathPanel? _deathPanel;
+	private CentinelaPanel? _centinelaPanel;
 
 	// Macro panel (frmMakro)
 	private MacroPanel? _macroPanel;

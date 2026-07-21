@@ -57,6 +57,11 @@ public class ForumPostEntry
 /// </summary>
 public class GameState
 {
+	// VB6 13.3 game constants
+	public const int MaxLevel = 99;
+	public const int MaxSkillLevel = 100;
+	public const int MaxInventoryCapacity = 36; // absolute max slots in any inventory grid
+
 	// Login / screen state
 	public bool IsLogged;
 	public bool Paused;
@@ -287,6 +292,12 @@ public class GameState
 	// Death panel (frmMuertito)
 	public bool ShowDeathPanel;
 
+	// Centinela anti-bot challenge
+	public bool ShowCentinelaPanel;
+	public int CentinelaChallenge;     // 4-digit number the player must type
+	public int CentinelaSecondsLeft;   // timeout sent by server
+	public int CentinelaAttemptsLeft;  // remaining attempts
+
 	// Bank (frmBanco + frmNuevoBancoObj / Bóveda)
 	public BankItem[] BankItems = new BankItem[40];
 	public int BankItemCount;
@@ -334,6 +345,7 @@ public class GameState
 	public string UserGuildName = ""; // Current user's guild name (from CC tag)
 	// Party
 	public bool ShowPartyPanel;       // Trigger to open party panel (from ShowPartyForm packet)
+	public byte PartyPanelType;       // Panel type byte from ShowPartyForm packet (0=create, 1=accept, etc.)
 
 	public string GuildNewsText = ""; // Guild news from server
 	public string GuildMotdText = ""; // Guild MOTD from server
@@ -370,6 +382,9 @@ public class GameState
 
 	// Arrow/projectile system (VB6: FLECHI)
 	public List<ArrowProjectile> ActiveArrows = new();
+
+	// Spell beam system (cosmetic lightning arcs from caster to target)
+	public List<SpellBeam> ActiveBeams = new();
 
 	// Particle system
 	public ParticleStreamDef[] ParticleDefs = System.Array.Empty<ParticleStreamDef>();
@@ -606,6 +621,12 @@ public class ParticleStreamDef
 	public byte ColR2, ColG2, ColB2; // ColorSet2
 	public byte ColR3, ColG3, ColB3; // ColorSet3
 	public byte ColR4, ColG4, ColB4; // ColorSet4
+	// Extended motor fields (world editor / advanced particle system)
+	public bool FadeAlpha;       // fade opacity over particle lifetime
+	public bool RotateVisual;    // rotate sprite by particle Angle
+	public bool ScaleOverLife;   // lerp scale from ResizeX to ResizeY over lifetime
+	public float ResizeX;        // start scale (ScaleOverLife)
+	public float ResizeY;        // end scale (ScaleOverLife)
 }
 
 /// <summary>
@@ -647,6 +668,16 @@ public class MapLight
 	public int Range;      // radius in tiles
 	public byte R, G, B;   // light color
 	public bool Active = true;
+}
+
+/// Cosmetic spell beam (lightning arc from caster to target, packet ID 198).
+public class SpellBeam
+{
+	public int CasterCharIndex;
+	public int TargetCharIndex;
+	public float ElapsedMs;
+	public float DurationMs = 600f;
+	public float JitterSeed; // deterministic noise seed so the arc is stable per-beam
 }
 
 /// <summary>
