@@ -143,8 +143,8 @@ public partial class SoundManager : Node
 
         // Create AudioListener2D so spatial sounds work relative to player
         _listener = new AudioListener2D();
-        _listener.MakeCurrent();
         AddChild(_listener);
+        _listener.MakeCurrent(); // must be after AddChild so node is in the scene tree
 
         // Create 30 spatial SFX players (VB6: DSBuffers[1..30])
         for (int i = 0; i < NumSoundBuffers; i++)
