@@ -157,6 +157,7 @@ pub(super) async fn handle_slash_liberarmascota(state: &mut GameState, conn_id: 
     state.kill_npc(target_npc);
 
     state.send_console(conn_id, "Has liberado a tu mascota.", font_index::INFO);
+    super::send_pets_update(state, conn_id);
 }
 
 // =====================================================================

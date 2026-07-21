@@ -1418,6 +1418,9 @@ pub(crate) async fn connect_user(
         state.send_bytes(conn_id, &binary_packets::write_send_night(state.forced_day_phase));
     }
 
+    // --- PHASE 17: Pet names update ---
+    crate::game::handlers::send_pets_update(state, conn_id);
+
     info!(
         "[AUTH] '{}' logged in (CharIdx={}, Map {}, {},{}) — {} users online",
         char_name, char_index.0, map, x, y, state.num_users

@@ -367,6 +367,7 @@ public class GameState
 	public List<PetInfo> PetList = new();          // Current player's pets
 	public bool ShowTrainerPanel;                   // Trigger to open trainer panel
 	public string TrainerCreatureData = "";          // Pending creature list data from server
+	public bool PetsUpdated;                        // Set by PetsUpdate (119) so open panel can refresh
 
 	// NPC dialog popup (triggered by ChatOverHead from NPC interaction)
 	public bool ShowNpcDialog;

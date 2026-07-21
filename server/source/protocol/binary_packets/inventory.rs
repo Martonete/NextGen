@@ -382,3 +382,15 @@ pub fn write_trainer_creature_list(creatures: &str) -> Vec<u8> {
     pkt.write_ascii_string(creatures);
     pkt.into_bytes()
 }
+
+/// ID 119: Pet list update — sent after login, tame, or release.
+/// Format: count (u8) + for each pet: name string.
+pub fn write_pets_update(names: &[String]) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::PetsUpdate.to_byte());
+    pkt.write_byte(names.len() as u8);
+    for name in names {
+        pkt.write_ascii_string(name);
+    }
+    pkt.into_bytes()
+}

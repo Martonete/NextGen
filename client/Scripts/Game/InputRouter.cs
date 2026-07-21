@@ -55,6 +55,9 @@ public class InputRouter
     /// <summary>Callback to toggle spell macro (Tab key — VB6 parity).</summary>
     public Action? OnSpellMacroToggle;
 
+    /// <summary>Callback to toggle minimap visibility (M key).</summary>
+    public Action? OnMinimapToggle;
+
     public InputRouter(GameState state)
     {
         _state = state;
@@ -155,6 +158,14 @@ public class InputRouter
             if (key.Keycode == Key.Tab && !_state.ChatActive)
             {
                 OnSpellMacroToggle?.Invoke();
+                viewport.SetInputAsHandled();
+                return true;
+            }
+
+            // M: toggle minimap
+            if (key.Keycode == Key.M && !_state.ChatActive)
+            {
+                OnMinimapToggle?.Invoke();
                 viewport.SetInputAsHandled();
                 return true;
             }

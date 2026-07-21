@@ -33,7 +33,6 @@ public partial class TrainerPanel : RpgBaseForm
     private VBoxContainer? _petListBox;
 
     // Pet command buttons
-    private TextureButton? _cmdAttackBtn;
     private TextureButton? _cmdFollowBtn;
     private TextureButton? _cmdStayBtn;
     private TextureButton? _cmdReleaseBtn;
@@ -86,14 +85,9 @@ public partial class TrainerPanel : RpgBaseForm
         petCmdRow.Alignment = BoxContainer.AlignmentMode.Center;
         vbox.AddChild(petCmdRow);
 
-        _cmdAttackBtn = RpgTheme.CreateRpgButton("Atacar", false, 11);
-        _cmdAttackBtn.CustomMinimumSize = new Vector2(70, 26);
-        _cmdAttackBtn.Pressed += () => SendPetCommand("ATACAR");
-        petCmdRow.AddChild(_cmdAttackBtn);
-
         _cmdFollowBtn = RpgTheme.CreateRpgButton("Seguir", false, 11);
         _cmdFollowBtn.CustomMinimumSize = new Vector2(70, 26);
-        _cmdFollowBtn.Pressed += () => SendPetCommand("SEGUIR");
+        _cmdFollowBtn.Pressed += () => SendPetCommand("ACOMPANAR");
         petCmdRow.AddChild(_cmdFollowBtn);
 
         _cmdStayBtn = RpgTheme.CreateRpgButton("Quieto", false, 11);
@@ -103,7 +97,7 @@ public partial class TrainerPanel : RpgBaseForm
 
         _cmdReleaseBtn = RpgTheme.CreateRpgButton("Liberar", false, 11);
         _cmdReleaseBtn.CustomMinimumSize = new Vector2(70, 26);
-        _cmdReleaseBtn.Pressed += () => SendPetCommand("LIBERAR");
+        _cmdReleaseBtn.Pressed += () => SendPetCommand("LIBERARMASCOTA");
         petCmdRow.AddChild(_cmdReleaseBtn);
 
         // Trainer header (hidden by default)
@@ -305,18 +299,28 @@ public partial class TrainerPanel : RpgBaseForm
 
     private void UpdatePetCommandButtons()
     {
-        bool hasPet = _selectedPetIndex >= 0 && _state != null && _selectedPetIndex < _state.PetList.Count;
-        _cmdAttackBtn!.Disabled = !hasPet;
-        _cmdFollowBtn!.Disabled = !hasPet;
-        _cmdStayBtn!.Disabled = !hasPet;
-        _cmdReleaseBtn!.Disabled = !hasPet;
+        bool hasPets = _state != null && _state.PetList.Count > 0;
+        _cmdFollowBtn!.Disabled = !hasPets;
+        _cmdStayBtn!.Disabled = !hasPets;
+        _cmdReleaseBtn!.Disabled = !hasPets;
     }
 
     private void SendPetCommand(string command)
     {
-        if (_tcp == null || _selectedPetIndex < 0) return;
-        // VB6: pet commands via slash commands
-        _tcp.SendPacket(ClientPackets.WriteSlashCommand($"/{command} {_selectedPetIndex + 1}"));
+        if (_tcp == null) return;
+        // Server uses target_npc (right-clicked NPC) — no index needed
+        _tcp.SendPacket(ClientPackets.WriteSlashCommand($"/{command}"));
+    }
+
+    public override void _Process(double delta)
+    {
+        base._Process(delta);
+        if (_state != null && _state.PetsUpdated && Visible && !_trainerMode)
+        {
+            _state.PetsUpdated = false;
+            _selectedPetIndex = -1;
+            RefreshPetList();
+        }
     }
 
     private void OnTame()

@@ -256,6 +256,9 @@ public static class ServerPacketId
     public const byte AddForumMsg = 117;
     public const byte ShowForumForm = 118;
 
+    // Pets
+    public const byte PetsUpdate = 119;
+
     // Stat variants
     public const byte OnlineCount = 129;
 

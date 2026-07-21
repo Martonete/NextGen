@@ -149,6 +149,7 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
                     }
                 }
                 state.send_console(conn_id, "Has domado a la criatura!", font_index::INFO);
+                crate::game::handlers::send_pets_update(state, conn_id);
 
                 // VB6: SubirSkill on success
                 if let Some(u) = state.users.get_mut(&conn_id) {

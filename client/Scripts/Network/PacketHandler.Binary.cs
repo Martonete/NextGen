@@ -477,6 +477,9 @@ public partial class PacketHandler
             case ServerPacketId.ShowForumForm: // 118
                 HandleBinShowForumForm(bq);
                 break;
+            case ServerPacketId.PetsUpdate: // 119
+                HandleBinPetsUpdate(bq);
+                break;
 
             // ── Stat variants ─────────────────────────────────────
             case ServerPacketId.StatHP: // 120

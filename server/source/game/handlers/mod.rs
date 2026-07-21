@@ -62,6 +62,26 @@ pub use ticks::{
 // Re-export event functions called from main.rs and other modules
 pub use events::{ip_security_accept, pretoriano_check_death};
 
+/// Build the current pet name list for a user and send PetsUpdate (119) to their client.
+pub(crate) fn send_pets_update(state: &mut crate::game::types::GameState, conn_id: crate::net::ConnectionId) {
+    let pet_types: Vec<i32> = match state.users.get(&conn_id) {
+        Some(u) => u.mascotas_type.iter().filter(|&&t| t > 0).copied().collect(),
+        None => return,
+    };
+    let names: Vec<String> = pet_types
+        .iter()
+        .map(|&t| {
+            state
+                .game_data
+                .npcs
+                .get(t as usize)
+                .map(|n| n.name.clone())
+                .unwrap_or_else(|| "Mascota".to_string())
+        })
+        .collect();
+    state.send_bytes(conn_id, &crate::protocol::binary_packets::write_pets_update(&names));
+}
+
 // Packet handlers — processes decrypted client packets.
 //
 // Pre-login flow:

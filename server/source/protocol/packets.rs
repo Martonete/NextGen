@@ -248,6 +248,9 @@ pub enum ServerPacketID {
     AddForumMsg = 117,
     ShowForumForm = 118,
 
+    // Pets
+    PetsUpdate = 119,
+
     // Stat variants
     StatHP = 120,
     StatMana = 121,

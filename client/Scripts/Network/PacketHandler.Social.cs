@@ -478,5 +478,21 @@ public partial class PacketHandler
         _state.ShowForumPanel = true;
     }
 
+    /// <summary>
+    /// PetsUpdate (ID 119) — server sends current pet list after login/tame/release.
+    /// Wire: u8 count + for each: string name
+    /// </summary>
+    private void HandleBinPetsUpdate(ByteQueue bq)
+    {
+        byte count = bq.ReadByte();
+        _state.PetList.Clear();
+        for (int i = 0; i < count; i++)
+        {
+            string name = bq.ReadString();
+            _state.PetList.Add(new Game.PetInfo { Name = name });
+        }
+        _state.PetsUpdated = true;
+    }
+
 
 }

@@ -195,6 +195,7 @@ pub(super) async fn handle_slash_quitarmascota(state: &mut GameState, conn_id: C
     }
 
     state.send_console(conn_id, "Mascota removida.", font_index::INFO);
+    super::send_pets_update(state, conn_id);
 }
 
 /// /MSJ — Toggle private messages.

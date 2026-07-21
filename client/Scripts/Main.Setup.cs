@@ -574,5 +574,13 @@ public partial class Main
         _inputRouter.OnEnterFullscreen = () => EnterFullscreen();
         _inputRouter.OnExitFullscreen = () => ExitFullscreen();
         _inputRouter.OnSpellMacroToggle = () => _inventoryUI?.HandleSpellMacroToggle();
+        _inputRouter.OnMinimapToggle = () =>
+        {
+            if (_minimapPanel == null) return;
+            bool newVisible = !_minimapPanel.Visible;
+            _minimapPanel.Visible = newVisible;
+            _state.Config.ShowMinimap = newVisible;
+            UpdateConsoleWidth();
+        };
     }
 }
