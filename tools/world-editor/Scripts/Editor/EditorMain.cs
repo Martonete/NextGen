@@ -53,6 +53,7 @@ public partial class EditorMain : Control
     private HumoConfigPanel? _humoPanel;
     private HumoLayersPanel? _humoLayersPanel;
     private LightToolPanel? _lightPanel;
+    private ExitToolPanel? _exitPanel;
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
@@ -169,6 +170,34 @@ public partial class EditorMain : Control
     private const float RightSidebarWidth = 250;
 
     private bool _readyCalled;
+    private bool _cleanedUp;
+
+    private static readonly string[] ThemeStyleboxOverrideNames =
+    {
+        "panel",
+        "normal",
+        "hover",
+        "pressed",
+        "hover_pressed",
+        "disabled",
+        "focus",
+        "read_only",
+        "grabber",
+        "grabber_highlight",
+        "grabber_pressed",
+        "slider",
+        "scroll",
+        "scroll_focus",
+        "h_scroll",
+        "v_scroll",
+        "tab_focus",
+        "tab_selected",
+        "tab_unselected",
+        "tab_hovered",
+        "button_normal",
+        "button_hover",
+        "button_pressed",
+    };
 
     public override void _Ready()
     {
@@ -491,6 +520,7 @@ public partial class EditorMain : Control
             _lightPanel?.RefreshFromMap();
             _state.MarkDirty();
         };
+        _viewport.OnExitTilePicked += OnExitTilePicked;
         _viewport.OnOutOfBounds += SetStatus;
         AddChild(_viewport);
 
@@ -666,6 +696,17 @@ public partial class EditorMain : Control
 
         rightVBox.AddChild(_rightLightSection);
 
+        _exitPanel = new ExitToolPanel
+        {
+            Map = _map,
+            Undo = _undo,
+            Visible = false,
+        };
+        _exitPanel.OnChanged += OnExitChanged;
+        _exitPanel.OnStatus += SetStatus;
+        _exitPanel.OnFollowRequested += RequestLoadMapAndCenter;
+        rightVBox.AddChild(_exitPanel);
+
         // ── Tile info section (Hand tool click) ──
         _rightTileSeparator = new HSeparator();
         _rightTileSeparator.AddThemeConstantOverride("separation", 12);
@@ -781,6 +822,7 @@ public partial class EditorMain : Control
         };
         _openDialog.AddFilter("*.aomap", "Mapa AO (nuevo)");
         _openDialog.AddFilter("*.map", "Mapa AO (legacy)");
+        _openDialog.AddFilter("*.dat", "Metadata de mapa (abre MapaN)");
         _openDialog.FileSelected += OnMapFileSelected;
         AddChild(_openDialog);
 
@@ -2016,7 +2058,17 @@ public partial class EditorMain : Control
             return;
         }
 
-        _map = MapLoader.Load(_state.MapDir, mapNumber);
+        try
+        {
+            _map = MapLoader.Load(_state.MapDir, mapNumber);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[Editor] Error loading Mapa{mapNumber}: {ex}");
+            SetStatus($"ERROR al cargar Mapa{mapNumber}: {ex.Message}");
+            return;
+        }
+
         _map.LoadPaintedFog(_state.MapDir);
         _map.LoadLightData(_state.MapDir);
         _state.CurrentMapNumber = mapNumber;
@@ -2049,9 +2101,21 @@ public partial class EditorMain : Control
                 string dir = Path.GetDirectoryName(path) ?? _state.MapDir;
                 _state.MapDir = dir;
                 _state.ScanAvailableMaps(dir);
-                _map = MapLoader.Load(dir, mapNum);
+                try
+                {
+                    _map = MapLoader.Load(dir, mapNum);
+                }
+                catch (Exception ex)
+                {
+                    GD.PrintErr($"[Editor] Error loading {path}: {ex}");
+                    SetStatus($"ERROR al cargar Mapa{mapNum}: {ex.Message}");
+                    return;
+                }
                 _map.LoadPaintedFog(dir);
                 _map.LoadLightData(dir);
+                _mapZones = MapZoneData.Load(dir, mapNum);
+                if (_zonePanel != null) { _zonePanel.ZoneData = _mapZones; _zonePanel.RebuildList(); }
+                if (_viewport != null) { _viewport.ZoneData = _mapZones; _viewport.MarkFogMaskDirty(); _viewport.MarkLightsDirty(); }
                 _state.CurrentMapNumber = mapNum;
                 _undo.Clear();
                 _state.ResetDirty();
@@ -2079,11 +2143,11 @@ public partial class EditorMain : Control
             GD.Print($"[Editor] Saved to server: {_serverMapDir}");
         }
 
-        // Client data: save .aomap ONLY (will be packed into maps.aopak)
+        // Client data: save .aomap + .aoinf (will be packed into maps.aopak)
         if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
         {
             MapLoader.Save(_clientMapDir, _map, mapOnly: true);
-            GD.Print($"[Editor] Saved .aomap to client data: {_clientMapDir}");
+            GD.Print($"[Editor] Saved .aomap/.aoinf to client data: {_clientMapDir}");
         }
 
         // Save .aozone to server
@@ -2093,14 +2157,16 @@ public partial class EditorMain : Control
             GD.Print($"[Editor] Saved {_mapZones.Zones.Count} zones for map {_map.MapNumber}");
         }
 
-        // Save .aofog (painted fog layers) alongside the map
-        if (_map.MapNumber > 0 && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+        // Save .aofog (painted fog layers) alongside the map.
+        if (_map.MapNumber > 0)
         {
-            _map.SavePaintedFog(_serverMapDir);
+            foreach (string dir in EnumerateMapSidecarDirs())
+                _map.SavePaintedFog(dir);
+
             int total = 0;
             foreach (var l in _map.PaintedFogLayers) total += l.Tiles.Count;
-            if (total > 0)
-                GD.Print($"[Editor] Saved {_map.PaintedFogLayers.Count} humo layers ({total} tiles)");
+            if (total > 0 || _map.FogFreeSmoke)
+                GD.Print($"[Editor] Saved {_map.PaintedFogLayers.Count} humo layers ({total} tiles) to server + client");
         }
 
         // Save .aolight (advanced light data) alongside the map — to BOTH the
@@ -2108,10 +2174,9 @@ public partial class EditorMain : Control
         // resources/data/Maps) actually finds the lights in-game.
         if (_map.MapNumber > 0)
         {
-            if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
-                _map.SaveLightData(_serverMapDir);
-            if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
-                _map.SaveLightData(_clientMapDir);
+            foreach (string dir in EnumerateMapSidecarDirs())
+                _map.SaveLightData(dir);
+
             if (_map.LightData.Lights.Count > 0)
                 GD.Print($"[Editor] Saved {_map.LightData.Lights.Count} advanced lights (server + client)");
         }
@@ -2155,12 +2220,49 @@ public partial class EditorMain : Control
         if (dir != _clientMapDir && dir != _serverMapDir)
             MapLoader.Save(dir, _map);
 
+        if (_mapZones != null && _map.MapNumber > 0)
+        {
+            var zoneDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string zoneDir in new[] { _serverMapDir, dir })
+            {
+                if (zoneDir.Length == 0 || !Directory.Exists(zoneDir))
+                    continue;
+
+                string fullPath = Path.GetFullPath(zoneDir);
+                if (zoneDirs.Add(fullPath))
+                    _mapZones.Save(fullPath, _map.MapNumber);
+            }
+        }
+
+        if (_map.MapNumber > 0)
+        {
+            foreach (string sidecarDir in EnumerateMapSidecarDirs(dir))
+            {
+                _map.SavePaintedFog(sidecarDir);
+                _map.SaveLightData(sidecarDir);
+            }
+        }
+
         _state.MapDir = dir;
         _state.ResetDirty();
         _state.ScanAvailableMaps(dir);
         UpdateNavBar();
         SetStatus($"Mapa {_map.MapNumber} guardado (cliente + server)");
         _exportConfirmDialog?.PopupCentered();
+    }
+
+    private IEnumerable<string> EnumerateMapSidecarDirs(string? extraDir = null)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string dir in new[] { _serverMapDir, _clientMapDir, extraDir ?? "" })
+        {
+            if (dir.Length == 0 || !Directory.Exists(dir))
+                continue;
+
+            string fullPath = Path.GetFullPath(dir);
+            if (seen.Add(fullPath))
+                yield return fullPath;
+        }
     }
 
     private void OnDataPathSelected(string path)
@@ -2271,7 +2373,66 @@ public partial class EditorMain : Control
 
     private void OnExitFollow(int mapNum, int x, int y)
     {
-        RequestLoadMap(mapNum);
+        RequestLoadMapAndCenter(mapNum, x, y);
+    }
+
+    private void RequestLoadMapAndCenter(int mapNum, int x, int y)
+    {
+        if (mapNum == _state.CurrentMapNumber && _map != null)
+        {
+            CenterOnCurrentMapTile(x, y);
+            return;
+        }
+
+        CheckDirtyThen(() =>
+        {
+            LoadMapByNumber(mapNum);
+            CenterOnCurrentMapTile(x, y);
+        });
+    }
+
+    private void CenterOnCurrentMapTile(int x, int y)
+    {
+        if (_map == null || !_map.InBounds(x, y))
+        {
+            SetStatus($"Destino fuera del mapa: ({x},{y})");
+            return;
+        }
+
+        _state.SelectedTileX = x;
+        _state.SelectedTileY = y;
+        _lastSelectedTileX = -2;
+        _lastSelectedTileY = -2;
+
+        if (_viewport != null)
+            Callable.From(() => _viewport.CenterOnTile(x, y)).CallDeferred();
+    }
+
+    private void OnExitTilePicked(int x, int y, bool erase)
+    {
+        if (_map == null || !_map.InBounds(x, y))
+            return;
+
+        _state.SelectedTileX = x;
+        _state.SelectedTileY = y;
+        _lastSelectedTileX = -2;
+        _lastSelectedTileY = -2;
+
+        _exitPanel?.SelectTile(x, y);
+        if (erase)
+            _exitPanel?.ClearExit();
+        else
+            SetStatus($"Salida seleccionada en ({x},{y})");
+
+        _viewport?.QueueRedraw();
+    }
+
+    private void OnExitChanged()
+    {
+        _state.MarkDirty();
+        _lastSelectedTileX = -2;
+        _lastSelectedTileY = -2;
+        _viewport?.QueueRedraw();
     }
 
     #endregion
@@ -2975,8 +3136,9 @@ public partial class EditorMain : Control
     #region Input
 
     private static readonly string[] ToolNames = {
-        "Mano", "Pintar", "Borrar", "Seleccionar", "Agarrar",
-        "Rellenar", "Cuentagotas", "Bloquear", "Luz", "Salida", "NPC", "Objeto", "Trigger"
+        "Mano", "Pintar", "Borrar", "Seleccionar", "Mover", "Agarrar",
+        "Rellenar", "Cuentagotas", "Bloquear", "Luz", "Luz+", "Salida",
+        "NPC", "Objeto", "Trigger", "Particulas", "Humo"
     };
 
     public override void _UnhandledKeyInput(InputEvent @event)
@@ -3099,6 +3261,11 @@ public partial class EditorMain : Control
             _lightPanel.Visible = tool == EditorTool.LightAdvanced;
             if (_lightPanel.Visible) _lightPanel.RefreshFromMap();
         }
+        if (_exitPanel != null)
+        {
+            _exitPanel.SetMap(_map);
+            _exitPanel.Visible = tool == EditorTool.Exit;
+        }
     }
 
     private void SyncLayerTabs()
@@ -3113,7 +3280,8 @@ public partial class EditorMain : Control
         EditorTool.Select,
         EditorTool.Pick, EditorTool.Eyedrop, EditorTool.Block,
         // property tools (after separator)
-        EditorTool.Light, EditorTool.Exit, EditorTool.Trigger, EditorTool.Particle, EditorTool.Fog,
+        EditorTool.Light, EditorTool.LightAdvanced, EditorTool.Exit,
+        EditorTool.Trigger, EditorTool.Particle, EditorTool.Fog,
     };
 
     private void SyncToolBar()
@@ -3244,6 +3412,10 @@ public partial class EditorMain : Control
             _lightPanel.Map = _map;
             _lightPanel.SelectedLightIndex = -1;
             _lightPanel.RefreshFromMap();
+        }
+        if (_exitPanel != null)
+        {
+            _exitPanel.SetMap(_map);
         }
         if (_particles != null && _map != null)
         {
@@ -3740,12 +3912,116 @@ public partial class EditorMain : Control
         // Intercept window close to check for unsaved changes
         if (what == NotificationWMCloseRequest)
         {
-            _textures?.Cleanup(); // Free GPU textures before exit
             if (_state.IsDirty)
             {
                 CheckDirtyThen(() => GetTree().Quit());
                 GetTree().AutoAcceptQuit = false;
             }
+        }
+    }
+
+    public override void _ExitTree()
+    {
+        CleanupEditorResources();
+
+        // Godot 4.x Mono can report leaked wrappers during headless shutdown if
+        // RefCounted resources survive until the C# language module is already
+        // unloading. Force finalizers while the engine is still alive.
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+
+    private void CleanupEditorResources()
+    {
+        if (_cleanedUp) return;
+        _cleanedUp = true;
+
+        if (_previewPreloadIter is IDisposable disposablePreload)
+            disposablePreload.Dispose();
+        _previewPreloadIter = null;
+
+        _palette?.Cleanup();
+        _viewport?.Cleanup();
+        _walkPanel?.Cleanup();
+        _textures?.Cleanup();
+
+        ReleaseNodeResources(this);
+    }
+
+    private static void ReleaseNodeResources(Node node)
+    {
+        foreach (var child in node.GetChildren())
+            if (child != null && GodotObject.IsInstanceValid(child))
+                ReleaseNodeResources(child);
+
+        if (node is TextureRect textureRect)
+        {
+            var texture = textureRect.Texture;
+            textureRect.Texture = null;
+            SafeDispose(texture);
+        }
+
+        if (node is TextureButton textureButton)
+        {
+            ReleaseTextureButtonResources(textureButton);
+        }
+
+        if (node is CanvasItem canvasItem)
+        {
+            var material = canvasItem.Material;
+            canvasItem.Material = null;
+            SafeDispose(material);
+        }
+
+        if (node is Control control)
+        {
+            foreach (string name in ThemeStyleboxOverrideNames)
+            {
+                if (!control.HasThemeStyleboxOverride(name)) continue;
+                var stylebox = control.GetThemeStylebox(name);
+                control.RemoveThemeStyleboxOverride(name);
+                SafeDispose(stylebox);
+            }
+        }
+    }
+
+    private static void ReleaseTextureButtonResources(TextureButton button)
+    {
+        var normal = button.TextureNormal;
+        var pressed = button.TexturePressed;
+        var hover = button.TextureHover;
+        var disabled = button.TextureDisabled;
+        var focused = button.TextureFocused;
+        var clickMask = button.TextureClickMask;
+
+        button.TextureNormal = null;
+        button.TexturePressed = null;
+        button.TextureHover = null;
+        button.TextureDisabled = null;
+        button.TextureFocused = null;
+        button.TextureClickMask = null;
+
+        SafeDispose(normal);
+        SafeDispose(pressed);
+        SafeDispose(hover);
+        SafeDispose(disabled);
+        SafeDispose(focused);
+        SafeDispose(clickMask);
+    }
+
+    private static void SafeDispose(GodotObject? obj)
+    {
+        if (obj == null) return;
+
+        try
+        {
+            if (GodotObject.IsInstanceValid(obj))
+                obj.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already released by another owner in the same shutdown pass.
         }
     }
 

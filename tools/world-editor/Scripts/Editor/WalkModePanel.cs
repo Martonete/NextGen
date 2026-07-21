@@ -148,6 +148,25 @@ public partial class WalkModePanel : Control
         _lightRenderer.AttachTo(this);
     }
 
+    public void Cleanup()
+    {
+        if (_particleOverlay != null)
+        {
+            _particleOverlay.Owner = null;
+            var material = _particleOverlay.Material;
+            _particleOverlay.Material = null;
+            SafeDispose(material);
+            if (GodotObject.IsInstanceValid(_particleOverlay))
+                _particleOverlay.QueueFree();
+            _particleOverlay = null;
+        }
+
+        SafeDispose(_fogTexture);
+        _fogTexture = null;
+        _zoneFog.Cleanup();
+        _lightRenderer.Cleanup();
+    }
+
     /// <summary>Recalculates viewport metrics for the given resolution (client-faithful port of ResolutionManager.ApplyResolution).</summary>
     public void SetResolution(int windowW, int windowH)
     {
@@ -202,6 +221,7 @@ public partial class WalkModePanel : Control
     {
         if (_extraTilesX <= 0 && _extraTilesY <= 0)
         {
+            SafeDispose(_fogTexture);
             _fogTexture = null;
             return;
         }
@@ -243,7 +263,15 @@ public partial class WalkModePanel : Control
                 img.SetPixel(px, py, new Color(0, 0, 0, alpha));
             }
 
+        SafeDispose(_fogTexture);
         _fogTexture = ImageTexture.CreateFromImage(img);
+    }
+
+    private static void SafeDispose(GodotObject? obj)
+    {
+        if (obj == null) return;
+        if (!GodotObject.IsInstanceValid(obj)) return;
+        obj.Dispose();
     }
 
     public override void _Process(double delta)
@@ -374,17 +402,27 @@ public partial class WalkModePanel : Control
         int destY = tile.ExitY;
 
         // Check destination map files exist before loading
+        string aomapFile = Path.Combine(MapDir, $"Mapa{destMap}.aomap");
         string mapFile = Path.Combine(MapDir, $"Mapa{destMap}.map");
-        if (!File.Exists(mapFile))
+        if (!File.Exists(aomapFile) && !File.Exists(mapFile))
         {
-            GD.Print($"[WalkMode] Exit to map {destMap} — file not found: {mapFile}");
+            GD.Print($"[WalkMode] Exit to map {destMap} - file not found: {aomapFile} or {mapFile}");
             return;
         }
 
         GD.Print($"[WalkMode] Warp: Mapa{Map.MapNumber} ({CharX},{CharY}) → Mapa{destMap} ({destX},{destY})");
 
         // Load the new map
-        var newMap = MapLoader.Load(MapDir, destMap);
+        MapData newMap;
+        try
+        {
+            newMap = MapLoader.Load(MapDir, destMap);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[WalkMode] Could not load map {destMap}: {ex}");
+            return;
+        }
 
         // Validate destination coordinates
         if (!newMap.InBounds(destX, destY))

@@ -143,6 +143,7 @@ appended via `RecvAppend()`, then packets are consumed from the front.
 | ID | Name | Origin |
 |----|------|--------|
 | 99 | AuraUpdate | binary |
+| 106 | ShowPartyForm | binary, u8 pType |
 | 107 | HeadingChange | \|H text |
 | 108 | Arrow | FLECHI text |
 | 109 | NavigateBroadcast | NVG text |

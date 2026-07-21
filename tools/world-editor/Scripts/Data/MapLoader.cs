@@ -13,49 +13,62 @@ namespace AOWorldEditor.Data;
 /// </summary>
 public static class MapLoader
 {
-    private const int MapHeaderSize = 273;
-    private const int InfHeaderSize = 10;
-
     // .aomap/.aoinf header: magic(6) + version(2) + width(2) + height(2) + flags(4) = 16 bytes
     private static readonly byte[] AoMapMagic = Encoding.ASCII.GetBytes("AOMAP\0");
     private static readonly byte[] AoInfMagic = Encoding.ASCII.GetBytes("AOINF\0");
 
     public static MapData Load(string mapDir, int mapNumber)
     {
-        // Check for new format first (.aomap)
         string aomapFile = Path.Combine(mapDir, $"Mapa{mapNumber}.aomap");
+        string mapFile = Path.Combine(mapDir, $"Mapa{mapNumber}.map");
+        string datFile = Path.Combine(mapDir, $"Mapa{mapNumber}.dat");
+
+        // Prefer the new format, but keep legacy fallback alive. Some maps still
+        // exist only as .map/.inf, and stale/corrupt .aomap files should not make
+        // the editor unusable when a valid legacy map is beside them.
         if (File.Exists(aomapFile))
         {
-            var mapData = LoadAoMapFile(aomapFile);
-            mapData.MapNumber = mapNumber;
+            try
+            {
+                var mapData = LoadAoMapFile(aomapFile);
+                mapData.MapNumber = mapNumber;
 
-            string aoinfFile = Path.Combine(mapDir, $"Mapa{mapNumber}.aoinf");
-            if (File.Exists(aoinfFile))
-                LoadAoInfFile(aoinfFile, mapData);
+                string aoinfFile = Path.Combine(mapDir, $"Mapa{mapNumber}.aoinf");
+                if (File.Exists(aoinfFile))
+                {
+                    try
+                    {
+                        LoadAoInfFile(aoinfFile, mapData);
+                    }
+                    catch (Exception ex)
+                    {
+                        GD.PrintErr($"[MapLoader] Could not load {aoinfFile}: {ex.Message}");
+                    }
+                }
 
-            string datFile = Path.Combine(mapDir, $"Mapa{mapNumber}.dat");
-            if (File.Exists(datFile))
-                LoadDatFile(datFile, mapData, mapNumber);
+                if (File.Exists(datFile))
+                    LoadDatFile(datFile, mapData, mapNumber);
 
-            return mapData;
+                return mapData;
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[MapLoader] Could not load {aomapFile}: {ex.Message}");
+                if (!File.Exists(mapFile))
+                    throw;
+            }
         }
 
-        // Legacy fallback (100x100)
-        var legacy = new MapData();
-        legacy.MapNumber = mapNumber;
-
-        string mapFile = Path.Combine(mapDir, $"Mapa{mapNumber}.map");
-        string infFile = Path.Combine(mapDir, $"Mapa{mapNumber}.inf");
-        string datFileLegacy = Path.Combine(mapDir, $"Mapa{mapNumber}.dat");
-
         if (File.Exists(mapFile))
-            LoadMapFile(mapFile, legacy);
-        if (File.Exists(infFile))
-            LoadInfFile(infFile, legacy);
-        if (File.Exists(datFileLegacy))
-            LoadDatFile(datFileLegacy, legacy, mapNumber);
+        {
+            var legacy = LegacyMapLoader.Load(mapFile, LegacyMapFormat.AutoDetect);
+            legacy.MapNumber = mapNumber;
+            if (File.Exists(datFile))
+                LoadDatFile(datFile, legacy, mapNumber);
+            return legacy;
+        }
 
-        return legacy;
+        throw new FileNotFoundException($"Mapa{mapNumber} no existe en {mapDir}");
     }
 
     /// <summary>
@@ -92,18 +105,20 @@ public static class MapLoader
         Save(mapDir, mapData, mapOnly: false);
     }
 
-    /// Save map files. If mapOnly=true, only writes the map file (client-side graphics).
+    /// Save map files. If mapOnly=true, skips only .dat metadata; .aoinf is still
+    /// written because the client needs it for exits, static objects, and NPCs.
     public static void Save(string mapDir, MapData mapData, bool mapOnly)
     {
         // Always save as .aomap format (Int32 layers) — legacy .map is deprecated
         string aomapFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.aomap");
         SaveAoMapFile(aomapFile, mapData);
 
+        string aoinfFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.aoinf");
+        SaveAoInfFile(aoinfFile, mapData);
+
         if (!mapOnly)
         {
-            string aoinfFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.aoinf");
             string datFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.dat");
-            SaveAoInfFile(aoinfFile, mapData);
             SaveDatFile(datFile, mapData);
         }
 
@@ -238,97 +253,92 @@ public static class MapLoader
 
     #endregion
 
-    #region Load — Legacy (.map / .inf)
-
-    private static void LoadMapFile(string path, MapData mapData)
-    {
-        byte[] fileData = File.ReadAllBytes(path);
-        using var reader = new BinaryReader(new MemoryStream(fileData));
-        reader.BaseStream.Seek(MapHeaderSize, SeekOrigin.Begin);
-
-        for (int y = 1; y <= 100; y++)
-        {
-            for (int x = 1; x <= 100; x++)
-            {
-                if (reader.BaseStream.Position >= reader.BaseStream.Length) return;
-
-                byte byFlags = reader.ReadByte();
-                ref var tile = ref mapData.Tiles[x, y];
-
-                tile.Blocked = (byFlags & 1) != 0;
-                tile.Layer1 = reader.ReadInt32();
-                tile.Layer2 = (byFlags & 2) != 0 ? reader.ReadInt32() : 0;
-                tile.Layer3 = (byFlags & 4) != 0 ? reader.ReadInt32() : 0;
-                tile.Layer4 = (byFlags & 8) != 0 ? reader.ReadInt32() : 0;
-                tile.Trigger = (byFlags & 16) != 0 ? reader.ReadInt16() : (short)0;
-                tile.ParticleGroup = (byFlags & 32) != 0 ? reader.ReadInt16() : (short)0;
-
-                if ((byFlags & 64) != 0)
-                {
-                    tile.LightRange = reader.ReadInt16();
-                    tile.LightR = reader.ReadInt16();
-                    tile.LightG = reader.ReadInt16();
-                    tile.LightB = reader.ReadInt16();
-                }
-            }
-        }
-    }
-
-    private static void LoadInfFile(string path, MapData mapData)
-    {
-        byte[] fileData = File.ReadAllBytes(path);
-        if (fileData.Length < InfHeaderSize + 1) return;
-
-        using var reader = new BinaryReader(new MemoryStream(fileData));
-        reader.BaseStream.Seek(InfHeaderSize, SeekOrigin.Begin);
-
-        for (int y = 1; y <= 100; y++)
-        {
-            for (int x = 1; x <= 100; x++)
-            {
-                if (reader.BaseStream.Position >= reader.BaseStream.Length) return;
-
-                byte byFlags = reader.ReadByte();
-                ref var tile = ref mapData.Tiles[x, y];
-
-                if ((byFlags & 1) != 0)
-                {
-                    tile.ExitMap = reader.ReadInt16();
-                    tile.ExitX = reader.ReadInt16();
-                    tile.ExitY = reader.ReadInt16();
-                }
-                if ((byFlags & 2) != 0)
-                    tile.NpcIndex = reader.ReadInt16();
-                if ((byFlags & 4) != 0)
-                {
-                    tile.ObjIndex = reader.ReadInt16();
-                    tile.ObjAmount = reader.ReadInt16();
-                }
-            }
-        }
-    }
+    #region Metadata (.dat)
 
     private static void LoadDatFile(string path, MapData mapData, int mapNumber)
     {
-        var cfg = new ConfigFile();
-        if (cfg.Load(path) != Error.Ok) return;
+        string targetSection = $"MAPA{mapNumber}";
+        bool inTargetSection = false;
 
-        string section = $"Mapa{mapNumber}";
-        if (!cfg.HasSection(section))
+        try
         {
-            section = $"MAPA{mapNumber}";
-            if (!cfg.HasSection(section)) return;
-        }
+            foreach (string rawLine in File.ReadLines(path, Encoding.Latin1))
+            {
+                string line = rawLine.Trim();
+                if (line.Length == 0 || line[0] == ';' || line[0] == '#')
+                    continue;
 
-        mapData.Name = cfg.GetValue(section, "Name", "").ToString() ?? "";
-        mapData.MusicNum = (int)cfg.GetValue(section, "MusicNum", 0);
-        mapData.PkEnabled = (int)cfg.GetValue(section, "Pk", 0) == 0;
-        mapData.BackUp = (int)cfg.GetValue(section, "BackUp", 1) == 1;
-        mapData.Terreno = cfg.GetValue(section, "Terreno", "TIERRA").ToString() ?? "TIERRA";
-        mapData.Zona = cfg.GetValue(section, "Zona", "CAMPO").ToString() ?? "CAMPO";
-        mapData.AmbientR = (byte)(int)cfg.GetValue(section, "R", 180);
-        mapData.AmbientG = (byte)(int)cfg.GetValue(section, "G", 180);
-        mapData.AmbientB = (byte)(int)cfg.GetValue(section, "B", 180);
+                if (line[0] == '[' && line[^1] == ']')
+                {
+                    bool wasInTargetSection = inTargetSection;
+                    string section = line[1..^1].Trim();
+                    inTargetSection = string.Equals(section, targetSection, StringComparison.OrdinalIgnoreCase);
+                    if (wasInTargetSection && !inTargetSection)
+                        break;
+                    continue;
+                }
+
+                if (!inTargetSection)
+                    continue;
+
+                int eq = line.IndexOf('=');
+                if (eq <= 0)
+                    continue;
+
+                string key = line[..eq].Trim();
+                string value = line[(eq + 1)..].Trim();
+                ApplyDatValue(mapData, key, value);
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MapLoader] Could not load metadata {path}: {ex.Message}");
+        }
+    }
+
+    private static void ApplyDatValue(MapData mapData, string key, string value)
+    {
+        switch (key.ToUpperInvariant())
+        {
+            case "NAME":
+                mapData.Name = value;
+                break;
+            case "MUSICNUM":
+                mapData.MusicNum = ParseInt(value, mapData.MusicNum);
+                break;
+            case "PK":
+                mapData.PkEnabled = ParseInt(value, mapData.PkEnabled ? 0 : 1) == 0;
+                break;
+            case "BACKUP":
+                mapData.BackUp = ParseInt(value, mapData.BackUp ? 1 : 0) == 1;
+                break;
+            case "TERRENO":
+                mapData.Terreno = value.Length > 0 ? value : mapData.Terreno;
+                break;
+            case "ZONA":
+                mapData.Zona = value.Length > 0 ? value : mapData.Zona;
+                break;
+            case "R":
+                mapData.AmbientR = ParseByte(value, mapData.AmbientR);
+                break;
+            case "G":
+                mapData.AmbientG = ParseByte(value, mapData.AmbientG);
+                break;
+            case "B":
+                mapData.AmbientB = ParseByte(value, mapData.AmbientB);
+                break;
+        }
+    }
+
+    private static int ParseInt(string value, int fallback)
+    {
+        return int.TryParse(value, out int parsed) ? parsed : fallback;
+    }
+
+    private static byte ParseByte(string value, byte fallback)
+    {
+        int parsed = ParseInt(value, fallback);
+        return (byte)Math.Clamp(parsed, 0, 255);
     }
 
     #endregion
@@ -436,96 +446,7 @@ public static class MapLoader
 
     #endregion
 
-    #region Save — Legacy (.map / .inf)
-
-    private static void SaveMapFile(string path, MapData mapData)
-    {
-        using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms);
-
-        // Header: version(2) + desc(255) + crc(4) + magic(4) + reserved(8) = 273
-        writer.Write((short)1); // MapVersion
-        writer.Write(new byte[255]); // MiCabecera (desc)
-        writer.Write(0); // CRC
-        writer.Write(0); // MagicWord
-        writer.Write(new byte[8]); // Reserved
-
-        int w = Math.Min(mapData.Width, 100);
-        int h = Math.Min(mapData.Height, 100);
-
-        for (int y = 1; y <= h; y++)
-        {
-            for (int x = 1; x <= w; x++)
-            {
-                ref var tile = ref mapData.Tiles[x, y];
-                byte byFlags = 0;
-                if (tile.Blocked) byFlags |= 1;
-                if (tile.Layer2 != 0) byFlags |= 2;
-                if (tile.Layer3 != 0) byFlags |= 4;
-                if (tile.Layer4 != 0) byFlags |= 8;
-                if (tile.Trigger != 0) byFlags |= 16;
-                if (tile.ParticleGroup != 0) byFlags |= 32;
-                if (tile.LightRange != 0) byFlags |= 64;
-
-                writer.Write(byFlags);
-                writer.Write(tile.Layer1);
-                if (tile.Layer2 != 0) writer.Write(tile.Layer2);
-                if (tile.Layer3 != 0) writer.Write(tile.Layer3);
-                if (tile.Layer4 != 0) writer.Write(tile.Layer4);
-                if (tile.Trigger != 0) writer.Write(tile.Trigger);
-                if (tile.ParticleGroup != 0) writer.Write(tile.ParticleGroup);
-                if (tile.LightRange != 0)
-                {
-                    writer.Write(tile.LightRange);
-                    writer.Write(tile.LightR);
-                    writer.Write(tile.LightG);
-                    writer.Write(tile.LightB);
-                }
-            }
-        }
-
-        File.WriteAllBytes(path, ms.ToArray());
-    }
-
-    private static void SaveInfFile(string path, MapData mapData)
-    {
-        using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms);
-
-        // Header: 5 x Int16 = 10 bytes
-        for (int i = 0; i < 5; i++) writer.Write((short)0);
-
-        int w = Math.Min(mapData.Width, 100);
-        int h = Math.Min(mapData.Height, 100);
-
-        for (int y = 1; y <= h; y++)
-        {
-            for (int x = 1; x <= w; x++)
-            {
-                ref var tile = ref mapData.Tiles[x, y];
-                byte byFlags = 0;
-                if (tile.ExitMap > 0) byFlags |= 1;
-                if (tile.NpcIndex > 0) byFlags |= 2;
-                if (tile.ObjIndex > 0) byFlags |= 4;
-
-                writer.Write(byFlags);
-                if (tile.ExitMap > 0)
-                {
-                    writer.Write(tile.ExitMap);
-                    writer.Write(tile.ExitX);
-                    writer.Write(tile.ExitY);
-                }
-                if (tile.NpcIndex > 0) writer.Write(tile.NpcIndex);
-                if (tile.ObjIndex > 0)
-                {
-                    writer.Write(tile.ObjIndex);
-                    writer.Write(tile.ObjAmount);
-                }
-            }
-        }
-
-        File.WriteAllBytes(path, ms.ToArray());
-    }
+    #region Save Metadata (.dat)
 
     private static void SaveDatFile(string path, MapData mapData)
     {
@@ -545,8 +466,8 @@ public static class MapLoader
             $"G={mapData.AmbientG}",
             $"B={mapData.AmbientB}"
         };
-        // Write with Latin-1 encoding to match ParseDatFile (File.ReadAllLines with iso-8859-1)
-        File.WriteAllLines(path, lines, System.Text.Encoding.GetEncoding("iso-8859-1"));
+        // Write with Latin-1 encoding to match LoadDatFile.
+        File.WriteAllLines(path, lines, Encoding.Latin1);
     }
 
     #endregion

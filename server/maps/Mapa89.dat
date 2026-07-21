@@ -1,16 +1,12 @@
-[Mapa89]
+[MAPA89]
 Name=Newbie Dungeon
 MusicNum=172
-StartPos=0-0-0
-MagiaSinEfecto=0
-InviSinEfecto=0
-ResuSinEfecto=0
-NoEncriptarMP=0
 Pk=1
+BackUp=1
 Terreno=BOSQUE
 Zona=NWDV
-Restringir=Si
-BACKUP= 1
+RestringirNavegar=0
+NoEncriptarMP=0
 R=200
 G=200
 B=200

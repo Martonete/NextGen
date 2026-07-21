@@ -75,6 +75,14 @@ pub fn write_user_name_list(names: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
+/// ID 106: Show party form.
+pub fn write_show_party_form(p_type: u8) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::ShowPartyForm.to_byte());
+    pkt.write_byte(p_type);
+    pkt.into_bytes()
+}
+
 /// ID 130: Safe mode on.
 pub fn write_safe_on() -> Vec<u8> {
     let mut pkt = ByteQueue::new();

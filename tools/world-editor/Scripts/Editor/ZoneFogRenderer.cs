@@ -321,17 +321,51 @@ public class ZoneFogRenderer
     public void Cleanup()
     {
         foreach (var s in _humoSprites)
-            if (GodotObject.IsInstanceValid(s)) s.QueueFree();
+        {
+            if (!GodotObject.IsInstanceValid(s)) continue;
+            var material = s.Material;
+            s.Material = null;
+            s.Texture = null;
+            SafeDispose(material);
+            s.QueueFree();
+        }
         _humoSprites.Clear();
+
+        foreach (var img in _humoMaskImages)
+            SafeDispose(img);
         _humoMaskImages.Clear();
+
+        foreach (var tex in _humoMaskTextures)
+            SafeDispose(tex);
         _humoMaskTextures.Clear();
-        if (_zoneSprite != null && GodotObject.IsInstanceValid(_zoneSprite)) _zoneSprite.QueueFree();
+
+        if (_zoneSprite != null && GodotObject.IsInstanceValid(_zoneSprite))
+        {
+            var material = _zoneSprite.Material;
+            _zoneSprite.Material = null;
+            _zoneSprite.Texture = null;
+            SafeDispose(material);
+            _zoneSprite.QueueFree();
+        }
         _zoneSprite = null;
         _parent = null;
+
+        SafeDispose(_zoneMaskImage);
+        SafeDispose(_zoneMaskTexture);
+        SafeDispose(_canvasTexture);
+        SafeDispose(_noiseTexture);
+
         _zoneMaskImage = null;
         _zoneMaskTexture = null;
         _canvasTexture = null;
         _shader = null;
         _noiseTexture = null;
+    }
+
+    private static void SafeDispose(GodotObject? obj)
+    {
+        if (obj == null) return;
+        if (!GodotObject.IsInstanceValid(obj)) return;
+        obj.Dispose();
     }
 }

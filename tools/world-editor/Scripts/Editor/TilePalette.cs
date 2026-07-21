@@ -384,6 +384,16 @@ public partial class TilePalette : VBoxContainer
 
     public int PreviewPreloadTotal => Catalog?.AllRefs.Count ?? 0;
 
+    public void Cleanup()
+    {
+        foreach (var preview in _previewCache.Values)
+            SafeDispose(preview);
+
+        _previewCache.Clear();
+        _gridButtons.Clear();
+        _categoryButtons.Clear();
+    }
+
     /// <summary>
     /// Public accessor for preview textures (used by right sidebar).
     /// </summary>
@@ -485,5 +495,12 @@ public partial class TilePalette : VBoxContainer
         atlas.Atlas = srcTex;
         atlas.Region = new Rect2(grh.SX, grh.SY, cropW, cropH);
         return atlas;
+    }
+
+    private static void SafeDispose(GodotObject? obj)
+    {
+        if (obj == null) return;
+        if (!GodotObject.IsInstanceValid(obj)) return;
+        obj.Dispose();
     }
 }

@@ -40,6 +40,26 @@ public static partial class CharRenderer
 	private static readonly Vector2[] _shadowVerts = new Vector2[4];
 	private static readonly Color[] _shadowColors = new Color[4];
 
+	private readonly struct AuraDrawData
+	{
+		public AuraDrawData(int grhIndex, int frame, Vector2 position, Color color, float angle, bool rotating)
+		{
+			GrhIndex = grhIndex;
+			Frame = frame;
+			Position = position;
+			Color = color;
+			Angle = angle;
+			Rotating = rotating;
+		}
+
+		public int GrhIndex { get; }
+		public int Frame { get; }
+		public Vector2 Position { get; }
+		public Color Color { get; }
+		public float Angle { get; }
+		public bool Rotating { get; }
+	}
+
 	/// <summary>
 	/// Fade speed: characters transition from visible to invisible over ~250ms.
 	/// Rate = 1.0 / 250ms = 4.0 per second.
@@ -479,31 +499,37 @@ public static partial class CharRenderer
 		WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
 		GameData data, int auraIndex, ref float angle, double globalTimeMs, float alphaOverride = 1f)
 	{
-		if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
+		if (!TryBuildAuraDraw(data, auraIndex, pos, headOffset, globalTimeMs, alphaOverride, out var draw))
+			return;
+
+		if (draw.Rotating)
+			angle = draw.Angle;
+
+		worldRenderer.QueueAuraDraw(draw.GrhIndex, draw.Frame, draw.Position, draw.Color, draw.Angle);
+	}
+
+	private static bool TryBuildAuraDraw(
+		GameData data, int auraIndex, Vector2 pos, Vector2 headOffset,
+		double globalTimeMs, float alpha, out AuraDrawData draw)
+	{
+		draw = default;
+		if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return false;
 
 		var aura = data.Auras[auraIndex];
-		if (aura.GrhIndex <= 0) return;
+		if (aura.GrhIndex <= 0) return false;
 
-		// VB6: Giratoria — 0.004 rad/frame at ~24fps = ~0.096 rad/sec.
-		// Use absolute time so rotation speed is FPS-independent.
-		if (aura.Giratoria)
-		{
-			angle = (float)(globalTimeMs * 0.000096 % 180.0);
-		}
+		float drawAngle = aura.Giratoria ? CalculateAuraAngle(globalTimeMs) : 0f;
+		int frame = GetTimedGrhFrame(data, aura.GrhIndex, globalTimeMs);
+		var position = new Vector2(pos.X + headOffset.X, pos.Y + headOffset.Y + 72 - aura.Offset);
+		var color = new Color(ByteToFloat.Table[aura.R], ByteToFloat.Table[aura.G], ByteToFloat.Table[aura.B], alpha);
+		draw = new AuraDrawData(aura.GrhIndex, frame, position, color, drawAngle, aura.Giratoria);
+		return true;
+	}
 
-		// VB6 position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - offset
-		float auraX = pos.X + headOffset.X;
-		float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
-
-		// VB6 color: static R,G,B. Alpha reduced when invisible (pulsing with body).
-		Color color = new Color(ByteToFloat.Table[aura.R], ByteToFloat.Table[aura.G], ByteToFloat.Table[aura.B], alphaOverride);
-
-		int grhIndex = aura.GrhIndex;
-		int frame = GetTimedGrhFrame(data, grhIndex, globalTimeMs);
-
-		// Queue to WorldRenderer's aura additive layer
-		worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
-									 aura.Giratoria ? angle : 0f);
+	private static float CalculateAuraAngle(double globalTimeMs)
+	{
+		// VB6: Giratoria, 0.004 rad/frame at ~24 FPS = ~0.096 rad/sec.
+		return (float)(globalTimeMs * 0.000096 % 180.0);
 	}
 
 	private static int GetTimedGrhFrame(GameData data, int grhIndex, double globalTimeMs)

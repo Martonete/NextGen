@@ -386,7 +386,18 @@ public class LightRenderer
     public void Cleanup()
     {
         if (_sprite != null && GodotObject.IsInstanceValid(_sprite))
+        {
+            _sprite.Material = null;
+            _sprite.Texture = null;
             _sprite.QueueFree();
+        }
+
+        SafeDispose(_material);
+        SafeDispose(_canvasTexture);
+        SafeDispose(_maskImage);
+        SafeDispose(_maskTexture);
+        SafeDispose(_rng);
+
         _sprite = null;
         _material = null;
         _canvasTexture = null;
@@ -399,5 +410,12 @@ public class LightRenderer
         _lastMap = null;
         _lastMapW = -1;
         _lastMapH = -1;
+    }
+
+    private static void SafeDispose(GodotObject? obj)
+    {
+        if (obj == null) return;
+        if (!GodotObject.IsInstanceValid(obj)) return;
+        obj.Dispose();
     }
 }

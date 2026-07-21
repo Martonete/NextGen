@@ -230,6 +230,7 @@ pub enum ServerPacketID {
     AddSlots = 103,
     MultiMessage = 104,
     CancelOfferItem = 105,
+    ShowPartyForm = 106,
     HeadingChange = 107,
     Arrow = 108,
     NavigateBroadcast = 109,

@@ -70,6 +70,9 @@ public partial class WorldRenderer : Node2D
 	private bool _subpixelCamera;
 	public void SetSubpixelCamera(bool enabled) => _subpixelCamera = enabled;
 
+	private bool _clampCameraToMap;
+	public void SetClampCameraToMap(bool enabled) => _clampCameraToMap = enabled;
+
 	// Viewport dimensions — dynamic, read from ResolutionManager
 	private int ViewportWidth => _renderWindowOverride?.X ?? ResolutionManager.ViewportW;
 	private int ViewportHeight => _renderWindowOverride?.Y ?? ResolutionManager.ViewportH;
@@ -627,9 +630,18 @@ void fragment() {
 		return new Vector2(px, py);
 	}
 
-	private void ApplyCameraClamp(int rawUserX, int rawUserY, float rawPixelOffsetX, float rawPixelOffsetY,
-								  int mapW, int mapH)
+	private void ApplyCamera(int rawUserX, int rawUserY, float rawPixelOffsetX, float rawPixelOffsetY,
+							 int mapW, int mapH)
 	{
+		if (!_clampCameraToMap)
+		{
+			_frameUserX = rawUserX;
+			_frameUserY = rawUserY;
+			_framePixelOffsetX = rawPixelOffsetX;
+			_framePixelOffsetY = rawPixelOffsetY;
+			return;
+		}
+
 		float originX = (rawUserX - HalfWindowTileWidth) * TileSize - rawPixelOffsetX;
 		float originY = (rawUserY - HalfWindowTileHeight) * TileSize - rawPixelOffsetY;
 
@@ -761,7 +773,7 @@ void fragment() {
 		// keeps the fraction for a smooth continuous pan (see _subpixelCamera).
 		float rawPixelOffsetX = _subpixelCamera ? -_state.ScreenOffsetX : (float)Math.Round(-_state.ScreenOffsetX);
 		float rawPixelOffsetY = _subpixelCamera ? -_state.ScreenOffsetY : (float)Math.Round(-_state.ScreenOffsetY);
-		ApplyCameraClamp(rawUserX, rawUserY, rawPixelOffsetX, rawPixelOffsetY, mapW, mapH);
+		ApplyCamera(rawUserX, rawUserY, rawPixelOffsetX, rawPixelOffsetY, mapW, mapH);
 
 		BuildCharPositionIndex();
 

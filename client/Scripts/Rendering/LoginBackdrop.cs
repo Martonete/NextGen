@@ -103,6 +103,7 @@ public partial class LoginBackdrop : Control
 		_renderer.Init(_state, data, _animator, resources);
 		_renderer.SetRenderWindow(size);
 		_renderer.SetSubpixelCamera(true);
+		_renderer.SetClampCameraToMap(true);
 		_renderer.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
 		world.AddChild(_renderer);
 

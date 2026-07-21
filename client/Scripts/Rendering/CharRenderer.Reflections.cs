@@ -153,35 +153,27 @@ public static partial class CharRenderer
             mirrorAdj = -4f; // all races: pull mirror 4px closer to body
         float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA, mirrorY, globalTimeMs);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW, mirrorY, globalTimeMs);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE, mirrorY, globalTimeMs);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR, mirrorY, globalTimeMs);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC, mirrorY, globalTimeMs);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, mirrorY, globalTimeMs);
     }
 
     private static void CollectSingleReflAura(
         WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
-        GameData data, int auraIndex, float angle, float mirrorY, double globalTimeMs)
+        GameData data, int auraIndex, float mirrorY, double globalTimeMs)
     {
-        if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
-        var aura = data.Auras[auraIndex];
-        if (aura.GrhIndex <= 0) return;
-
-        int grhIndex = aura.GrhIndex;
-        int frame = GetTimedGrhFrame(data, grhIndex, globalTimeMs);
+        if (!TryBuildAuraDraw(data, auraIndex, pos, headOffset, globalTimeMs, 0.25f, out var draw))
+            return;
 
         // Pass the NORMAL aura position (with Offset) + mirrorAdj-adjusted mirrorY.
         // The DrawSetTransform mirror naturally reverses the Offset direction:
         //   Offset=0  -> closest to reflected body
         //   Offset=30 -> further from reflected body
         // mirrorAdj ensures the aura's mirror line matches the body's.
-        float auraX = pos.X + headOffset.X;
-        float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
-        Color color = new Color(ByteToFloat.Table[aura.R], ByteToFloat.Table[aura.G], ByteToFloat.Table[aura.B], 0.25f);
-
-        worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
-                                         aura.Giratoria ? angle : 0f, mirrorY);
+        worldRenderer.QueueReflAuraDraw(draw.GrhIndex, draw.Frame, draw.Position, draw.Color,
+                                         draw.Angle, mirrorY);
     }
 }

@@ -1,4 +1,5 @@
-// Integration tests disabled — require PostgreSQL. TODO: add DB-backed tests.
+// Integration tests require PostgreSQL and are intentionally gated behind
+// the `_db_integration_tests` feature.
 // See git history for the original file-based test suite.
 #[cfg(test)]
 mod tests {

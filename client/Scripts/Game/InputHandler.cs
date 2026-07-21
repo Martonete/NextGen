@@ -416,10 +416,15 @@ public class InputHandler
 	/// <summary>
 	/// Convert viewport pixel position to world tile coordinates.
 	/// </summary>
-	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
+	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos)
 	{
-		int tileX = userX + (int)viewportPos.X / 32 - ResolutionManager.HalfTilesX;
-		int tileY = userY + (int)viewportPos.Y / 32 - ResolutionManager.HalfTilesY;
+		int cameraUserX = _state.UserPosX - _state.AddToUserPosX;
+		int cameraUserY = _state.UserPosY - _state.AddToUserPosY;
+		float pixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
+		float pixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
+
+		int tileX = (int)Math.Floor((viewportPos.X - pixelOffsetX) / 32f + cameraUserX - ResolutionManager.HalfTilesX);
+		int tileY = (int)Math.Floor((viewportPos.Y - pixelOffsetY) / 32f + cameraUserY - ResolutionManager.HalfTilesY);
 		return (tileX, tileY);
 	}
 
@@ -463,26 +468,26 @@ public class InputHandler
 			&& viewportPos.Y >= coreTop && viewportPos.Y < coreTop + 416;
 	}
 
-	public void HandleLeftClick(Vector2 viewportPos, int userX, int userY)
+	public void HandleLeftClick(Vector2 viewportPos)
 	{
 		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
-		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
+		var (tileX, tileY) = ViewportToTile(viewportPos);
 		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY, _state.CoordCipher));
 	}
 
-	public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
+	public void HandleRightClick(Vector2 viewportPos)
 	{
 		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
-		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
+		var (tileX, tileY) = ViewportToTile(viewportPos);
 		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY, _state.CoordCipher));
 	}
 
-	public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
+	public void HandleSpellClick(Vector2 viewportPos)
 	{
 		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
-		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
+		var (tileX, tileY) = ViewportToTile(viewportPos);
 		if (IsInMapBounds(tileX, tileY))
 		{
 			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((short)tileX, (short)tileY, (byte)_state.UsingSkill, _state.CoordCipher));
@@ -490,9 +495,9 @@ public class InputHandler
 		}
 	}
 
-	public void HandleGmTeleport(Vector2 viewportPos, int userX, int userY, int currentMap)
+	public void HandleGmTeleport(Vector2 viewportPos, int currentMap)
 	{
-		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
+		var (tileX, tileY) = ViewportToTile(viewportPos);
 		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteTalk($"/TELEP YO {currentMap} {tileX} {tileY}"));
 	}

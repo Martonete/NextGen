@@ -25,6 +25,7 @@ public partial class MapViewport : Control
     public Action? OnPendingCancel;   // Fire when user clicks ✗ on pending placement
     public Action? OnSelectionCompleted; // Fire when a drag-selection is released
     public Action? OnLightEditRequested; // Fire when double-click on light with Light tool
+    public Action<int, int, bool>? OnExitTilePicked; // x, y, erase
     /// <summary>Fires when user double-clicks on an advanced light with Luz+ tool.
     /// Payload is the index into Map.LightData.Lights. EditorMain wires this to
     /// LightToolPanel.SelectedLightIndex + RefreshFromMap().</summary>
@@ -133,6 +134,32 @@ public partial class MapViewport : Control
 
         _zoneFog.AttachTo(this);
         _lightRenderer.AttachTo(this);
+    }
+
+    public void Cleanup()
+    {
+        _particlePreviewStream = null;
+
+        if (_particleOverlay != null)
+        {
+            _particleOverlay.Viewport = null;
+            var material = _particleOverlay.Material;
+            _particleOverlay.Material = null;
+            SafeDispose(material);
+            if (GodotObject.IsInstanceValid(_particleOverlay))
+                _particleOverlay.QueueFree();
+            _particleOverlay = null;
+        }
+
+        _zoneFog.Cleanup();
+        _lightRenderer.Cleanup();
+    }
+
+    private static void SafeDispose(GodotObject? obj)
+    {
+        if (obj == null) return;
+        if (!GodotObject.IsInstanceValid(obj)) return;
+        obj.Dispose();
     }
 
     /// <summary>Request a CPU per-tile lighting rebuild on the next draw.</summary>
@@ -1820,6 +1847,12 @@ public partial class MapViewport : Control
                 EraseFogAt(tile.X, tile.Y);
                 return;
             }
+            if (mb.Pressed && State?.ActiveTool == EditorTool.Exit)
+            {
+                var tile = ScreenToTile(mb.Position);
+                OnExitTilePicked?.Invoke(tile.X, tile.Y, true);
+                return;
+            }
             if (State?.ActiveTool == EditorTool.Trigger)
             {
                 if (mb.Pressed)
@@ -2110,9 +2143,7 @@ public partial class MapViewport : Control
                         PaintFogAt(tile.X, tile.Y);
                         break;
                     case EditorTool.Exit:
-                        State.ShowTileProperties = true;
-                        State.PropTileX = tile.X;
-                        State.PropTileY = tile.Y;
+                        OnExitTilePicked?.Invoke(tile.X, tile.Y, false);
                         break;
                     case EditorTool.Trigger:
                         _isPainting = true;

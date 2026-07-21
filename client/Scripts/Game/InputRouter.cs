@@ -323,7 +323,7 @@ public class InputRouter
         // Right-click: send packet to server (VB6 behavior — no context menu)
         if (mb.Pressed && mb.ButtonIndex == MouseButton.Right)
         {
-            InputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
+            InputHandler?.HandleRightClick(viewPos);
             viewport.SetInputAsHandled();
             return;
         }
@@ -333,7 +333,7 @@ public class InputRouter
         {
             if (mb.DoubleClick)
             {
-                InputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
+                InputHandler?.HandleRightClick(viewPos);
                 _dblClickHandled = true;
                 viewport.SetInputAsHandled();
                 return;
@@ -341,7 +341,7 @@ public class InputRouter
 
             if (mb.ShiftPressed && _state.Privileges >= 1)
             {
-                InputHandler?.HandleGmTeleport(viewPos, _state.UserPosX, _state.UserPosY, _state.CurrentMap);
+                InputHandler?.HandleGmTeleport(viewPos, _state.CurrentMap);
                 _dblClickHandled = true;
                 viewport.SetInputAsHandled();
                 return;
@@ -362,12 +362,12 @@ public class InputRouter
             {
                 if (_state.UsingSkill > 0)
                 {
-                    InputHandler?.HandleSpellClick(viewPos, _state.UserPosX, _state.UserPosY);
+                    InputHandler?.HandleSpellClick(viewPos);
                     Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
                 }
                 else
                 {
-                    InputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
+                    InputHandler?.HandleLeftClick(viewPos);
                 }
             }
             // Right-click release: no action (press already handled above)

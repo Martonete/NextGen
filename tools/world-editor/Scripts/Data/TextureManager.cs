@@ -199,9 +199,21 @@ public class TextureManager
     /// <summary>Free all cached textures to release GPU memory.</summary>
     public void Cleanup()
     {
+        foreach (var texture in _cache.Values)
+            SafeDispose(texture);
+        foreach (var image in _imageCache.Values)
+            SafeDispose(image);
+
         _cache.Clear();
         _imageCache.Clear();
         _lruOrder.Clear();
         _lruNodes.Clear();
+    }
+
+    private static void SafeDispose(GodotObject? obj)
+    {
+        if (obj == null) return;
+        if (!GodotObject.IsInstanceValid(obj)) return;
+        obj.Dispose();
     }
 }

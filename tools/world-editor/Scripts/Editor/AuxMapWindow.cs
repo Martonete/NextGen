@@ -159,7 +159,16 @@ public partial class AuxMapWindow : Window
             return;
         }
 
-        _auxMap = MapLoader.Load(_mapDir, mapNumber);
+        try
+        {
+            _auxMap = MapLoader.Load(_mapDir, mapNumber);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[AuxMap] Error loading Mapa{mapNumber}: {ex}");
+            SetStatus($"ERROR al cargar Mapa {mapNumber}: {ex.Message}");
+            return;
+        }
         _auxState.ClearSelection();
         _auxState.Zoom = 1f;
         _auxState.CameraOffset = Vector2.Zero;

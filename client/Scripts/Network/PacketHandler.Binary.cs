@@ -413,7 +413,7 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.ShowPartyForm: // 106
                 {
-                    byte pType = bq.ReadByte();
+                    byte pType = bq.Available > 0 ? bq.ReadByte() : (byte)0;
                     _state.PartyPanelType = pType;
                     _state.ShowPartyPanel = true;
                 }

@@ -44,12 +44,12 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.exp = 0;
             }
-            return;
+            break;
         }
 
         let exp_needed = state.exp_for_level(level);
         if exp_needed <= 0 || exp < exp_needed {
-            return;
+            break;
         }
 
         // ══════════════════════════════════════════════════════════════

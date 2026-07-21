@@ -34,6 +34,7 @@ public static class MapLoader
             string aoinfRelPath = $"Maps/Mapa{mapNumber}.aoinf";
             if (resources.Exists(aoinfRelPath))
                 LoadAoInfFile(resources, aoinfRelPath, mapData);
+            LoadFogMetadata(resources, mapNumber, mapData);
             return mapData;
         }
 
@@ -49,7 +50,44 @@ public static class MapLoader
         if (resources.Exists(infRelPath))
             LoadInfFile(resources, infRelPath, legacy);
 
+        LoadFogMetadata(resources, mapNumber, legacy);
         return legacy;
+    }
+
+    private static void LoadFogMetadata(IResourceProvider resources, int mapNumber, MapData mapData)
+    {
+        string fogRelPath = $"Maps/Mapa{mapNumber}.aofog";
+        mapData.FogFreeSmoke = false;
+        if (!resources.Exists(fogRelPath))
+            return;
+
+        try
+        {
+            using var reader = new StringReader(Encoding.UTF8.GetString(resources.ReadBytes(fogRelPath)));
+            string? rawLine;
+            while ((rawLine = reader.ReadLine()) != null)
+            {
+                string line = rawLine.Trim();
+                if (line.Length == 0 || line[0] == ';' || line[0] == '#')
+                    continue;
+
+                int eq = line.IndexOf('=');
+                if (eq <= 0)
+                    continue;
+
+                string key = line[..eq].Trim();
+                if (!key.Equals("FreeSmoke", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string value = line[(eq + 1)..].Trim();
+                mapData.FogFreeSmoke = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MapLoader] Could not load fog metadata {fogRelPath}: {ex.Message}");
+        }
     }
 
     // ── New format loaders ─────────────────────────────────────────
@@ -380,6 +418,7 @@ public class MapData
     public ChunkedTiles Tiles;
     public int Width;
     public int Height;
+    public bool FogFreeSmoke;
 
     public MapData(int width, int height)
     {
