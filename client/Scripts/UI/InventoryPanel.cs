@@ -39,6 +39,7 @@ public partial class InventoryPanel : Control
     private bool _dragPending;     // press happened but drag not yet activated (needs movement threshold)
     private const float DragThreshold = 6f; // pixels of movement before drag activates
     private bool _dirty = true;
+    private int _prevHoveredSlot = -1;
 
     // Tooltip label (set by Main.cs) — simple name display in bottom bar
     public Label? TooltipLabel;
@@ -104,9 +105,10 @@ public partial class InventoryPanel : Control
             QueueRedraw();
         }
 
-        if (_dirty || _hoveredSlot >= 0)
+        if (_dirty || _hoveredSlot != _prevHoveredSlot)
         {
             _dirty = false;
+            _prevHoveredSlot = _hoveredSlot;
             QueueRedraw();
         }
     }

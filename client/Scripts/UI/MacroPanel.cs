@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.UI;
@@ -145,7 +145,7 @@ public partial class MacroPanel : RpgBaseForm
             System.IO.File.WriteAllText(_macroFilePath, sb.ToString());
             GD.Print($"[MACRO] Saved macros to {_macroFilePath}");
 
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = "Macros guardados correctamente.",
                 Color = "00FF00"

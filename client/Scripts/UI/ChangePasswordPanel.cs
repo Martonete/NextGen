@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
 
@@ -105,7 +105,7 @@ public partial class ChangePasswordPanel : RpgBaseForm
 
         _tcp.SendPacket(ClientPackets.WriteTalk($"/PASSWD {current}@{newPass}"));
 
-        _state.ChatMessages.Enqueue(new ChatMessage
+        _state.EnqueueChat(new ChatMessage
         {
             Text = "Solicitud de cambio de contraseña enviada.",
             Color = "00FF00"

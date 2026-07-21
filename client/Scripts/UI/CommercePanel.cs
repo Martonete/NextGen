@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -454,7 +454,7 @@ public partial class CommercePanel : RpgBaseForm
         long totalCost = item.Price * qty;
         if (_state.Gold < totalCost)
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = "No tienes suficiente oro.", Color = "FF0000" });
+            _state.EnqueueChat(new ChatMessage { Text = "No tienes suficiente oro.", Color = "FF0000" });
             return;
         }
 
@@ -471,7 +471,7 @@ public partial class CommercePanel : RpgBaseForm
 
         if (inv.Equipped)
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = "No puedes vender un objeto equipado.", Color = "FF0000" });
+            _state.EnqueueChat(new ChatMessage { Text = "No puedes vender un objeto equipado.", Color = "FF0000" });
             return;
         }
 

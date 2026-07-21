@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -33,7 +33,8 @@ public partial class PacketHandler
     private void HandleBinDisconnect(ByteQueue bq)
     {
         _state.IsLogged = false;
-        OnServerDisconnect?.Invoke("El servidor cerró la conexión.");
+        _state.PendingDisconnect = true;
+        _state.DisconnectReason = "El servidor cerró la sesión.";
     }
 
 
@@ -54,8 +55,7 @@ public partial class PacketHandler
 
     private void HandleBinUserIndex(ByteQueue bq)
     {
-        short index = bq.ReadInteger();
-        _state.UserIndex = index;
+        _state.UserIndexInServer = bq.ReadInteger();
     }
 
 
@@ -83,8 +83,7 @@ public partial class PacketHandler
 
     private void HandleBinUserIndexAlt(ByteQueue bq)
     {
-        short index = bq.ReadInteger();
-        _state.UserIndex = index;
+        _state.UserIndexInServer = bq.ReadInteger();
     }
 
 
@@ -102,7 +101,7 @@ public partial class PacketHandler
         byte intel = bq.ReadByte();
         byte con = bq.ReadByte();
         byte cha = bq.ReadByte();
-        _state.ChatMessages.Enqueue(new ChatMessage
+        _state.EnqueueChat(new ChatMessage
         {
             Text = $"Dados: Fuerza={str} Agilidad={agi} Inteligencia={intel} Constitucion={con} Carisma={cha}",
             Color = "FFFF00"
@@ -117,7 +116,7 @@ public partial class PacketHandler
         byte intel = bq.ReadByte();
         byte con = bq.ReadByte();
         byte cha = bq.ReadByte();
-        _state.ChatMessages.Enqueue(new ChatMessage
+        _state.EnqueueChat(new ChatMessage
         {
             Text = $"Dados: Fuerza={str} Agilidad={agi} Inteligencia={intel} Constitucion={con} Carisma={cha}",
             Color = "FFFF00"

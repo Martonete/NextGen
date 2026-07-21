@@ -933,14 +933,11 @@ pub(super) async fn handle_whisper(
     }
 
     // Find target user
-    let target_id = state.find_user_by_name(target_name);
-
-    if target_id.is_none() {
+    let Some(target_id) = state.find_user_by_name(target_name) else {
         // User not found — send console message
         state.send_msg_id(conn_id, 196, "");
         return;
-    }
-    let target_id = target_id.unwrap();
+    };
 
     // Get target's display name
     let target_display = state

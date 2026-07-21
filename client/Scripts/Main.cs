@@ -1142,6 +1142,14 @@ public partial class Main : Control
 	{
 		if (_tcp == null || !_tcp.IsConnected || !_state.IsLogged) return false;
 
+		// Server-initiated disconnect (kick/ban via opcode 1)
+		if (_state.PendingDisconnect)
+		{
+			_state.PendingDisconnect = false;
+			HandleDisconnect(_state.DisconnectReason);
+			return true;
+		}
+
 		long now = (long)Time.GetTicksMsec();
 		long silentMs = now - _tcp.LastReceiveMs;
 		if (silentMs >= PostLoginTimeoutMs)

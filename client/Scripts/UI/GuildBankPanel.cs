@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -396,7 +396,7 @@ public partial class GuildBankPanel : RpgBaseForm
 
         if (inv.Equipped)
         {
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = "No podes depositar un objeto equipado.",
                 Color = "FF0000"

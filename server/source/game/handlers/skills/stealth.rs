@@ -252,9 +252,10 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             user.counter_oculto = 0;
         }
         // Broadcast visibility restoration to area
-        let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+        let Some(user_ref) = state.users.get(&conn_id) else { return; };
+        let cc = user_ref.build_cc_binary();
+        let cd = crate::game::handlers::common::build_cd_binary(user_ref);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
-        let cd = crate::game::handlers::common::build_cd_binary(state.users.get(&conn_id).unwrap());
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
         let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
         state.send_data_bytes(SendTarget::ToMap(map), &nover);

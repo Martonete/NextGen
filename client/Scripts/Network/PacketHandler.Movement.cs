@@ -25,7 +25,6 @@ public partial class PacketHandler
         _state.MapColorR = mapR;
         _state.MapColorG = mapG;
         _state.MapColorB = mapB;
-        GD.Print($"[NET] ChangeMap -> {mapNum} v{mapVersion} rgb=({mapR},{mapG},{mapB})");
 
         // Cancel macros on map change/teleport
         _state.SpellMacro.Stop();
@@ -48,8 +47,7 @@ public partial class PacketHandler
 
         _state.GroundObjects.Clear();
         _state.MapParticles.Clear();
-        _state.MapLights.Clear();
-        _state.MapLightIndex.Clear();
+        _state.ClearMapLights();
         _state.LightsDirty = true;
 
         _state.ScreenOffsetX = 0;
@@ -195,7 +193,6 @@ public partial class PacketHandler
             Name = name,
             Criminal = nickColor == 2,
             Privileges = privileges,
-            NpcNumber = charIndex != _state.UserCharIndex && string.IsNullOrEmpty(name) ? 1 : 0,
         };
 
         ch.Dead = IsDeadHead(head);
@@ -590,28 +587,6 @@ public partial class PacketHandler
     }
 
     /// <summary>
-    /// SpellBeam (ID 198) — cosmetic light beam from caster to target on spell cast.
-    /// Wire: i16 casterIndex, i16 targetIndex. Purely visual; endpoints are re-read
-    /// live each frame from the char indexes, so no position is stored here.
-    /// </summary>
-    private void HandleBinSpellBeam(ByteQueue bq)
-    {
-        short casterIndex = bq.ReadInteger();
-        short targetIndex = bq.ReadInteger();
-
-        if (casterIndex == targetIndex) return;
-        if (!_state.Characters.ContainsKey(casterIndex)) return;
-        if (!_state.Characters.ContainsKey(targetIndex)) return;
-
-        _state.ActiveBeams.Add(new SpellBeam
-        {
-            CasterCharIndex = casterIndex,
-            TargetCharIndex = targetIndex,
-            JitterSeed = System.Environment.TickCount + casterIndex * 31 + targetIndex,
-        });
-    }
-
-    /// <summary>
     /// NavigateBroadcast (ID 109) — broadcast navigation state for a char (NVG opcode).
     /// Wire: i16 charIndex, bool navigating
     /// </summary>
@@ -689,11 +664,14 @@ public partial class PacketHandler
         bool levitando = bq.ReadBoolean();
         byte ranking = bq.ReadByte();
 
-        if (TryGetCharacterForVisualUpdate(idx, out var ch))
+        if (_state.Characters.TryGetValue(idx, out var ch))
         {
-            ApplyCharacterAuras(ch, auraA, auraW, auraE, auraR, auraC);
+            ch.AuraIndexA = auraA;
+            ch.AuraIndexW = auraW;
+            ch.AuraIndexE = auraE;
+            ch.AuraIndexR = auraR;
+            ch.AuraIndexC = auraC;
             ch.Levitating = levitando;
-            OnVisualStateChanged?.Invoke();
         }
     }
 
@@ -707,47 +685,14 @@ public partial class PacketHandler
         short auraR = bq.ReadInteger();
         short auraC = bq.ReadInteger();
 
-        if (TryGetCharacterForVisualUpdate(idx, out var ch))
+        if (_state.Characters.TryGetValue(idx, out var ch))
         {
-            ApplyCharacterAuras(ch, auraA, auraW, auraE, auraR, auraC);
-            OnVisualStateChanged?.Invoke();
-            GD.Print($"[NET] AuraUpdate char={idx} a={auraA} w={auraW} e={auraE} r={auraR} c={auraC}");
+            ch.AuraIndexA = auraA;
+            ch.AuraIndexW = auraW;
+            ch.AuraIndexE = auraE;
+            ch.AuraIndexR = auraR;
+            ch.AuraIndexC = auraC;
         }
-        else
-        {
-            GD.PrintErr($"[NET] AuraUpdate ignored: char={idx} not found, self={_state.UserCharIndex}, chars={_state.Characters.Count}");
-        }
-    }
-
-    private bool TryGetCharacterForVisualUpdate(short idx, out Character ch)
-    {
-        if (_state.Characters.TryGetValue(idx, out ch!))
-        {
-            return true;
-        }
-
-        if (idx == _state.UserCharIndex && _state.Characters.TryGetValue(_state.UserCharIndex, out ch!))
-        {
-            return true;
-        }
-
-        ch = null!;
-        return false;
-    }
-
-    private static void ApplyCharacterAuras(
-        Character ch,
-        short auraA,
-        short auraW,
-        short auraE,
-        short auraR,
-        short auraC)
-    {
-        ch.AuraIndexA = auraA;
-        ch.AuraIndexW = auraW;
-        ch.AuraIndexE = auraE;
-        ch.AuraIndexR = auraR;
-        ch.AuraIndexC = auraC;
     }
 
 
@@ -842,7 +787,6 @@ public partial class PacketHandler
     {
         short charIdx = bq.ReadInteger();
         short streamId = bq.ReadInteger();
-        GD.Print($"[NET] CharParticleCreate char={charIdx} stream={streamId}");
 
         if (streamId == 0)
         {
@@ -881,7 +825,6 @@ public partial class PacketHandler
         int x = bq.ReadInteger();
         int y = bq.ReadInteger();
         byte layer = bq.ReadByte();
-        GD.Print($"[NET] ParticleCreate group={particleGroup} pos=({x},{y}) layer={layer}");
         ParticleSystem.CreateMapStream(_state, particleGroup, x, y);
     }
 
@@ -903,33 +846,17 @@ public partial class PacketHandler
         byte r = bq.ReadByte();
         byte g = bq.ReadByte();
         byte b = bq.ReadByte();
-        // Dedup: the server may re-send LightCreate for the same tile (e.g. on
-        // re-entering a zone). Update the existing light in place instead of
-        // stacking duplicates — otherwise MapLights grows unbounded every frame,
-        // forcing a full lightmap recalc each time and leaking memory.
-        if (_state.MapLightIndex.Count != _state.MapLights.Count)
+        var light = new MapLight
         {
-            _state.MapLightIndex.Clear();
-            foreach (var light in _state.MapLights)
-                _state.MapLightIndex[(light.X, light.Y)] = light;
-        }
-
-        if (_state.MapLightIndex.TryGetValue((x, y), out var existing))
-        {
-            existing.Range = range;
-            existing.R = r; existing.G = g; existing.B = b;
-            existing.Active = true;
-        }
-        else
-        {
-            var light = new MapLight
-            {
-                X = x, Y = y, Range = range,
-                R = r, G = g, B = b, Active = true,
-            };
-            _state.MapLights.Add(light);
-            _state.MapLightIndex[(x, y)] = light;
-        }
+            X = x,
+            Y = y,
+            Range = range,
+            R = r,
+            G = g,
+            B = b,
+            Active = true
+        };
+        _state.AddOrUpdateMapLight(light);
         _state.LightsDirty = true;
     }
 
@@ -974,16 +901,27 @@ public partial class PacketHandler
         short zoneX2 = bq.ReadInteger();
         short zoneY2 = bq.ReadInteger();
 
-        byte ambR = bq.ReadByte();
-        byte ambG = bq.ReadByte();
-        byte ambB = bq.ReadByte();
+        // Optional ambient RGB (3 bytes appended by newer server versions)
+        byte ambR = 0, ambG = 0, ambB = 0;
+        if (bq.Available >= 3)
+        {
+            ambR = bq.ReadByte();
+            ambG = bq.ReadByte();
+            ambB = bq.ReadByte();
+        }
 
-        byte fogDensity = bq.ReadByte();
-        byte fogR = bq.ReadByte();
-        byte fogG = bq.ReadByte();
-        byte fogB = bq.ReadByte();
-        sbyte fogSpeedX = (sbyte)bq.ReadByte();
-        sbyte fogSpeedY = (sbyte)bq.ReadByte();
+        // Optional fog bytes (6 bytes appended by newer server versions)
+        byte fogDensity = 0, fogR = 128, fogG = 140, fogB = 160;
+        sbyte fogSpeedX = 5, fogSpeedY = 2;
+        if (bq.Available >= 6)
+        {
+            fogDensity = bq.ReadByte();
+            fogR = bq.ReadByte();
+            fogG = bq.ReadByte();
+            fogB = bq.ReadByte();
+            fogSpeedX = (sbyte)bq.ReadByte();
+            fogSpeedY = (sbyte)bq.ReadByte();
+        }
 
         _state.CurrentZoneName = zoneName;
         _state.CurrentZoneType = zoneType;

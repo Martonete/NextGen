@@ -97,6 +97,8 @@ public class GrhAnimator
 						_fxStates.Remove(key);
 						continue;
 					}
+					// Looping FX: wrap counter to prevent float precision loss over long sessions
+					state.FrameCounter %= grh.NumFrames;
 				}
 				_fxStates[key] = state;
 			}

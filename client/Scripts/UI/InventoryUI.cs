@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
@@ -157,7 +157,7 @@ public class InventoryUI
         {
             // VB6: frmMain.MousePointer = 2 (crosshair cursor)
             Input.SetDefaultCursorShape(Input.CursorShape.Cross);
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = "Haz click sobre el objetivo...",
                 Color = "6464B4"
@@ -174,7 +174,7 @@ public class InventoryUI
         if (_state.WorkMacro.Active)
         {
             _state.WorkMacro.Stop();
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = ">>MACRO DE TRABAJO DESACTIVADO<<",
                 Color = "FF0000"
@@ -185,7 +185,7 @@ public class InventoryUI
             int slot = _state.SelectedInvSlot;
             if (slot < 0 || slot >= _state.MaxInventorySlots || _state.Inventory[slot].ObjIndex <= 0)
             {
-                _state.ChatMessages.Enqueue(new ChatMessage
+                _state.EnqueueChat(new ChatMessage
                 {
                     Text = "Selecciona un objeto de trabajo primero.",
                     Color = "FF0000"
@@ -197,7 +197,7 @@ public class InventoryUI
             {
                 SendPacket?.Invoke(ClientPackets.WriteUseItem(serverSlot));
             });
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = $">>MACRO DE TRABAJO ACTIVADO<< ({_state.Inventory[slot].Name})",
                 Color = "00FF00"
@@ -213,7 +213,7 @@ public class InventoryUI
         if (_state.SpellMacro.Active)
         {
             _state.SpellMacro.Stop();
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = ">>MACRO DE HECHIZOS DESACTIVADO<<",
                 Color = "FF0000"
@@ -232,7 +232,7 @@ public class InventoryUI
             }
             if (spellSlot < 0)
             {
-                _state.ChatMessages.Enqueue(new ChatMessage
+                _state.EnqueueChat(new ChatMessage
                 {
                     Text = "No tienes hechizos disponibles.",
                     Color = "FF0000"
@@ -245,7 +245,7 @@ public class InventoryUI
             {
                 SendPacket?.Invoke(ClientPackets.WriteCastSpell(slot));
             });
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = $">>MACRO DE HECHIZOS ACTIVADO<< ({spellName})",
                 Color = "00FF00"

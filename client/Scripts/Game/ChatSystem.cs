@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using ArgentumNextgen.Network;
 using ArgentumNextgen.UI;
@@ -218,7 +218,7 @@ public class ChatSystem
         }
         string[] modeNames = { "Normal", "Gritar", "Clan", "Global", "Party", "Facción", "GM", "Privado" };
         string modeName = mode >= 0 && mode < modeNames.Length ? modeNames[mode] : "Normal";
-        _state.ChatMessages.Enqueue(new ChatMessage
+        _state.EnqueueChat(new ChatMessage
         {
             Text = $"Modo de habla: {modeName}",
             Color = "FFFFFF"

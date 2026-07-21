@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -464,7 +464,7 @@ public partial class VaultPanel : RpgBaseForm
 
         if (inv.Equipped)
         {
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = "No podes depositar el item porque lo estas usando.",
                 Color = "FF0000"

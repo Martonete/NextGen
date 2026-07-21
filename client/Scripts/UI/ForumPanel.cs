@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Collections.Generic;
 using ArgentumNextgen.Game;
@@ -338,7 +338,7 @@ public partial class ForumPanel : RpgBaseForm
 
         if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(body))
         {
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = "El titulo y el mensaje no pueden estar vacios.",
                 Color = "FF0000"
@@ -360,7 +360,7 @@ public partial class ForumPanel : RpgBaseForm
         // Return to post list
         ShowListView();
 
-        _state.ChatMessages.Enqueue(new ChatMessage
+        _state.EnqueueChat(new ChatMessage
         {
             Text = "Mensaje publicado.",
             Color = "00FF00"

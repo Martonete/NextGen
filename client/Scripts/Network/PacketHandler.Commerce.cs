@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -41,7 +41,7 @@ public partial class PacketHandler
     private void HandleBinCommerceChat(ByteQueue bq)
     {
         string chat = bq.ReadString();
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = "FFFFFF" });
+        _state.EnqueueChat(new ChatMessage { Text = chat, Color = "FFFFFF" });
     }
 
     // ── Stats ─────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ public partial class PacketHandler
         _state.PartnerTradeSlotCount = 0;
         _state.MyTradeGold = 0;
         _state.PartnerTradeGold = 0;
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = "Comercio exitoso.", Color = "00FF00" });
+        _state.EnqueueChat(new ChatMessage { Text = "Comercio exitoso.", Color = "00FF00" });
     }
 
 
@@ -272,7 +272,7 @@ public partial class PacketHandler
         string msg = tradeType == 0
             ? "Compra exitosa."
             : "Venta exitosa.";
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = "00FF00" });
+        _state.EnqueueChat(new ChatMessage { Text = msg, Color = "00FF00" });
     }
 
     // ── Tournament / Auction ──────────────────────────────────────
@@ -300,7 +300,7 @@ public partial class PacketHandler
     {
         string text = bq.ReadString();
         string name = bq.ReadString();
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "00FFFF" });
+        _state.EnqueueChat(new ChatMessage { Text = text, Color = "00FFFF" });
     }
 
 
@@ -388,7 +388,7 @@ public partial class PacketHandler
     private void HandleBinTradeChatLegacy(ByteQueue bq)
     {
         string chat = bq.ReadString();
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = "FFFFFF" });
+        _state.EnqueueChat(new ChatMessage { Text = chat, Color = "FFFFFF" });
     }
 
     // ── Guild ─────────────────────────────────────────────────────

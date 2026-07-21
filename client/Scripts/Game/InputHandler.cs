@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Godot;
 using ArgentumNextgen.Data;
@@ -234,7 +234,7 @@ public class InputHandler
 			string? path = ScreenshotManager.CaptureScreenshot();
 			if (path != null)
 			{
-				_state.ChatMessages.Enqueue(new ChatMessage
+				_state.EnqueueChat(new ChatMessage
 				{
 					Text = "Captura de pantalla guardada.",
 					Color = "00FF00"
@@ -310,19 +310,6 @@ public class InputHandler
 
 		int newX = ch.PosX + dx;
 		int newY = ch.PosY + dy;
-
-		bool edgeTransitionAttempt = IsOneStepOutsideMap(newX, newY);
-		bool currentTileExitAttempt = CurrentTileHasExit(ch.PosX, ch.PosY) && !LegalPos(newX, newY);
-
-		if (edgeTransitionAttempt || currentTileExitAttempt)
-		{
-			_state.WorkMacro.Stop();
-			_state.SpellMacro.Stop();
-			_tcp.SendPacket(ClientPackets.WriteWalk((byte)heading));
-			ch.Heading = heading;
-			GD.Print($"[MOVE] Map transition request heading={heading} from ({ch.PosX},{ch.PosY}) to ({newX},{newY})");
-			return;
-		}
 
 		if (LegalPos(newX, newY))
 		{
@@ -407,8 +394,6 @@ public class InputHandler
 
 		ref var tile = ref _state.MapData.Tiles[x, y];
 
-		if (tile.ExitMap > 0) return true;
-
 		if (tile.Blocked) return false;
 
 		foreach (var kvp in _state.Characters)
@@ -426,25 +411,6 @@ public class InputHandler
 			return false;
 
 		return true;
-	}
-
-	private bool IsOneStepOutsideMap(int x, int y)
-	{
-		int width = _state.MapData?.Width ?? 100;
-		int height = _state.MapData?.Height ?? 100;
-		int maxX = width - BorderMarginRight;
-		int maxY = height - BorderMarginBottom;
-		return (x == BorderMarginLeft - 1 && y >= BorderMarginTop && y <= maxY)
-			|| (x == maxX + 1 && y >= BorderMarginTop && y <= maxY)
-			|| (y == BorderMarginTop - 1 && x >= BorderMarginLeft && x <= maxX)
-			|| (y == maxY + 1 && x >= BorderMarginLeft && x <= maxX);
-	}
-
-	private bool CurrentTileHasExit(int x, int y)
-	{
-		if (_state.MapData == null || x < 1 || x > _state.MapData.Width || y < 1 || y > _state.MapData.Height)
-			return false;
-		return _state.MapData.Tiles[x, y].ExitMap > 0;
 	}
 
 	/// <summary>

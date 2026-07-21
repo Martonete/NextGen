@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -44,7 +44,7 @@ public partial class PacketHandler
         }
         else
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = hexColor, Type = ChatType.Global });
+            _state.EnqueueChat(new ChatMessage { Text = chat, Color = hexColor, Type = ChatType.Global });
         }
     }
 
@@ -60,14 +60,14 @@ public partial class PacketHandler
         else if (fontIndex == 25) type = ChatType.Party;
         else if (fontIndex == 27 || fontIndex == 31) type = ChatType.Clan;
         else if (fontIndex == 3 || fontIndex == 43 || fontIndex == 44 || fontIndex == 45) type = ChatType.Global;
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = color, Type = type });
+        _state.EnqueueChat(new ChatMessage { Text = chat, Color = color, Type = type });
     }
 
 
     private void HandleBinGuildChat(ByteQueue bq)
     {
         string chat = bq.ReadString();
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = "00FF00", Type = ChatType.Clan });
+        _state.EnqueueChat(new ChatMessage { Text = chat, Color = "00FF00", Type = ChatType.Clan });
     }
 
     // ── Character ─────────────────────────────────────────────────
@@ -101,13 +101,13 @@ public partial class PacketHandler
             else if (tmpl.FontId == 25) type = ChatType.Party;
             else if (tmpl.FontId == 27 || tmpl.FontId == 31) type = ChatType.Clan;
             else if (tmpl.FontId == 3 || tmpl.FontId == 43 || tmpl.FontId == 44 || tmpl.FontId == 45) type = ChatType.Global;
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color, Type = type });
+            _state.EnqueueChat(new ChatMessage { Text = text, Color = color, Type = type });
         }
         else
         {
             // Fallback: show raw
             string text = !string.IsNullOrEmpty(args) ? args : $"[MSG#{msgId}]";
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "45BE9C" });
+            _state.EnqueueChat(new ChatMessage { Text = text, Color = "45BE9C" });
         }
     }
 
@@ -116,7 +116,7 @@ public partial class PacketHandler
     {
         string msg = bq.ReadString();
         // GM broadcasts show in red bold in console
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = "FF0000", Type = ChatType.Global });
+        _state.EnqueueChat(new ChatMessage { Text = msg, Color = "FF0000", Type = ChatType.Global });
     }
 
     // ── Chat variants (binary) ──────────────────────────────────
@@ -138,7 +138,7 @@ public partial class PacketHandler
         }
         else
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = hexColor, Type = ChatType.Global });
+            _state.EnqueueChat(new ChatMessage { Text = msg, Color = hexColor, Type = ChatType.Global });
         }
     }
 
@@ -160,7 +160,7 @@ public partial class PacketHandler
         }
         else
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = hexColor, Type = ChatType.Global });
+            _state.EnqueueChat(new ChatMessage { Text = msg, Color = hexColor, Type = ChatType.Global });
         }
     }
 
@@ -170,7 +170,7 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Whisper });
+        _state.EnqueueChat(new ChatMessage { Text = msg, Color = color, Type = ChatType.Whisper });
     }
 
 
@@ -179,7 +179,7 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
+        _state.EnqueueChat(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
 
 
@@ -190,7 +190,7 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
+        _state.EnqueueChat(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
 
     // ── Guild ─────────────────────────────────────────────────────
@@ -227,7 +227,7 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
+        _state.EnqueueChat(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
 
     /// <summary>
@@ -336,7 +336,7 @@ public partial class PacketHandler
     {
         string sender = bq.ReadString();
         string msg = bq.ReadString();
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = $"[{sender}] {msg}", Color = "AAFFAA" });
+        _state.EnqueueChat(new ChatMessage { Text = $"[{sender}] {msg}", Color = "AAFFAA" });
     }
 
 
@@ -391,7 +391,8 @@ public partial class PacketHandler
     private void HandleBinPingRequest()
     {
         _state.PingSentMs = Time.GetTicksMsec();
-        OnSendPacket?.Invoke(ClientPackets.WritePong());
+        // Reply immediately with Pong (opcode 88) — 1-byte packet, no payload
+        SendPacket?.Invoke(new byte[] { ClientPacketId.Pong });
     }
 
     // ── Arena ─────────────────────────────────────────────────────

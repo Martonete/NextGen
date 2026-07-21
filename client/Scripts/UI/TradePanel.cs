@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -165,7 +165,7 @@ public partial class TradePanel : RpgBaseForm
         if (inv.ObjIndex <= 0 || inv.Amount <= 0) return;
         if (inv.Equipped)
         {
-            _state.ChatMessages.Enqueue(new ChatMessage
+            _state.EnqueueChat(new ChatMessage
             {
                 Text = "No puedes ofrecer un objeto equipado.",
                 Color = "FF0000"

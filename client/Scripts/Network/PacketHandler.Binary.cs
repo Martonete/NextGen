@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Reflection;
 using Godot;
 using ArgentumNextgen.Data;
@@ -510,19 +510,19 @@ public partial class PacketHandler
             // ── Safe / Combat state ───────────────────────────────
             case ServerPacketId.SafeOn: // 130
                 _state.SafeMode = true;
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = ">>SEGURO ACTIVADO<<", Color = "00FF00" });
+                _state.EnqueueChat(new ChatMessage { Text = ">>SEGURO ACTIVADO<<", Color = "00FF00" });
                 break;
             case ServerPacketId.SafeOff: // 131
                 _state.SafeMode = false;
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = ">>SEGURO DESACTIVADO<<", Color = "FF0000" });
+                _state.EnqueueChat(new ChatMessage { Text = ">>SEGURO DESACTIVADO<<", Color = "FF0000" });
                 break;
             case ServerPacketId.SafeResuOn: // 132
                 _state.SeguroResu = true;
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = ">>SEGURO DE RESURRECCION ACTIVADO<<", Color = "00FF00" });
+                _state.EnqueueChat(new ChatMessage { Text = ">>SEGURO DE RESURRECCION ACTIVADO<<", Color = "00FF00" });
                 break;
             case ServerPacketId.SafeResuOff: // 133
                 _state.SeguroResu = false;
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = ">>SEGURO DE RESURRECCION DESACTIVADO<<", Color = "FF0000" });
+                _state.EnqueueChat(new ChatMessage { Text = ">>SEGURO DE RESURRECCION DESACTIVADO<<", Color = "FF0000" });
                 break;
             case ServerPacketId.UserSwing: // 134
                 HandleBinUserSwing(bq);
@@ -531,7 +531,7 @@ public partial class PacketHandler
                 HandleBinUserHit(bq);
                 break;
             case ServerPacketId.NpcSwing: // 136
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura fallo el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
+                _state.EnqueueChat(new ChatMessage { Text = "La criatura fallo el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
                 break;
             case ServerPacketId.NpcHit: // 137
@@ -544,7 +544,7 @@ public partial class PacketHandler
                 HandleBinPvpDmgDeal(bq);
                 break;
             case ServerPacketId.UserMiss: // 140
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has fallado el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
+                _state.EnqueueChat(new ChatMessage { Text = "Has fallado el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
                 break;
             case ServerPacketId.YouDied: // 141
                 HandleBinDead();
@@ -670,7 +670,7 @@ public partial class PacketHandler
                 _state.PartnerTradeSlotCount = 0;
                 _state.MyTradeGold = 0;
                 _state.PartnerTradeGold = 0;
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Comercio cancelado.", Color = "FF0000" });
+                _state.EnqueueChat(new ChatMessage { Text = "Comercio cancelado.", Color = "FF0000" });
                 break;
 
             // ── Guild (legacy) ────────────────────────────────────

@@ -25,6 +25,11 @@ public partial class PacketHandler
 {
     private readonly GameState _state;
 
+    /// Callback to send a binary packet to the server (set by Main.cs).
+    public Func<byte[], bool>? OnSendPacket;
+    // Convenience: routes pong/keepalive from handler without caring about the return value.
+    private void SendPacket(byte[] data) => OnSendPacket?.Invoke(data);
+
     /// Callback to load the map immediately when CM is received.
     public Action? OnMapLoad;
 
@@ -47,19 +52,6 @@ public partial class PacketHandler
 
     /// Callback when an inventory slot changes (drop, pickup, equip, use).
     public Action? OnInventoryChanged;
-
-    /// Callback when a packet changes only render-side character state.
-    public Action? OnVisualStateChanged;
-
-    /// Callback when the server sends a day/night (NOC) update.
-    /// Argument = phase byte (0=day, 1=evening, 2=night).
-    public Action<byte>? OnDayPhaseChanged;
-
-    /// Callback to send a client packet immediately from an inbound handler.
-    public Func<byte[], bool>? OnSendPacket;
-
-    /// Callback when the server explicitly closes the session.
-    public Action<string>? OnServerDisconnect;
 
     // Meditation FX IDs — cleared when the character moves or the meditate toggle fires.
     // Each ID corresponds to a GRH animation played over the character while meditating:

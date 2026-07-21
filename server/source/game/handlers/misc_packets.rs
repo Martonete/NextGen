@@ -97,33 +97,16 @@ pub(super) async fn handle_skse(
             state.send_console(conn_id, "Puntos de skill invalidos.", font_index::INFO);
             return;
         }
-        for i in 0..22 {
-            if increments[i] > 0 && user.skills[i] + increments[i] > 100 {
-                state.send_console(conn_id, "No puedes superar 100 puntos en una skill.", font_index::INFO);
-                return;
-            }
-        }
     } else {
         return;
     }
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         for i in 0..22 {
-            user.skills[i] += increments[i];
+            let new_val = (user.skills[i] + increments[i]).min(100);
+            user.skills[i] = new_val;
         }
         user.skill_pts_libres -= total;
-    }
-
-    let refresh_packet = state.users.get(&conn_id).map(|user| {
-        binary_packets::write_send_skills(
-            &user.skills,
-            &user.exp_skills,
-            &user.elu_skills,
-            user.skill_pts_libres,
-        )
-    });
-    if let Some(pkt) = refresh_packet {
-        state.send_bytes(conn_id, &pkt);
     }
 
     state.send_console(
@@ -218,12 +201,8 @@ pub(super) async fn handle_desphe(
 /// DAMINF — Player stats form (send detailed info about a target player).
 pub(super) async fn handle_daminf(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
     // Find target user by name
-    let target_conn = state.online_names.get(&target_name.to_uppercase()).copied();
-    if target_conn.is_none() {
+    let Some(target_conn) = state.online_names.get(&target_name.to_uppercase()).copied() else {
         state.send_console(conn_id, "Usuario no encontrado.", font_index::INFO);
-        return;
-    }
-    let Some(target_conn) = target_conn else {
         return;
     };
 
@@ -307,9 +286,7 @@ pub(super) async fn handle_cabezi(state: &mut GameState, conn_id: ConnectionId, 
     }
 
     let (map, x, y, old_ci) = {
-        let Some(user) = state.users.get_mut(&conn_id) else {
-            return;
-        };
+        let Some(user) = state.users.get_mut(&conn_id) else { return; };
         user.gold -= cost;
         user.head = new_head;
         (user.pos_map, user.pos_x, user.pos_y, user.char_index.0)
@@ -317,20 +294,21 @@ pub(super) async fn handle_cabezi(state: &mut GameState, conn_id: ConnectionId, 
 
     // Update appearance for all nearby
     send_stats_gold(state, conn_id).await;
-    let Some(u) = state.users.get(&conn_id) else {
+    let cp = if let Some(u) = state.users.get(&conn_id) {
+        binary_packets::write_character_change(
+            old_ci as i16,
+            u.body as i16,
+            new_head as i16,
+            u.heading as u8,
+            u.weapon_anim as i16,
+            u.shield_anim as i16,
+            u.casco_anim as i16,
+            0,
+            0,
+        )
+    } else {
         return;
     };
-    let cp = binary_packets::write_character_change(
-        old_ci as i16,
-        u.body as i16,
-        new_head as i16,
-        u.heading as u8,
-        u.weapon_anim as i16,
-        u.shield_anim as i16,
-        u.casco_anim as i16,
-        0,
-        0,
-    );
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
     state.send_console(conn_id, "Cabeza cambiada.", font_index::INFO);
 }
@@ -594,7 +572,6 @@ pub(super) async fn handle_actualizar(state: &mut GameState, conn_id: Connection
 
 /// TENGOMACROS — Macro detection.
 pub(super) async fn handle_tengomacros(state: &mut GameState, conn_id: ConnectionId) {
-    let centinela_enabled = state.centinela_enabled;
     let (count, name) = if let Some(user) = state.users.get_mut(&conn_id) {
         user.tiene_macro += 1;
         (user.tiene_macro, user.char_name.clone())
@@ -613,15 +590,8 @@ pub(super) async fn handle_tengomacros(state: &mut GameState, conn_id: Connectio
             font_index::AMARILLO,
         );
 
-        let should_challenge = if let Some(user) = state.users.get_mut(&conn_id) {
+        if let Some(user) = state.users.get_mut(&conn_id) {
             user.tiene_macro = 0;
-            user.logged && user.privileges == privilege_level::USER && user.centinela_number == 0
-        } else {
-            false
-        };
-
-        if centinela_enabled && should_challenge {
-            super::parity_gm::send_centinela_challenge(state, conn_id);
         }
     }
 }
@@ -641,9 +611,7 @@ pub(super) async fn handle_sos_send(state: &mut GameState, conn_id: ConnectionId
         return;
     }
 
-    let Some(name) = state.users.get(&conn_id).map(|u| u.char_name.clone()) else {
-        return;
-    };
+    let Some(name) = state.users.get(&conn_id).map(|u| u.char_name.clone()) else { return; };
 
     // Notify admins
     state.send_msg_id_to(SendTarget::ToAdmins, 193, "");
@@ -813,11 +781,7 @@ pub(super) async fn handle_dydtra(
 
 /// DOWNSI — Cast spell by target name.
 pub(super) async fn handle_downsi(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
-    let target_conn = state.online_names.get(&target_name.to_uppercase()).copied();
-    if target_conn.is_none() {
-        return;
-    }
-    let Some(target_conn) = target_conn else {
+    let Some(target_conn) = state.online_names.get(&target_name.to_uppercase()).copied() else {
         return;
     };
 
