@@ -844,7 +844,14 @@ public partial class PacketHandler
         int x = bq.ReadInteger();
         int y = bq.ReadInteger();
         byte layer = bq.ReadByte();
-        ParticleSystem.CreateMapStream(_state, particleGroup, x, y);
+
+        // Skip if a stream for this tile+group already exists (loaded from map tile data on entry).
+        // The server re-sends PCF for every zone crossing — without this guard every movement
+        // across a 9-tile boundary duplicates all in-viewport particle streams.
+        bool alreadyExists = _state.MapParticles.Exists(s =>
+            s.CharIndex < 0 && s.MapX == x && s.MapY == y && s.DefIndex == particleGroup);
+        if (!alreadyExists)
+            ParticleSystem.CreateMapStream(_state, particleGroup, x, y);
     }
 
     /// <summary>
