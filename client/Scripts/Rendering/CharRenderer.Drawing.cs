@@ -25,7 +25,7 @@ public static partial class CharRenderer
     }
 
     private const int NameFontSize   = 11;
-    private const int DialogFontSize = 10;
+    private const int DialogFontSize = 11;
 
     /// <summary>
     /// Draw name + clan/rank above character. Vector font with drop shadow.
@@ -142,14 +142,33 @@ public static partial class CharRenderer
         }
         else
         {
-            var font2 = GetInWorldFont();
-            float asc2 = font2.GetAscent(DialogFontSize);
+            var font2     = GetInWorldFont();
+            float asc2    = font2.GetAscent(DialogFontSize);
             int lineSpacing = DialogFontSize + 5;
-            int offset = -lineSpacing * (numLines - 1);
+            const int padding = 5;
+
+            // Background
+            float maxW = 0f;
+            foreach (var line in lines)
+                maxW = MathF.Max(maxW, font2.GetStringSize(line, HorizontalAlignment.Left, -1, DialogFontSize).X);
+            int firstOffset = -lineSpacing * (numLines - 1);
+            float firstTop  = baseY + firstOffset + 2;
+            canvas.DrawRect(new Rect2(textCenterX - maxW / 2f - padding, firstTop - padding,
+                maxW + padding * 2, numLines * lineSpacing + padding * 2),
+                new Color(0.04f, 0.03f, 0.02f, 0.72f));
+
+            int offset = firstOffset;
             for (int i = 0; i < numLines; i++)
             {
                 float lineBaseY = baseY + offset + 2 + asc2;
-                DrawStringCentered(canvas, font2, DialogFontSize, textCenterX, lineBaseY, lines[i], color);
+                float w = font2.GetStringSize(lines[i], HorizontalAlignment.Left, -1, DialogFontSize).X;
+                float x = textCenterX - w / 2f;
+                Color ol = new Color(0f, 0f, 0f, color.A * 0.9f);
+                canvas.DrawString(font2, new Vector2(x - 1, lineBaseY),     lines[i], HorizontalAlignment.Left, -1, DialogFontSize, ol);
+                canvas.DrawString(font2, new Vector2(x + 1, lineBaseY),     lines[i], HorizontalAlignment.Left, -1, DialogFontSize, ol);
+                canvas.DrawString(font2, new Vector2(x,     lineBaseY - 1), lines[i], HorizontalAlignment.Left, -1, DialogFontSize, ol);
+                canvas.DrawString(font2, new Vector2(x,     lineBaseY + 1), lines[i], HorizontalAlignment.Left, -1, DialogFontSize, ol);
+                canvas.DrawString(font2, new Vector2(x,     lineBaseY),     lines[i], HorizontalAlignment.Left, -1, DialogFontSize, color);
                 offset += lineSpacing;
             }
         }

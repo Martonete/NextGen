@@ -689,25 +689,54 @@ public partial class WorldRenderer
 
     /// <summary>
     /// Draw pending dialog text on a given canvas (used by DialogOverlayLayer).
+    /// Each speech bubble gets a semi-transparent background + full outline for legibility.
     /// </summary>
     public void DrawPendingDialogs(CanvasItem canvas)
     {
         if (_pendingDialogDraws.Count == 0) return;
         var font = GetDialogFont();
-        const int fontSize = 10;
+        const int fontSize    = 11;
+        const int padding     = 5;
+        const int lineSpacing = fontSize + 5;
         float asc = font.GetAscent(fontSize);
-        int lineSpacing = fontSize + 5;
+        Color outline = new Color(0f, 0f, 0f, 0.9f);
 
         foreach (var (lines, textCenterX, baseY, _, color) in _pendingDialogDraws)
         {
-            int offset = -lineSpacing * (lines.Length - 1);
-            for (int i = 0; i < lines.Length; i++)
+            int numLines = lines.Length;
+
+            // Pre-compute max width for background rect
+            float maxW = 0f;
+            foreach (var line in lines)
+                maxW = MathF.Max(maxW, font.GetStringSize(line, HorizontalAlignment.Left, -1, fontSize).X);
+
+            int firstOffset = -lineSpacing * (numLines - 1);
+            float firstLineTop = baseY + firstOffset + 2 + asc - asc; // top of first glyph
+            float totalH = numLines * lineSpacing;
+
+            // Semi-transparent background
+            var bgRect = new Rect2(
+                textCenterX - maxW / 2f - padding,
+                firstLineTop - padding,
+                maxW + padding * 2,
+                totalH + padding * 2
+            );
+            canvas.DrawRect(bgRect, new Color(0.04f, 0.03f, 0.02f, 0.72f));
+            // Subtle golden border
+            canvas.DrawRect(bgRect, new Color(0.55f, 0.48f, 0.28f, color.A * 0.55f), filled: false, width: 1f);
+
+            // Draw each line with 4-direction outline then fill
+            int offset = firstOffset;
+            for (int i = 0; i < numLines; i++)
             {
                 float lineBaseY = baseY + offset + 2 + asc;
                 float w = font.GetStringSize(lines[i], HorizontalAlignment.Left, -1, fontSize).X;
                 float x = textCenterX - w / 2f;
-                Color shadow = new Color(0f, 0f, 0f, color.A * 0.7f);
-                canvas.DrawString(font, new Vector2(x + 1, lineBaseY + 1), lines[i], HorizontalAlignment.Left, -1, fontSize, shadow);
+                Color ol = new Color(0f, 0f, 0f, color.A * 0.9f);
+                canvas.DrawString(font, new Vector2(x - 1, lineBaseY),     lines[i], HorizontalAlignment.Left, -1, fontSize, ol);
+                canvas.DrawString(font, new Vector2(x + 1, lineBaseY),     lines[i], HorizontalAlignment.Left, -1, fontSize, ol);
+                canvas.DrawString(font, new Vector2(x,     lineBaseY - 1), lines[i], HorizontalAlignment.Left, -1, fontSize, ol);
+                canvas.DrawString(font, new Vector2(x,     lineBaseY + 1), lines[i], HorizontalAlignment.Left, -1, fontSize, ol);
                 canvas.DrawString(font, new Vector2(x,     lineBaseY),     lines[i], HorizontalAlignment.Left, -1, fontSize, color);
                 offset += lineSpacing;
             }
