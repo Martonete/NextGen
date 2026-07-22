@@ -10,17 +10,29 @@ namespace ArgentumNextgen.Rendering;
 /// </summary>
 public static partial class CharRenderer
 {
+    // Shared in-world font: vector, anti-aliased, with fallbacks.
+    // Lazy-initialized on first draw (always on main thread inside _Draw).
+    private static Font? _inWorldFont;
+    private static Font GetInWorldFont()
+    {
+        if (_inWorldFont != null) return _inWorldFont;
+        var f = new SystemFont();
+        f.FontNames = new string[] { "Segoe UI", "Verdana", "Tahoma", "Arial" };
+        f.FontWeight = 700;
+        f.MultichannelSignedDistanceField = true;
+        _inWorldFont = f;
+        return f;
+    }
+
+    private const int NameFontSize   = 11;
+    private const int DialogFontSize = 10;
+
     /// <summary>
-    /// VB6: Draw name at PixelOffsetX+16, PixelOffsetY+30 (DT_CENTER)
-    /// and clan/rank at PixelOffsetY+45.
-    /// Uses font1 (bitmap font) for pixel-perfect match.
+    /// Draw name + clan/rank above character. Vector font with drop shadow.
     /// </summary>
     private static void DrawName(Node2D canvas, Character ch, Vector2 pos, GameData data, GameState? state = null)
     {
         if (string.IsNullOrEmpty(ch.Name)) return;
-
-        var font = data.Fonts[1]; // font1 for names
-        if (font == null) return;
 
         // VB6: name format is "Nick<ClanTag"
         string nick = ch.Name;
@@ -34,33 +46,34 @@ public static partial class CharRenderer
 
         Color nameColor = GetNameColor(ch);
 
-        // VB6: Engine_Text_Draw(PixelOffsetX + 16, PixelOffsetY + 30, Line, color, alpha, DT_CENTER)
-        // X+16 = center of tile, DT_CENTER subtracts half text width
-        // Y+30 = top of text (bitmap font uses top-Y, same as AoFont.DrawText)
         int centerX = (int)pos.X + 16;
-        int nickY = (int)pos.Y + 30;
+        int nickY   = (int)pos.Y + 30;
 
-        // VB6: dead -> alpha 80, invisible -> pulsing alpha, else 255
-        // FovAlpha applied so name fades with character at viewport edge
-        float baseAlpha = ch.Dead ? 80f / 255f
-                   : ch.Invisible ? ch.TransparenciaBody / 100f
-                   : 1f;
+        float baseAlpha = ch.Dead      ? 80f / 255f
+                        : ch.Invisible ? ch.TransparenciaBody / 100f
+                        : 1f;
         Color nickColor = new Color(nameColor.R, nameColor.G, nameColor.B, baseAlpha * ch.FovAlpha);
-        font.DrawText(canvas, centerX, nickY, nick, nickColor, center: true);
 
-        // VB6: rank badge at Y+45 for admins, clan for non-admins
+        var font  = GetInWorldFont();
+        float asc = font.GetAscent(NameFontSize);
+
+        DrawStringCentered(canvas, font, NameFontSize, centerX, nickY + asc, nick, nickColor);
+
         int tagY = (int)pos.Y + 45;
-
         if (ch.Privileges > 0)
-        {
-            string rank = GetRankString(ch.Privileges);
-            font.DrawText(canvas, centerX, tagY, rank, nickColor, center: true);
-        }
+            DrawStringCentered(canvas, font, NameFontSize, centerX, tagY + asc, GetRankString(ch.Privileges), nickColor);
         else if (clan.Length > 0)
-        {
-            font.DrawText(canvas, centerX, tagY, clan, nickColor, center: true);
-        }
+            DrawStringCentered(canvas, font, NameFontSize, centerX, tagY + asc, clan, nickColor);
+    }
 
+    // Draw a string centered at (cx, baselineY) with a dark drop-shadow.
+    private static void DrawStringCentered(Node2D canvas, Font font, int size, float cx, float baselineY, string text, Color color)
+    {
+        float w = font.GetStringSize(text, HorizontalAlignment.Left, -1, size).X;
+        float x = cx - w / 2f;
+        Color shadow = new Color(0f, 0f, 0f, color.A * 0.75f);
+        canvas.DrawString(font, new Vector2(x + 1, baselineY + 1), text, HorizontalAlignment.Left, -1, size, shadow);
+        canvas.DrawString(font, new Vector2(x,     baselineY),     text, HorizontalAlignment.Left, -1, size, color);
     }
 
     /// <summary>
@@ -83,9 +96,6 @@ public static partial class CharRenderer
         // Timer advancement (DialogRiseCounter, DialogAlpha, DialogFading, DialogText clear)
         // is handled by UpdateCharacterTimers in _Process. This method only reads current state.
         if (string.IsNullOrEmpty(ch.DialogText)) return;
-
-        var font = data.Fonts[1]; // font1 for dialog
-        if (font == null) return;
 
         // Apply FovAlpha so dialog fades with the character at viewport edge
         float combinedAlpha = ch.DialogAlpha * ch.FovAlpha;
@@ -118,10 +128,6 @@ public static partial class CharRenderer
             color = new Color(1, 1, 1, alpha / 255f);
         }
 
-        int fontSize = font.CharHeight;
-
-        // TS AO head offsets already place the anchor above the body; using the old
-        // helmet overlap constant made spoken text float too far above the head.
         const int OffsetHead = -8;
         int baseY = (int)(pos.Y + headOffset.Y) + OffsetHead - ((numLines - 1) * 3);
         if (ch.DialogRiseCounter > 0)
@@ -132,16 +138,19 @@ public static partial class CharRenderer
         // Queue to overlay layer (above all characters) or draw directly as fallback
         if (worldRenderer != null)
         {
-            worldRenderer.QueueDialogDraw(lines, textCenterX, baseY, fontSize, color);
+            worldRenderer.QueueDialogDraw(lines, textCenterX, baseY, DialogFontSize, color);
         }
         else
         {
-            int offset = -(fontSize + 2) * (numLines - 1);
+            var font2 = GetInWorldFont();
+            float asc2 = font2.GetAscent(DialogFontSize);
+            int lineSpacing = DialogFontSize + 5;
+            int offset = -lineSpacing * (numLines - 1);
             for (int i = 0; i < numLines; i++)
             {
-                int lineY = baseY + offset + 2;
-                font.DrawText(canvas, textCenterX, lineY, lines[i], color, center: true);
-                offset += fontSize + 5;
+                float lineBaseY = baseY + offset + 2 + asc2;
+                DrawStringCentered(canvas, font2, DialogFontSize, textCenterX, lineBaseY, lines[i], color);
+                offset += lineSpacing;
             }
         }
     }

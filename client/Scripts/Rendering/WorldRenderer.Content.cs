@@ -674,22 +674,42 @@ public partial class WorldRenderer
         _pendingDialogDraws.Add((lines, textCenterX, baseY, fontSize, color));
     }
 
+    // Shared in-world font for dialog overlay (matches CharRenderer.Drawing.cs).
+    private static Font? _dialogFont;
+    private static Font GetDialogFont()
+    {
+        if (_dialogFont != null) return _dialogFont;
+        var f = new SystemFont();
+        f.FontNames = new string[] { "Segoe UI", "Verdana", "Tahoma", "Arial" };
+        f.FontWeight = 700;
+        f.MultichannelSignedDistanceField = true;
+        _dialogFont = f;
+        return f;
+    }
+
     /// <summary>
     /// Draw pending dialog text on a given canvas (used by DialogOverlayLayer).
     /// </summary>
     public void DrawPendingDialogs(CanvasItem canvas)
     {
-        if (_data?.Fonts?[1] == null) return;
-        var font = _data.Fonts[1]!;
+        if (_pendingDialogDraws.Count == 0) return;
+        var font = GetDialogFont();
+        const int fontSize = 10;
+        float asc = font.GetAscent(fontSize);
+        int lineSpacing = fontSize + 5;
 
-        foreach (var (lines, textCenterX, baseY, fontSize, color) in _pendingDialogDraws)
+        foreach (var (lines, textCenterX, baseY, _, color) in _pendingDialogDraws)
         {
-            int offset = -(fontSize + 2) * (lines.Length - 1);
+            int offset = -lineSpacing * (lines.Length - 1);
             for (int i = 0; i < lines.Length; i++)
             {
-                int lineY = baseY + offset + 2;
-                font.DrawText(canvas, textCenterX, lineY, lines[i], color, center: true);
-                offset += fontSize + 5;
+                float lineBaseY = baseY + offset + 2 + asc;
+                float w = font.GetStringSize(lines[i], HorizontalAlignment.Left, -1, fontSize).X;
+                float x = textCenterX - w / 2f;
+                Color shadow = new Color(0f, 0f, 0f, color.A * 0.7f);
+                canvas.DrawString(font, new Vector2(x + 1, lineBaseY + 1), lines[i], HorizontalAlignment.Left, -1, fontSize, shadow);
+                canvas.DrawString(font, new Vector2(x,     lineBaseY),     lines[i], HorizontalAlignment.Left, -1, fontSize, color);
+                offset += lineSpacing;
             }
         }
     }

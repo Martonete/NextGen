@@ -691,6 +691,12 @@ public partial class Main : Control
 		consoleStyle.ContentMarginTop = 1;
 		consoleStyle.ContentMarginBottom = 6;
 		console.AddThemeStyleboxOverride("normal", consoleStyle);
+		var consoleFont = new SystemFont();
+		consoleFont.FontNames = new string[] { "Segoe UI", "Tahoma", "Arial" };
+		consoleFont.FontWeight = 400;
+		consoleFont.MultichannelSignedDistanceField = true;
+		console.AddThemeFontOverride("normal_font", consoleFont);
+		console.AddThemeFontSizeOverride("normal_font_size", S(11));
 
 		var chatInput = GetNode<LineEdit>("GameUI/ChatInput");
 		_chatInputNode = chatInput;
@@ -716,6 +722,12 @@ public partial class Main : Control
 		chatInput.AddThemeStyleboxOverride("read_only", (StyleBoxFlat)chatNormal.Duplicate());
 		chatInput.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
 		chatInput.AddThemeColorOverride("caret_color", new Color(0.9f, 0.85f, 0.7f));
+		var chatFont = new SystemFont();
+		chatFont.FontNames = new string[] { "Segoe UI", "Tahoma", "Arial" };
+		chatFont.FontWeight = 400;
+		chatFont.MultichannelSignedDistanceField = true;
+		chatInput.AddThemeFontOverride("font", chatFont);
+		chatInput.AddThemeFontSizeOverride("font_size", S(12));
 
 		_chatSystem = new ChatSystem(_state);
 		_chatSystem.BindNodes(console, chatInput);
