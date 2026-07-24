@@ -13,7 +13,25 @@ use crate::protocol::binary_packets;
 // Level up system
 // =====================================================================
 
-const MAX_LEVEL: i32 = 255;
+/// Hard level cap. Reaching this level stops all further leveling; the exp
+/// curve is unchanged — only progression past 50 is disabled.
+pub(crate) const MAX_LEVEL: i32 = 50;
+
+/// VB6 top level whose progression is preserved at the new cap. As the real
+/// level runs 1..=MAX_LEVEL (50), the virtual level runs 1..=VB6_TOP_LEVEL (70),
+/// so a maxed character receives exactly the stats VB6 granted by level 70
+/// (mana pool for combos, HP, hit, free skill points, etc.).
+const VB6_TOP_LEVEL: i32 = 70;
+
+/// floor of the VB6 virtual level for a given real level, in integer math so the
+/// boundary (real 50 → virtual exactly 70) never loses a step to FP rounding.
+/// Used only for stat-gain scaling — never for gameplay checks, which use the
+/// real level.
+fn virtual_level_floor(actual: i32) -> i32 {
+    let num = VB6_TOP_LEVEL - 1; // 69 VB6 level-ups
+    let den = MAX_LEVEL - 1; //     spread over 49 real level-ups
+    (den + (actual - 1).max(0) * num) / den
+}
 
 /// Check if user has enough exp to level up, and apply it.
 /// VB6 parity: two separate paths for levels 1-49 vs 50+.
@@ -55,14 +73,37 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         // ══════════════════════════════════════════════════════════════
         // VB6: Level 1-49 path — full promedio HP + INT-based mana
         // ══════════════════════════════════════════════════════════════
-        let (hp_gain, mana_gain, sta_gain, hit_gain) = level_up_gains(
-            class,
-            race,
-            level,
-            constitution,
-            intelligence,
-            &state.game_data.balance,
-        );
+        // Level compression (see MAX_LEVEL / virtual_level): the cap is 50 but
+        // the total progression VB6 delivered by level 70 is preserved. Each
+        // real level-up applies every VB6 "virtual" level it spans (~69/49 ≈
+        // 1.408 per level), reusing the exact VB6 gain formula. By level 50 a
+        // character has applied all 69 VB6 level-ups → identical endgame stats.
+        let (mut hp_gain, mut mana_gain, mut sta_gain, mut hit_gain) = (0i32, 0i32, 0i32, 0i32);
+        let mut pts = 0i32;
+        {
+            // VB6 "from-levels" spanned by this real level-up. Applying each one
+            // reproduces the exact VB6 gain formula (level param = from-level),
+            // so the totals match old level 70 exactly, not approximately.
+            let f_lo = virtual_level_floor(level); //     first VB6 from-level (inclusive)
+            let f_hi = virtual_level_floor(level + 1) - 1; // last VB6 from-level (inclusive)
+            for f in f_lo..=f_hi {
+                let (h, m, s, hit) = level_up_gains(
+                    class,
+                    race,
+                    f,
+                    constitution,
+                    intelligence,
+                    &state.game_data.balance,
+                );
+                hp_gain += h;
+                mana_gain += m;
+                sta_gain += s;
+                hit_gain += hit;
+                // VB6: the first level-up (from-level 1) grants 10 free skill
+                // points, every other grants 5.
+                pts += if f == 1 { 10 } else { 5 };
+            }
+        }
 
         if let Some(user) = state.users.get_mut(&conn_id) {
             let new_level = level + 1;
@@ -90,7 +131,8 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
             }
 
             // Hit: add with level-dependent caps
-            let hit_cap = if user.level < 36 {
+            // Cap threshold follows the VB6 virtual level (36 ≈ real level 26).
+            let hit_cap = if virtual_level_floor(user.level) < 36 {
                 STAT_MAXHIT_UNDER36
             } else {
                 STAT_MAXHIT_OVER36
@@ -151,8 +193,8 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
             state.send_msg_id(conn_id, 75, &hit_gain.to_string());
         }
 
-        // VB6: If .Stats.ELV = 1 Then Pts = 10 Else Pts = Pts + 5
-        let pts = if level == 1 { 10 } else { 5 };
+        // Free skill points were accumulated per virtual level above (`pts`),
+        // so a level-50 character ends with the same total as an old level 70.
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.skill_pts_libres += pts;
         }

@@ -58,7 +58,7 @@ public class ForumPostEntry
 public class GameState
 {
 	// VB6 13.3 game constants
-	public const int MaxLevel = 99;
+	public const int MaxLevel = 50;
 	public const int MaxSkillLevel = 100;
 	public const int MaxInventoryCapacity = 36; // absolute max slots in any inventory grid
 
@@ -214,6 +214,49 @@ public class GameState
 	public int Privileges;
 	public int MusicId;
 	public int OnlineCount;
+
+	// ── Screen shake (combat feedback) ──
+	private float _shakeTimeLeft;
+	private float _shakeDuration;
+	private float _shakeMagnitude; // peak offset in pixels
+
+	/// <summary>Shake scaled by how hard the blow was relative to max HP.</summary>
+	public void TriggerCombatShake(int damage)
+	{
+		if (MaxHp <= 0 || damage <= 0) return;
+		float frac = Math.Clamp(damage / (float)MaxHp, 0f, 1f);
+		TriggerShake(2.0f + 7.0f * frac, 0.30f); // ~2px light hit .. ~9px near-lethal
+	}
+
+	/// <summary>Start (or reinforce) a screen shake. Keeps the stronger one.</summary>
+	public void TriggerShake(float magnitude, float duration)
+	{
+		float current = _shakeTimeLeft > 0f && _shakeDuration > 0f
+			? _shakeMagnitude * (_shakeTimeLeft / _shakeDuration) : 0f;
+		if (magnitude < current) return;
+		_shakeMagnitude = magnitude;
+		_shakeDuration = duration;
+		_shakeTimeLeft = duration;
+	}
+
+	/// <summary>Advance the shake timer; call once per frame.</summary>
+	public void UpdateShake(float delta)
+	{
+		if (_shakeTimeLeft > 0f)
+			_shakeTimeLeft = Math.Max(0f, _shakeTimeLeft - delta);
+	}
+
+	/// <summary>Current shake pixel offset (0,0 when idle). Decays quadratically.</summary>
+	public (float X, float Y) GetShakeOffset()
+	{
+		if (_shakeTimeLeft <= 0f || _shakeDuration <= 0f) return (0f, 0f);
+		float t = _shakeTimeLeft / _shakeDuration;   // 1 → 0
+		float amp = _shakeMagnitude * t * t;          // quadratic decay = snappier
+		float phase = _shakeDuration - _shakeTimeLeft;
+		float x = amp * (float)Math.Sin(phase * 78.0);
+		float y = amp * (float)Math.Cos(phase * 91.0);
+		return (x, y);
+	}
 
 	// Combat stats (from ANM packet)
 	public int Strength;

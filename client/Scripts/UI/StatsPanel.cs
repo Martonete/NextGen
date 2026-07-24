@@ -431,7 +431,8 @@ public partial class StatsPanel : RpgBaseForm
         _lblClass?.SetDeferred("text", _state.UserClassName);
         _lblRace?.SetDeferred("text", _state.UserRaceName);
         _lblLevel?.SetDeferred("text", $"{_state.Level} / {GameState.MaxLevel}");
-        _lblExp?.SetDeferred("text", $"{_state.Exp} / {_state.ExpNext}");
+        bool atMaxLevel = _state.Level >= GameState.MaxLevel || _state.ExpNext <= 0;
+        _lblExp?.SetDeferred("text", atMaxLevel ? "Nivel Maximo" : $"{_state.Exp} / {_state.ExpNext}");
         _lblGold?.SetDeferred("text", _state.Gold.ToString("N0"));
         _lblHp?.SetDeferred("text", $"{_state.MinHp} / {_state.MaxHp}");
         _lblMana?.SetDeferred("text", $"{_state.MinMana} / {_state.MaxMana}");

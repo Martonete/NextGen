@@ -31,6 +31,19 @@ public class Character
 	public float WalkFrame;
 	public float BobY;   // Vertical bob offset in pixels (±2px during walk, 0 at rest)
 
+	// Combat hit flash — brief color tint when this character takes or deals a blow.
+	// Timer counts down in CharRenderer.UpdateCharacterTimers; tint applied in DrawCharacter.
+	public const float HitFlashDuration = 0.16f; // seconds
+	public float HitFlashTimer;                  // seconds remaining (0 = no flash)
+	public bool HitFlashReceived;                // true=took damage (red), false=dealt (bright)
+
+	/// <summary>Start a hit flash. received=true tints red (hurt), false brightens (struck).</summary>
+	public void HitFlash(bool received)
+	{
+		HitFlashTimer = HitFlashDuration;
+		HitFlashReceived = received;
+	}
+
 	// VB6: .pie — alternates between left/right foot for step sounds
 	public bool FootToggle;
 

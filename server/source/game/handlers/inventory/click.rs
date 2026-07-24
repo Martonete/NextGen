@@ -860,7 +860,10 @@ pub(crate) async fn handle_right_click(
                             );
                         }
                         NpcType::Bargomaud => {
-                            // VB6: NpcBargomaud (type 20) — check level >= 55, warp to 161,50,53
+                            // VB6: NpcBargomaud (type 20) — warp to 161,50,53.
+                            // VB6 gated at level 55; with the level cap moved to
+                            // 50 that is unreachable, so it is scaled to the
+                            // equivalent progression point (real level 40).
                             if dead {
                                 state.send_msg_id(conn_id, 3, "");
                                 return;
@@ -870,7 +873,7 @@ pub(crate) async fn handle_right_click(
                                 return;
                             }
                             let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(0);
-                            if level < 55 {
+                            if level < 40 {
                                 state.send_msg_id(conn_id, 643, "");
                                 return;
                             }

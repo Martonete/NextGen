@@ -1348,6 +1348,9 @@ public partial class Main : Control
 			_state.WorkMacro.Update(delta);
 			_state.SpellMacro.Update(delta);
 
+			// Decay combat screen shake
+			_state.UpdateShake((float)delta);
+
 			UpdateGameUI();
 			_chatSystem?.UpdateConsoleMessages();
 

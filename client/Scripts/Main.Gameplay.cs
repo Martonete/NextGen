@@ -649,9 +649,9 @@ public partial class Main
                         if (ch.WalkFrame >= grh.NumFrames)
                             ch.WalkFrame %= grh.NumFrames;
 
-                        // Head bob: sine wave over the walk frame cycle (±2px)
+                        // Head bob: sine wave over the walk frame cycle (±1px, sutil)
                         float bobProgress = (ch.WalkFrame % grh.NumFrames) / grh.NumFrames;
-                        ch.BobY = MathF.Sin(bobProgress * MathF.PI * 2f) * 2f;
+                        ch.BobY = MathF.Sin(bobProgress * MathF.PI * 2f) * 1f;
                     }
                 }
             }

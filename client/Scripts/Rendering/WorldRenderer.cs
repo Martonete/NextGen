@@ -775,6 +775,13 @@ void fragment() {
 		float rawPixelOffsetY = _subpixelCamera ? -_state.ScreenOffsetY : (float)Math.Round(-_state.ScreenOffsetY);
 		ApplyCamera(rawUserX, rawUserY, rawPixelOffsetX, rawPixelOffsetY, mapW, mapH);
 
+		// Combat screen shake — nudge the whole world by a decaying offset. Applied
+		// after camera clamping so both PASS 1 (below) and child layers (via
+		// CurrentCamera) see the same shaken offset.
+		var (shakeX, shakeY) = _state.GetShakeOffset();
+		_framePixelOffsetX += shakeX;
+		_framePixelOffsetY += shakeY;
+
 		BuildCharPositionIndex();
 
 		CurrentCamera = new CameraSnapshot(_frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
@@ -880,7 +887,7 @@ void fragment() {
 				if (!IsWaterGrh(tile.Layer1)) continue; // only water
 
 				Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-				DrawTileGrh(tile.Layer1, pos, center: false);
+				DrawTileGrh(tile.Layer1, pos, center: false, modulate: WaterShimmer(x, y));
 			}
 		}
 
@@ -1092,6 +1099,22 @@ void fragment() {
 
 		int frame = _animator.GetCurrentFrame(grhIndex, _data);
 		CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, center, modulate);
+	}
+
+	/// <summary>
+	/// Subtle "caustics" shimmer for a water tile: a travelling wave of light that
+	/// modulates brightness over time. Colour-only (no geometry offset), so it never
+	/// creates seams between tiles. Returns null when disabled (no modulate).
+	/// </summary>
+	private Color? WaterShimmer(int x, int y)
+	{
+		if (!(_state?.Config?.ShowWaterEffect ?? true) || _animator == null) return null;
+		float t = (float)(_animator.GlobalTimeMs * 0.001);
+		// Small per-tile phase coefficients keep neighbouring tiles close in phase,
+		// so the wave reads as smooth motion rather than a hard checkerboard.
+		float phase = t * 1.15f + x * 0.35f + y * 0.5f;
+		float b = 1f + 0.05f * (float)Math.Sin(phase);
+		return new Color(b, b, b * 1.03f, 1f); // faint bluish tint on the bright crest
 	}
 
 	/// <summary>

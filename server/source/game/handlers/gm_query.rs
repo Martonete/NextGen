@@ -642,10 +642,12 @@ pub(super) async fn apply_mod_self(
             state.send_msg_id(conn_id, 576, &value.to_string());
         }
         "LEVEL" => {
+            // Hard cap at MAX_LEVEL (50) so no edit can push past the level cap.
+            let lvl = (value as i32).clamp(1, super::leveling::MAX_LEVEL);
             if let Some(user) = state.users.get_mut(&target) {
-                user.level = value as i32;
+                user.level = lvl;
             }
-            state.send_msg_id(conn_id, 577, &value.to_string());
+            state.send_msg_id(conn_id, 577, &lvl.to_string());
         }
         "CLASE" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -945,15 +947,17 @@ pub(super) async fn apply_mod_other(
             );
         }
         "LEVEL" => {
+            // Hard cap at MAX_LEVEL (50) so no edit can push past the level cap.
+            let lvl = (value as i32).clamp(1, super::leveling::MAX_LEVEL);
             if let Some(user) = state.users.get_mut(&target) {
-                user.level = value as i32;
+                user.level = lvl;
             }
-            let pkt_level = binary_packets::write_level_update(value as u8);
+            let pkt_level = binary_packets::write_level_update(lvl as u8);
             state.send_bytes(target, &pkt_level);
             state.send_msg_id_to(
                 SendTarget::ToAdmins,
                 591,
-                &format!("{}@nivel@{}@{}", gm_name, target_name, value),
+                &format!("{}@nivel@{}@{}", gm_name, target_name, lvl),
             );
         }
         "CLASE" => {
@@ -1145,9 +1149,9 @@ pub(super) async fn handle_slash_edit(state: &mut GameState, conn_id: Connection
             Some(u) => u.level,
             None => return,
         };
-        if level >= 255 {
+        if level >= super::leveling::MAX_LEVEL {
             break;
-        } // Max level cap
+        } // Max level cap (50)
 
         // Get ELU for current level and set exp to trigger level-up
         let elu = state.exp_for_level(level);

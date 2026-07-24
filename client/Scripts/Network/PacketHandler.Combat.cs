@@ -196,6 +196,23 @@ public partial class PacketHandler
     // ── Inventory / Spells ────────────────────────────────────────
 
 
+    // ── Combat feedback (screen shake + sprite hit flash) ─────────
+
+    /// <summary>The player took a blow: shake the camera and flash our sprite red.</summary>
+    private void CombatSelfHit(int damage)
+    {
+        _state.TriggerCombatShake(damage);
+        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var me))
+            me.HitFlash(received: true);
+    }
+
+    /// <summary>We struck a target: brighten the victim's sprite briefly.</summary>
+    private void CombatVictimHit(int victimIndex)
+    {
+        if (_state.Characters.TryGetValue(victimIndex, out var victim))
+            victim.HitFlash(received: false);
+    }
+
     // ── Safe / Combat state ───────────────────────────────────────
 
     /// <summary>
@@ -237,6 +254,7 @@ public partial class PacketHandler
         });
         // Floating red damage on player (damage received)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
+        CombatSelfHit(damage);
     }
 
     /// <summary>
@@ -250,6 +268,7 @@ public partial class PacketHandler
         _state.EnqueueChat(new ChatMessage { Text = $"{bodyName}{damage}", Color = "FF0000", Type = ChatType.Combat });
         // Floating red damage on player (NPC hit us)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
+        CombatSelfHit(damage);
     }
 
     /// <summary>
@@ -270,6 +289,7 @@ public partial class PacketHandler
         });
         // Floating red damage on player (PvP received)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
+        CombatSelfHit(damage);
     }
 
     /// <summary>
@@ -290,6 +310,7 @@ public partial class PacketHandler
         });
         // Floating yellow damage on victim (PvP dealt)
         OnFloatingText?.Invoke(victimIndex, $"-{damage}", "FFFF66");
+        CombatVictimHit(victimIndex);
     }
 
     // ── Spells ────────────────────────────────────────────────────
@@ -404,6 +425,7 @@ public partial class PacketHandler
                 string bodyName = GetNpcHitBodyPartText(bodyPart);
                 _state.EnqueueChat(new ChatMessage { Text = $"{bodyName}{damage}", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
+                CombatSelfHit(damage);
                 break;
             }
             case 13: // UserHitNPC
@@ -434,6 +456,7 @@ public partial class PacketHandler
                 string bodyName = GetPvpReceivedBodyPartText(bodyPart);
                 _state.EnqueueChat(new ChatMessage { Text = $"{attackerName}{bodyName}{damage}", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
+                CombatSelfHit(damage);
                 break;
             }
             case 16: // UserHittedUser
@@ -447,6 +470,7 @@ public partial class PacketHandler
                 string bodyName = GetPvpDealtBodyPartText(bodyPart);
                 _state.EnqueueChat(new ChatMessage { Text = $"Le has pegado a {victimName}{bodyName}{damage}", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(victimIndex, $"-{damage}", "FFFF66");
+                CombatVictimHit(victimIndex);
                 break;
             }
             // Sub-types 17-23: VB6 leftovers. The server sends these via send_console,

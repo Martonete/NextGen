@@ -130,6 +130,17 @@ public static partial class CharRenderer
 		else if (fovAlpha < 1f)
 			invisOverride = new Color(1, 1, 1, fovAlpha);
 
+		// Combat hit flash — brief tint that overrides the normal modulate (skipped
+		// while invisible). Fades out as the timer decays. Received = red (hurt),
+		// dealt = brighten (the struck victim). Alpha stays at the FOV fade value.
+		if (ch.HitFlashTimer > 0f && !ch.Invisible)
+		{
+			float k = Math.Clamp(ch.HitFlashTimer / Character.HitFlashDuration, 0f, 1f);
+			invisOverride = ch.HitFlashReceived
+				? new Color(1f, 1f - 0.65f * k, 1f - 0.65f * k, fovAlpha)   // red tint
+				: new Color(1f + 0.7f * k, 1f + 0.7f * k, 1f + 0.7f * k, fovAlpha); // bright flash
+		}
+
 		// Apply walk bob — purely visual offset, no effect on tile position or gameplay
 		Vector2 bobbedPos = ch.BobY != 0f ? new Vector2(screenPos.X, screenPos.Y + ch.BobY) : screenPos;
 
@@ -655,6 +666,10 @@ public static partial class CharRenderer
 
 	public static void UpdateCharacterTimers(Character ch, float deltaMs, GameState state, GameData data)
 	{
+		// ── Combat hit flash decay ──
+		if (ch.HitFlashTimer > 0f)
+			ch.HitFlashTimer = Math.Max(0f, ch.HitFlashTimer - deltaMs / 1000f);
+
 		// ── FOV fade ──
 		int userX = state.UserPosX;
 		int userY = state.UserPosY;

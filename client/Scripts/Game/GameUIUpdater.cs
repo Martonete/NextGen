@@ -97,6 +97,9 @@ public class GameUIUpdater
     {
         if (_statBarOverlay == null) return;
 
+        // At max level there is no next-level exp: show "Nivel Maximo" and a full bar.
+        bool atMaxLevel = _state.Level >= GameState.MaxLevel || _state.ExpNext <= 0;
+
         // Push stat values to the overlay — it draws colored fill rects
         _statBarOverlay.SetStats(
             _state.MinHp, _state.MaxHp,
@@ -104,10 +107,10 @@ public class GameUIUpdater
             _state.MinSta, _state.MaxSta,
             _state.MinAgua, _state.MaxAgua,
             _state.MinHam, _state.MaxHam,
-            _state.Exp, _state.ExpNext
+            atMaxLevel ? 1 : _state.Exp, atMaxLevel ? 1 : _state.ExpNext
         );
 
-        var newExp = $"EXP: {_state.Exp}/{_state.ExpNext}";
+        var newExp = atMaxLevel ? "Nivel Maximo" : $"EXP: {_state.Exp}/{_state.ExpNext}";
         if (_expLabel!.Text != newExp) { _expLabel.Text = newExp; _cachedExp = newExp; }
 
         var newGold = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
