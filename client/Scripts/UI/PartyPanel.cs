@@ -125,6 +125,25 @@ public partial class PartyPanel : RpgBaseForm
         RefreshMemberList();
     }
 
+    // Track last local HP to detect changes and refresh the bar live
+    private int _lastLocalHpPct = -1;
+
+    public override void _Process(double delta)
+    {
+        base._Process(delta);
+        if (!Visible || _state == null || _members.Count == 0) return;
+
+        // Refresh member list when local HP changes (live bar for self)
+        int curHpPct = _state.MaxHp > 0
+            ? Math.Clamp(_state.MinHp * 100 / _state.MaxHp, 0, 100)
+            : 100;
+        if (curHpPct != _lastLocalHpPct)
+        {
+            _lastLocalHpPct = curHpPct;
+            RefreshMemberList();
+        }
+    }
+
     /// <summary>
     /// Toggle panel visibility. When showing, request party info from server.
     /// </summary>
@@ -174,6 +193,16 @@ public partial class PartyPanel : RpgBaseForm
             string trimmed = text.Trim();
             if (trimmed.Length > 0 && text.StartsWith("  "))
             {
+                // Extract HP percent: " HP:75" at end
+                int hpPct = 100;
+                int hpTagIdx = trimmed.LastIndexOf(" HP:", StringComparison.Ordinal);
+                if (hpTagIdx >= 0)
+                {
+                    if (int.TryParse(trimmed[(hpTagIdx + 4)..], out int parsedHp))
+                        hpPct = Math.Clamp(parsedHp, 0, 100);
+                    trimmed = trimmed[..hpTagIdx];
+                }
+
                 bool isLeader = trimmed.EndsWith("[Lider]");
                 string name = isLeader ? trimmed.Replace("[Lider]", "").Trim() : trimmed;
 
@@ -181,6 +210,7 @@ public partial class PartyPanel : RpgBaseForm
                 {
                     Name = name,
                     IsLeader = isLeader,
+                    HpPercent = hpPct,
                 });
 
                 // Check if this is our user
@@ -291,12 +321,23 @@ public partial class PartyPanel : RpgBaseForm
                 nameLabel.Modulate = new Color(1.0f, 0.85f, 0.2f); // Gold for leader
             row.AddChild(nameLabel);
 
-            // HP bar
+            // Use live HP for the local player, PINFO HP% for others
+            int hpPct = member.HpPercent;
+            if (_state != null && member.Name.Equals(_state.UserName, StringComparison.OrdinalIgnoreCase) && _state.MaxHp > 0)
+                hpPct = Math.Clamp(_state.MinHp * 100 / _state.MaxHp, 0, 100);
+
+            // HP bar color: green above 50%, yellow 25-50%, red below 25%
+            var fillColor = hpPct >= 50
+                ? new Color(0.2f, 0.7f, 0.2f)
+                : hpPct >= 25
+                    ? new Color(0.85f, 0.75f, 0.0f)
+                    : new Color(0.8f, 0.15f, 0.15f);
+
             var hpBar = RpgTheme.CreateRpgProgressBar(60, 16,
-                fillColor: new Color(0.2f, 0.7f, 0.2f),
+                fillColor: fillColor,
                 bgColor: new Color(0.3f, 0.1f, 0.1f));
             hpBar.MaxValue = 100;
-            hpBar.Value = member.HpPercent > 0 ? member.HpPercent : 100;
+            hpBar.Value = hpPct > 0 ? hpPct : 100;
             row.AddChild(hpBar);
 
             _memberListBox.AddChild(row);

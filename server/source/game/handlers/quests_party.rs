@@ -8,7 +8,7 @@ use crate::game::types::{
     PartyState,
 };
 use crate::net::ConnectionId;
-use crate::protocol::font_index;
+use crate::protocol::{binary_packets, font_index};
 
 // =====================================================================
 // Party system handlers (mdParty.bas)
@@ -77,6 +77,9 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
         "Has creado un grupo. Usa /GRUPO <nombre> para invitar jugadores.",
         font_index::INFO,
     );
+
+    // Open party panel on creator's client automatically
+    state.send_bytes(conn_id, &binary_packets::write_show_party_form(0));
 }
 
 /// /GRUPO <target> or /PARTY <target> — Invite a player to party (leader only, max 2 tiles distance).
@@ -262,6 +265,9 @@ pub(super) async fn handle_slash_party_accept(state: &mut GameState, conn_id: Co
     // Notify all party members
     let notify = format!("{} se ha unido al grupo.", char_name);
     send_console_to_party(state, party_pending, &notify, font_index::INFO);
+
+    // Open party panel on the new member's client automatically
+    state.send_bytes(conn_id, &binary_packets::write_show_party_form(1));
 }
 
 /// /CANCELAR — Leave party or reject invite.
@@ -404,9 +410,14 @@ pub(super) async fn handle_slash_pinfo(state: &mut GameState, conn_id: Connectio
             } else {
                 ""
             };
+            let hp_pct = if user.max_hp > 0 {
+                (user.min_hp * 100 / user.max_hp).clamp(0, 100)
+            } else {
+                100
+            };
             state.send_console(
                 conn_id,
-                &format!("  {}{}", user.char_name, role),
+                &format!("  {}{} HP:{}", user.char_name, role, hp_pct),
                 font_index::INFO,
             );
         }

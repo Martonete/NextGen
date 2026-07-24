@@ -648,6 +648,10 @@ public partial class Main
                         ch.WalkFrame += (deltaMs * grh.NumFrames / speed) * 0.7f;
                         if (ch.WalkFrame >= grh.NumFrames)
                             ch.WalkFrame %= grh.NumFrames;
+
+                        // Head bob: sine wave over the walk frame cycle (±2px)
+                        float bobProgress = (ch.WalkFrame % grh.NumFrames) / grh.NumFrames;
+                        ch.BobY = MathF.Sin(bobProgress * MathF.PI * 2f) * 2f;
                     }
                 }
             }
@@ -685,6 +689,7 @@ public partial class Main
                 ch.Moving = false;
                 ch.ScrollDirectionX = 0;
                 ch.ScrollDirectionY = 0;
+                ch.BobY = 0f;
             }
         }
     }

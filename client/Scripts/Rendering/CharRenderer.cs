@@ -130,13 +130,16 @@ public static partial class CharRenderer
 		else if (fovAlpha < 1f)
 			invisOverride = new Color(1, 1, 1, fovAlpha);
 
+		// Apply walk bob — purely visual offset, no effect on tile position or gameplay
+		Vector2 bobbedPos = ch.BobY != 0f ? new Vector2(screenPos.X, screenPos.Y + ch.BobY) : screenPos;
+
 		// Heading-dependent draw order (VB6: dibujarPersonaje)
-		DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state,
+		DrawCharParts(canvas, ch, bobbedPos, headOffset, heading, data, animator, state,
 					  colorOverride: invisOverride);
 
 		// FX overlays — not drawn when invisible (VB6: entire char skipped in invisible branch)
 		if (!ch.Invisible)
-			DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
+			DrawFx(canvas, ch, bobbedPos, data, animator, deltaMs);
 
 		// Character-attached particles — not drawn when invisible
 		if (!ch.Invisible && state != null && (state.Config?.ShowParticles ?? true))

@@ -29,6 +29,7 @@ public class Character
 	// Per-character walk animation frame counter (VB6: each char has its own FrameCounter).
 	// Only advances when Moving=true. Reset to 0 on move start.
 	public float WalkFrame;
+	public float BobY;   // Vertical bob offset in pixels (±2px during walk, 0 at rest)
 
 	// VB6: .pie — alternates between left/right foot for step sounds
 	public bool FootToggle;
