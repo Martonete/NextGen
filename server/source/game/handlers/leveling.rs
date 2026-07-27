@@ -117,9 +117,9 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
                 user.max_hp = STAT_MAXHP;
             }
 
-            // Mana: add with cap (VB6: <36 → STAT_MAXMAN, >=36 → 9999)
+            // Mana: add with cap (VB6: virtual level <36 → STAT_MAXMAN, >=36 → 9999)
             user.max_mana += mana_gain;
-            let mana_cap = if user.level < 36 { STAT_MAXMAN } else { 9999 };
+            let mana_cap = if virtual_level_floor(user.level) < 36 { STAT_MAXMAN } else { 9999 };
             if user.max_mana > mana_cap {
                 user.max_mana = mana_cap;
             }
