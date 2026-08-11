@@ -42,11 +42,11 @@ public partial class WorldRenderer
                 if (!TryResolveTile(x, y, out var tile)) continue;
 
                 // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
-                if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
-                    && objGrh != tile.Layer3)
+                if (_state.GroundObjects.TryGetValue((x, y), out var groundObj) && groundObj.Grh > 0
+                    && groundObj.Grh != tile.Layer3)
                 {
                     var light = GetContentLightColor(x, y);
-                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: MultiplyColor(objColor, light));
+                    DrawTileGrhTo(canvas, groundObj.Grh, tilePos, center: true, modulate: MultiplyColor(objColor, light));
                 }
 
                 // Characters/NPCs — only within viewport bounds (no large buffer)
@@ -236,17 +236,6 @@ public partial class WorldRenderer
                 canvas.DrawCircle(head, 5.0f, new Color(0.25f, 0.55f, 1f, 0.10f * headAlpha));
                 canvas.DrawCircle(head, 2.2f, new Color(0.75f, 0.92f, 1f, 0.44f * headAlpha));
                 canvas.DrawCircle(head, 0.9f, new Color(1f, 0.97f, 0.78f, 0.90f * headAlpha));
-            }
-
-            // --- Small muzzle glow at the caster origin ---
-            if (life >= BeamImpactStart)
-            {
-                float impactT = Math.Clamp((life - BeamImpactStart) / (1f - BeamImpactStart), 0f, 1f);
-                float impactAlpha = 1f - Smooth01(impactT);
-                float radius = 2.2f + 7.5f * Smooth01(impactT);
-                canvas.DrawCircle(to, radius, new Color(0.35f, 0.68f, 1f, 0.055f * impactAlpha));
-                canvas.DrawCircle(to, 2.5f + 1.5f * impactT, new Color(0.75f, 0.9f, 1f, 0.16f * impactAlpha));
-                canvas.DrawCircle(to, 1.2f, new Color(1f, 0.96f, 0.78f, 0.65f * impactAlpha));
             }
 
             // --- Energy motes drifting along the bolt ---
@@ -563,9 +552,9 @@ public partial class WorldRenderer
                 if (!TryResolveTile(x, y, out var tile)) continue;
                 if (tile.Layer2 <= 0) continue;
 
-                // Opt 4: use pre-computed screen coords
-                Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
-                DrawTileGrhTo(canvas, tile.Layer2, pos, center: true);
+				// Opt 4: use pre-computed screen coords
+				Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
+				DrawTileGrhTo(canvas, tile.Layer2, pos, center: true);
             }
         }
     }

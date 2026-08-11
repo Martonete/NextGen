@@ -152,6 +152,17 @@ public partial class WorldRenderer : Node2D
 	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in any known water range.
 	private bool[,]? _waterMap;
 
+	// AO20 water deformation constants. Adjacent water tiles share their border phase,
+	// while coast-facing edges stay fixed so water never opens a gap over terrain.
+	private const float WaterWavePeriodTilesX = 4f;
+	private const float WaterWaveHeight = 3f;
+	private const float Tau = Mathf.Pi * 2f;
+	private readonly Vector2[] _waterQuad = new Vector2[4];
+	private readonly Vector2[] _waterQuadUvs = new Vector2[4];
+	private readonly Color[] _waterQuadColors = { Colors.White, Colors.White, Colors.White, Colors.White };
+	private readonly float[] _waterWaveSin = new float[4];
+	private readonly float[] _waterWaveCos = new float[4];
+
 	// Cached per-column and per-row screen coordinate arrays (Opt 4).
 	// Resized only when the frame range changes. Avoids per-tile multiply in the hot path.
 	private float[] _screenXCache = Array.Empty<float>();
@@ -227,8 +238,8 @@ void fragment() {
 		{
 			for (int x = 1; x <= w; x++)
 			{
-				int g = _state.MapData.Tiles[x, y].Layer1;
-				_waterMap[x, y] = IsWaterGrh(g);
+				ref var tile = ref _state.MapData.Tiles[x, y];
+				_waterMap[x, y] = tile.AnimatedWater || IsWaterGrh(tile.Layer1);
 			}
 		}
 	}
@@ -879,15 +890,20 @@ void fragment() {
 		// PASS 1: Layer 1 — ONLY water tiles. Non-water tiles are drawn once
 		// by NonWaterMaskLayer (PASS 1b), avoiding the double-draw that killed FPS.
 		// ==========================================
+		if (_state.Config?.ShowWaterEffect ?? true)
+			UpdateWaterWaveLookup();
 		for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
 		{
 			for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
 			{
 				if (!TryResolveTile(x, y, out var tile)) continue;
-				if (!IsWaterGrh(tile.Layer1)) continue; // only water
+				if (!IsWaterTile(x, y)) continue;
 
 				Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-				DrawTileGrh(tile.Layer1, pos, center: false, modulate: WaterShimmer(x, y));
+				if (_state.Config?.ShowWaterEffect ?? true)
+					DrawWaterTile(tile.Layer1, x, y, pos);
+				else
+					DrawTileGrh(tile.Layer1, pos);
 			}
 		}
 
@@ -1003,6 +1019,26 @@ void fragment() {
 			}
 		}
 
+		// Collect ground-item aura draws (obj.dat CreaAura) BEFORE AuraAdditiveLayer draws.
+		// Must happen here, not in ContentLayer.DrawContent, because AuraAdditiveLayer is
+		// drawn before ContentLayer in the scene tree — queuing from DrawContent would
+		// always be one frame too late for AuraAdditiveLayer to pick up.
+		if (_state.Config?.ShowAuras ?? true)
+		{
+			foreach (var kvp in _state.GroundObjects)
+			{
+				var (gx, gy) = kvp.Key;
+				if (gx < _frameMinX || gx > _frameMaxX || gy < _frameMinY || gy > _frameMaxY) continue;
+				var groundObj = kvp.Value;
+				if (groundObj.ObjIndex <= 0 || groundObj.ObjIndex >= _data.Objects.Length) continue;
+				int auraIndex = _data.Objects[groundObj.ObjIndex].CreaAura;
+				if (auraIndex <= 0) continue;
+
+				Vector2 tilePos = new Vector2(_screenXCache[gx - _frameMinX], _screenYCache[gy - _frameMinY]);
+				CharRenderer.CollectGroundAuraDraw(this, _data, auraIndex, tilePos, _animator!.GlobalTimeMs);
+			}
+		}
+
 		// Collect map particle draws for the additive layer (respects Config.ShowParticles)
 		if (_state.Config?.ShowParticles ?? true)
 		{
@@ -1102,19 +1138,99 @@ void fragment() {
 	}
 
 	/// <summary>
-	/// Subtle "caustics" shimmer for a water tile: a travelling wave of light that
-	/// modulates brightness over time. Colour-only (no geometry offset), so it never
-	/// creates seams between tiles. Returns null when disabled (no modulate).
+	/// Port of AO20's SpriteBatch.DrawWater. The water GRH still supplies its normal
+	/// animation frame; this only deforms the quad. A side moves only when it meets
+	/// another water tile, keeping the coastline anchored to the terrain.
 	/// </summary>
-	private Color? WaterShimmer(int x, int y)
+	private void DrawWaterTile(int grhIndex, int mapX, int mapY, Vector2 pos)
 	{
-		if (!(_state?.Config?.ShowWaterEffect ?? true) || _animator == null) return null;
-		float t = (float)(_animator.GlobalTimeMs * 0.001);
-		// Small per-tile phase coefficients keep neighbouring tiles close in phase,
-		// so the wave reads as smooth motion rather than a hard checkerboard.
-		float phase = t * 1.15f + x * 0.35f + y * 0.5f;
-		float b = 1f + 0.05f * (float)Math.Sin(phase);
-		return new Color(b, b, b * 1.03f, 1f); // faint bluish tint on the bright crest
+		DrawWaterTileTo(this, grhIndex, mapX, mapY, pos);
+	}
+
+	/// <summary>
+	/// Draws one component of the water surface on the requested canvas. Some maps
+	/// store AO20's foam component in L2, so both components share this exact mesh.
+	/// </summary>
+	private void DrawWaterTileTo(CanvasItem canvas, int grhIndex, int mapX, int mapY, Vector2 pos)
+	{
+		if (_data == null || _animator == null) return;
+		if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
+
+		int frame = _animator.GetCurrentFrame(grhIndex, _data);
+		var grh = _data.ResolveGrh(grhIndex, frame);
+		if (grh == null || grh.FileNum <= 0) return;
+		var texture = _data.Textures?.GetTexture(grh.FileNum);
+		if (texture == null) return;
+
+		int textureWidth = texture.GetWidth();
+		int textureHeight = texture.GetHeight();
+		if (textureWidth <= 0 || textureHeight <= 0) return;
+		int sx = grh.SX % textureWidth;
+		int sy = grh.SY % textureHeight;
+		int width = Math.Min(grh.PixelWidth, textureWidth - sx);
+		int height = Math.Min(grh.PixelHeight, textureHeight - sy);
+		if (width <= 0 || height <= 0) return;
+
+		int phase = (mapX + mapY) & 3;
+		int phaseRight = (phase + 1) & 3;
+		int phaseBottom = phaseRight;
+		int phaseBottomRight = (phase + 2) & 3;
+
+		float top = IsWaterTile(mapX, mapY - 1) ? 1f : 0f;
+		float right = IsWaterTile(mapX + 1, mapY) ? 1f : 0f;
+		float bottom = IsWaterTile(mapX, mapY + 1) ? 1f : 0f;
+		float left = IsWaterTile(mapX - 1, mapY) ? 1f : 0f;
+
+		Vector2 bl = new(
+			pos.X + _waterWaveCos[phaseBottom] * WaterWaveHeight * left,
+			pos.Y + TileSize + _waterWaveSin[phaseBottom] * WaterWaveHeight * bottom);
+		Vector2 br = new(
+			pos.X + TileSize + _waterWaveCos[phaseBottomRight] * WaterWaveHeight * right,
+			pos.Y + TileSize + _waterWaveSin[phaseBottomRight] * WaterWaveHeight * bottom);
+		Vector2 tr = new(
+			pos.X + TileSize + _waterWaveCos[phaseRight] * WaterWaveHeight * right,
+			pos.Y + _waterWaveSin[phaseRight] * WaterWaveHeight * top);
+		Vector2 tl = new(
+			pos.X + _waterWaveCos[phase] * WaterWaveHeight * left,
+			pos.Y + _waterWaveSin[phase] * WaterWaveHeight * top);
+
+		Vector2 uvBl = new((float)sx / textureWidth, (float)(sy + height) / textureHeight);
+		Vector2 uvTl = new((float)sx / textureWidth, (float)sy / textureHeight);
+		Vector2 uvBr = new((float)(sx + width) / textureWidth, (float)(sy + height) / textureHeight);
+		Vector2 uvTr = new((float)(sx + width) / textureWidth, (float)sy / textureHeight);
+
+		// Same TL-BR diagonal as AO20, with one managed/native draw call per tile.
+		_waterQuad[0] = tl;
+		_waterQuad[1] = bl;
+		_waterQuad[2] = br;
+		_waterQuad[3] = tr;
+		_waterQuadUvs[0] = uvTl;
+		_waterQuadUvs[1] = uvBl;
+		_waterQuadUvs[2] = uvBr;
+		_waterQuadUvs[3] = uvTr;
+
+		canvas.DrawPolygon(_waterQuad, _waterQuadColors, _waterQuadUvs, texture);
+	}
+
+	private void UpdateWaterWaveLookup()
+	{
+		if (_animator == null) return;
+		float time = (float)((_animator.GlobalTimeMs % 62831) * 0.001);
+		float phaseStep = Tau / WaterWavePeriodTilesX;
+		for (int i = 0; i < 4; i++)
+		{
+			float phase = time + i * phaseStep;
+			_waterWaveSin[i] = Mathf.Sin(phase);
+			_waterWaveCos[i] = Mathf.Cos(phase);
+		}
+	}
+
+	private bool IsWaterTile(int x, int y)
+	{
+		if (_state?.MapData == null || x < 1 || y < 1
+			|| x > _state.MapData.Width || y > _state.MapData.Height)
+			return false;
+		return _waterMap != null ? _waterMap[x, y] : IsWaterGrh(_state.MapData.Tiles[x, y].Layer1);
 	}
 
 	/// <summary>

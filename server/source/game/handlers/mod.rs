@@ -3,6 +3,7 @@ mod combat;
 mod commerce;
 pub(crate) mod common;
 mod events;
+mod gm_bot;
 mod gm_items;
 mod gm_moderation;
 mod gm_query;
@@ -28,6 +29,7 @@ use combat::*;
 use commerce::*;
 use common::*;
 use events::*;
+use gm_bot::*;
 use gm_items::*;
 use gm_moderation::*;
 use gm_query::*;
@@ -56,8 +58,8 @@ pub(crate) use warp::{
 // Re-export tick functions called from main.rs
 pub(crate) use ticks::remove_pet_from_owner;
 pub use ticks::{
-    auto_save_all_users, build_char_save_data, tick_clean_world, tick_intervals, tick_npc_ai,
-    tick_npc_respawn, tick_player_passive, tick_security,
+    auto_save_all_users, build_char_save_data, tick_bot_ai, tick_clean_world, tick_intervals,
+    tick_npc_ai, tick_npc_respawn, tick_player_passive, tick_security,
 };
 // Re-export event functions called from main.rs and other modules
 pub use events::{ip_security_accept, pretoriano_check_death};

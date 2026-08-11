@@ -13,7 +13,7 @@ Source: `client/Scripts/Data/GrhLoader.cs`, `client/Scripts/Data/TextureManager.
 
 ## 1. Graficos.ind Binary Format
 
-The GRH database is a single binary file (~532 KB) containing ~32,824 sprite entries.
+The GRH database is a single binary file (~537 KB) containing 33,112 sprite entries.
 Three header formats exist; `GrhLoader.Load()` auto-detects which one is present.
 
 ### Header Detection (3 formats)
@@ -213,7 +213,7 @@ return isWater && tile.Layer2 <= 0;  // water only if no L2 overlay
 | WaterGrhMax | 1520 | WorldRenderer.cs |
 | WaterGrhRange2 | 5665-5680 | WorldRenderer.cs |
 | WaterGrhRange3 | 13547-13562 | WorldRenderer.cs |
-| MaxGRHs | ~32,824 | Graficos.ind header |
+| MaxGRHs | 33,112 | Graficos.ind header |
 | Version | 447 | Graficos.ind header |
 | MiCabeceraSize | 263 | GrhLoader.cs |
 | MaxCacheSize | 4,096 | TextureManager.cs |

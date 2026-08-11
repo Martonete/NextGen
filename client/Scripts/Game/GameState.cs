@@ -7,6 +7,18 @@ namespace ArgentumNextgen.Game;
 
 public enum Screen { Login, CharSelect, CharCreate, AccountCreate, Game }
 
+public readonly struct GroundObjectData
+{
+	public readonly int Grh;
+	public readonly int ObjIndex;
+
+	public GroundObjectData(int grh, int objIndex)
+	{
+		Grh = grh;
+		ObjIndex = objIndex;
+	}
+}
+
 public class CharacterPreview
 {
 	public string Name = "", Class = "", Race = "";
@@ -198,8 +210,9 @@ public class GameState
 	// Characters visible in area
 	public Dictionary<int, Character> Characters = new();
 
-	// Ground objects: (x,y) → GRH index
-	public Dictionary<(int, int), int> GroundObjects = new();
+	// Ground objects: (x,y) → GRH index + obj.dat index (obj index resolves cosmetic
+	// data like CreaAura for rendering the item's glow while it's on the ground).
+	public Dictionary<(int, int), GroundObjectData> GroundObjects = new();
 
 	// Stats
 	public int MaxHp, MinHp;

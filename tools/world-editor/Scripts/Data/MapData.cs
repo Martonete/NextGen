@@ -12,6 +12,7 @@ namespace AOWorldEditor.Data;
 public struct MapTile
 {
     public bool Blocked;
+    public bool AnimatedWater; // L1 uses AO20-style moving water geometry in the client
     public int Layer1;  // Ground terrain GRH
     public int Layer2;  // Mask/overlay GRH (transitions, details)
     public int Layer3;  // Objects/trees GRH

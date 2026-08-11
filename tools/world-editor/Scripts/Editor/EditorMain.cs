@@ -130,6 +130,11 @@ public partial class EditorMain : Control
     private HSeparator? _rightTileSeparator;
     private VBoxContainer? _rightTileSection;
     private Label? _rightTileInfoLabel;
+    private Button? _rightRemoveLayer2Button;
+    private Button? _rightRemoveLayer3Button;
+    private Button? _rightRemoveLayer4Button;
+    private Button? _rightRemoveNpcButton;
+    private Button? _rightRemoveObjectButton;
 
     // Tool bar (Excalidraw-style)
     private HBoxContainer? _toolBar;
@@ -263,6 +268,7 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Objetos", 8);
         _viewMenu.AddCheckItem("Particulas", 9);
         _viewMenu.AddCheckItem("Luces", 10);
+        _viewMenu.AddCheckItem("GRH de tiles (F6)", 15);
         _viewMenu.AddSeparator();
         _viewMenu.AddItem("Modo Caminata (F5)", 11);
         _viewMenu.AddItem("Panel de Partículas", 12);
@@ -328,6 +334,7 @@ public partial class EditorMain : Control
         {
             (EditorTool.Hand,    "\u270b", "Mano",        "H"),
             (EditorTool.Paint,   "\u270f", "Pintar",      "P"),
+            (EditorTool.Path,    "\u2501", "Camino",      "C"),
             (EditorTool.Erase,   "\u232b", "Borrar",      "E"),
             (EditorTool.Select,  "\u25a1", "Seleccionar", "R"),
             (EditorTool.Pick,    "\u21c6", "Agarrar",     "V"),
@@ -393,8 +400,7 @@ public partial class EditorMain : Control
             int capturedLayer = li;
             var layerBtn = EditorTheme.LayerTabCompact(li, () =>
             {
-                _state.ActiveLayer = capturedLayer;
-                SyncLayerTabs();
+                ToggleLayerVisibility(capturedLayer);
             });
             layerGroupH.AddChild(layerBtn);
             _layerTabButtons[li - 1] = layerBtn;
@@ -440,6 +446,9 @@ public partial class EditorMain : Control
 
         _palette = new TilePalette { Name = "Tiles", State = _state };
         _palette.LayerChanged += (layer) => SyncLayerTabs();
+        _palette.MultiStampReady += PasteClipboard;
+        _palette.CommerceCaptureRequested += CaptureCommerceTemplate;
+        _palette.CommerceStampRequested += PlaceCommerceTemplate;
         _sidebarTabs.AddChild(_palette);
 
         _npcPalette = new NpcPalette { Name = "NPCs", State = _state };
@@ -602,6 +611,14 @@ public partial class EditorMain : Control
         unblockAllBtn.Pressed += () => BlockSelection(false);
         _rightSelectionSection.AddChild(unblockAllBtn);
 
+        var markWaterBtn = EditorTheme.MakeButton("Marcar como agua animada");
+        markWaterBtn.Pressed += () => SetSelectionAnimatedWater(true);
+        _rightSelectionSection.AddChild(markWaterBtn);
+
+        var clearWaterBtn = EditorTheme.MakeButton("Quitar marca de agua");
+        clearWaterBtn.Pressed += () => SetSelectionAnimatedWater(false);
+        _rightSelectionSection.AddChild(clearWaterBtn);
+
         _rightMoveAreaButton = EditorTheme.MakeButton("Mover área");
         _rightMoveAreaButton.ToggleMode = true;
         _rightMoveAreaButton.Pressed += () =>
@@ -721,6 +738,26 @@ public partial class EditorMain : Control
         _rightTileInfoLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
         _rightTileInfoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _rightTileSection.AddChild(_rightTileInfoLabel);
+
+        _rightRemoveLayer2Button = EditorTheme.MakeButton("Quitar decoracion L2");
+        _rightRemoveLayer2Button.Pressed += () => RemoveSelectedTileLayer(2);
+        _rightTileSection.AddChild(_rightRemoveLayer2Button);
+
+        _rightRemoveLayer3Button = EditorTheme.MakeButton("Quitar decoracion L3");
+        _rightRemoveLayer3Button.Pressed += () => RemoveSelectedTileLayer(3);
+        _rightTileSection.AddChild(_rightRemoveLayer3Button);
+
+        _rightRemoveLayer4Button = EditorTheme.MakeButton("Quitar decoracion L4");
+        _rightRemoveLayer4Button.Pressed += () => RemoveSelectedTileLayer(4);
+        _rightTileSection.AddChild(_rightRemoveLayer4Button);
+
+        _rightRemoveNpcButton = EditorTheme.MakeButton("Quitar NPC");
+        _rightRemoveNpcButton.Pressed += RemoveSelectedTileNpc;
+        _rightTileSection.AddChild(_rightRemoveNpcButton);
+
+        _rightRemoveObjectButton = EditorTheme.MakeButton("Quitar objeto");
+        _rightRemoveObjectButton.Pressed += RemoveSelectedTileObject;
+        _rightTileSection.AddChild(_rightRemoveObjectButton);
 
         rightVBox.AddChild(_rightTileSection);
 
@@ -1857,6 +1894,7 @@ public partial class EditorMain : Control
             case 8: _state.ShowObjects = !_state.ShowObjects; break;
             case 9: _state.ShowParticles = !_state.ShowParticles; break;
             case 10: _state.ShowLights = !_state.ShowLights; break;
+            case 15: _state.ShowGrhOverlay = !_state.ShowGrhOverlay; break;
             case 11: OpenWalkMode(); return; // not a checkbox — early return
             case 12: if (_sidebarTabs != null) _sidebarTabs.CurrentTab = 3; return;
             case 13: _viewport?.ZoomToFit(); return; // not a checkbox — early return
@@ -1872,12 +1910,14 @@ public partial class EditorMain : Control
                 5 => _state.ShowLayer3, 6 => _state.ShowLayer4,
                 7 => _state.ShowNpcs, 8 => _state.ShowObjects,
                 9 => _state.ShowParticles, 10 => _state.ShowLights,
+                15 => _state.ShowGrhOverlay,
                 _ => false
             };
             int idx = _viewMenu.GetItemIndex((int)id);
             if (idx >= 0) _viewMenu.SetItemChecked(idx, val);
         }
 
+        if (id >= 3 && id <= 6) SyncLayerTabs();
         _viewport?.QueueRedraw();
     }
 
@@ -2635,6 +2675,16 @@ public partial class EditorMain : Control
             originX = _state.HoverX;
             originY = _state.HoverY;
         }
+        else if (_viewport != null)
+        {
+            // Mouse isn't over the map (e.g. paste triggered from a sidebar button) —
+            // fall back to the center of the current view instead of tile (1,1), which
+            // is very likely scrolled off-screen and would make the paste look like it
+            // silently did nothing.
+            var center = _viewport.GetViewCenterTile();
+            originX = center.X;
+            originY = center.Y;
+        }
         else
         {
             originX = 1;
@@ -2650,6 +2700,28 @@ public partial class EditorMain : Control
         _state.Pending.Begin(buf, _state.ClipWidth, _state.ClipHeight, originX, originY);
         SetStatus($"Pegando {_state.ClipWidth}x{_state.ClipHeight} — mueve y ✓ para aceptar, ✗ para cancelar");
         _viewport?.QueueRedraw();
+    }
+
+    private void CaptureCommerceTemplate()
+    {
+        if (_map == null || !_state.CaptureCommerceTemplate(_map))
+        {
+            SetStatus("Seleccioná primero el rectángulo completo del comercio");
+            return;
+        }
+        _state.ClearSelection();
+        _viewport?.QueueRedraw();
+        SetStatus($"Comercio guardado: {_state.CommerceWidth}x{_state.CommerceHeight} con todas las capas");
+    }
+
+    private void PlaceCommerceTemplate()
+    {
+        if (!_state.PrepareCommerceClipboard())
+        {
+            SetStatus("Todavía no hay un comercio guardado");
+            return;
+        }
+        PasteClipboard();
     }
 
     private void InsertMap()
@@ -3136,7 +3208,7 @@ public partial class EditorMain : Control
     #region Input
 
     private static readonly string[] ToolNames = {
-        "Mano", "Pintar", "Borrar", "Seleccionar", "Mover", "Agarrar",
+        "Mano", "Pintar", "Camino", "Borrar", "Seleccionar", "Mover", "Agarrar",
         "Rellenar", "Cuentagotas", "Bloquear", "Luz", "Luz+", "Salida",
         "NPC", "Objeto", "Trigger", "Particulas", "Humo"
     };
@@ -3170,6 +3242,7 @@ public partial class EditorMain : Control
             {
                 case Key.H: newTool = EditorTool.Hand; break;
                 case Key.P: newTool = EditorTool.Paint; break;
+                case Key.C: newTool = EditorTool.Path; break;
                 case Key.E: newTool = EditorTool.Erase; break;
                 case Key.R: newTool = EditorTool.Select; break;
                 case Key.V: newTool = EditorTool.Pick; break;
@@ -3186,14 +3259,15 @@ public partial class EditorMain : Control
                 case Key.B: newTool = EditorTool.Block; break;
                 case Key.Q: newTool = EditorTool.Particle; break;
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
+                case Key.F6: ToggleGrhOverlay(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.F5: OpenWalkMode(); break;
                 case Key.Home: _viewport?.ZoomToFit(); break;
                 case Key.F12: ExportMapAsPng(); break;
-                case Key.Key1: _state.ActiveLayer = 1; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
-                case Key.Key2: _state.ActiveLayer = 2; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
-                case Key.Key3: _state.ActiveLayer = 3; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
-                case Key.Key4: _state.ActiveLayer = 4; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
+                case Key.Key1: ActivateLayer(1); break;
+                case Key.Key2: ActivateLayer(2); break;
+                case Key.Key3: ActivateLayer(3); break;
+                case Key.Key4: ActivateLayer(4); break;
                 case Key.Delete:
                     DeleteSelection();
                     break;
@@ -3270,13 +3344,47 @@ public partial class EditorMain : Control
 
     private void SyncLayerTabs()
     {
-        for (int i = 0; i < 4; i++)
-            _layerTabButtons[i].ButtonPressed = _state.ActiveLayer == (i + 1);
+        _layerTabButtons[0].ButtonPressed = _state.ShowLayer1;
+        _layerTabButtons[1].ButtonPressed = _state.ShowLayer2;
+        _layerTabButtons[2].ButtonPressed = _state.ShowLayer3;
+        _layerTabButtons[3].ButtonPressed = _state.ShowLayer4;
+    }
+
+    private void ActivateLayer(int layer)
+    {
+        if (layer < 1 || layer > 4) return;
+
+        _state.ActiveLayer = layer;
+        SyncLayerTabs();
+        _viewport?.QueueRedraw();
+        SetStatus($"L{layer} activa para pintar");
+    }
+
+    private void ToggleLayerVisibility(int layer)
+    {
+        bool visible;
+        switch (layer)
+        {
+            case 1: visible = _state.ShowLayer1 = !_state.ShowLayer1; break;
+            case 2: visible = _state.ShowLayer2 = !_state.ShowLayer2; break;
+            case 3: visible = _state.ShowLayer3 = !_state.ShowLayer3; break;
+            case 4: visible = _state.ShowLayer4 = !_state.ShowLayer4; break;
+            default: return;
+        }
+
+        SyncLayerTabs();
+        if (_viewMenu != null)
+        {
+            int menuIndex = _viewMenu.GetItemIndex(layer + 2);
+            if (menuIndex >= 0) _viewMenu.SetItemChecked(menuIndex, visible);
+        }
+        _viewport?.QueueRedraw();
+        SetStatus($"L{layer} {(visible ? "visible" : "oculta")}");
     }
 
     // Maps toolbar button index to EditorTool
     private static readonly EditorTool[] ToolBarOrder = {
-        EditorTool.Hand, EditorTool.Paint, EditorTool.Erase,
+        EditorTool.Hand, EditorTool.Paint, EditorTool.Path, EditorTool.Erase,
         EditorTool.Select,
         EditorTool.Pick, EditorTool.Eyedrop, EditorTool.Block,
         // property tools (after separator)
@@ -3308,6 +3416,26 @@ public partial class EditorMain : Control
         _undo.EndBatch();
         _viewport?.MarkLightmapDirty();
         _viewport?.QueueRedraw();
+    }
+
+    private void SetSelectionAnimatedWater(bool animatedWater)
+    {
+        if (_map == null || !_state.HasSelection) return;
+
+        _undo.BeginBatch(animatedWater ? "Mark Animated Water" : "Clear Animated Water");
+        for (int y = _state.SelY1; y <= _state.SelY2; y++)
+            for (int x = _state.SelX1; x <= _state.SelX2; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                if (before.AnimatedWater == animatedWater) continue;
+                _map.Tiles[x, y].AnimatedWater = animatedWater;
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+            }
+        _undo.EndBatch();
+        _state.MarkDirty();
+        _viewport?.QueueRedraw();
+        SetStatus(animatedWater ? "Area marcada como agua animada" : "Marca de agua quitada del area");
     }
 
     private void ClearSelectionTiles_Confirm1()
@@ -3440,6 +3568,18 @@ public partial class EditorMain : Control
         GD.Print($"[Editor] {msg}");
     }
 
+    private void ToggleGrhOverlay()
+    {
+        _state.ShowGrhOverlay = !_state.ShowGrhOverlay;
+        if (_viewMenu != null)
+        {
+            int idx = _viewMenu.GetItemIndex(15);
+            if (idx >= 0) _viewMenu.SetItemChecked(idx, _state.ShowGrhOverlay);
+        }
+        _viewport?.QueueRedraw();
+        SetStatus(_state.ShowGrhOverlay ? "Overlay GRH activado" : "Overlay GRH desactivado");
+    }
+
     private void UpdateTileInfo()
     {
         if (_tileInfoLabel == null || _map == null || !_state.HoverValid) return;
@@ -3483,7 +3623,11 @@ public partial class EditorMain : Control
             if (_rightTileSeparator != null) _rightTileSeparator.Visible = visible;
         }
 
-        if (!visible || _rightTileInfoLabel == null) return;
+        if (!visible || _rightTileInfoLabel == null)
+        {
+            SetRightTileActionButtons(null);
+            return;
+        }
 
         int x = _state.SelectedTileX, y = _state.SelectedTileY;
 
@@ -3492,9 +3636,16 @@ public partial class EditorMain : Control
         _lastSelectedTileX = x;
         _lastSelectedTileY = y;
 
+        // Keep the editable tile panel in sync with Hand-tool clicks. This lets
+        // the mapper strip a copied building's NPC/decoration without hunting
+        // for coordinates or changing the active paint layer.
+        if (_propsWindow?.Visible == true)
+            _propsPanel?.LoadTile(x, y);
+
         if (!_map!.InBounds(x, y))
         {
             _rightTileInfoLabel.Text = "Fuera del mapa";
+            SetRightTileActionButtons(null);
             return;
         }
 
@@ -3527,6 +3678,98 @@ public partial class EditorMain : Control
         if (tile.ParticleGroup > 0) lines.AppendLine($"Partícula: {tile.ParticleGroup}");
 
         _rightTileInfoLabel.Text = lines.ToString().TrimEnd();
+        SetRightTileActionButtons(tile);
+    }
+
+    private void SetRightTileActionButtons(MapTile? tile)
+    {
+        bool hasTile = tile.HasValue;
+        if (_rightRemoveLayer2Button != null)
+        {
+            _rightRemoveLayer2Button.Visible = hasTile && tile!.Value.Layer2 > 0;
+            if (hasTile) _rightRemoveLayer2Button.Text = $"Quitar decoracion L2 (GRH {tile!.Value.Layer2})";
+        }
+        if (_rightRemoveLayer3Button != null)
+        {
+            _rightRemoveLayer3Button.Visible = hasTile && tile!.Value.Layer3 > 0;
+            if (hasTile) _rightRemoveLayer3Button.Text = $"Quitar decoracion L3 (GRH {tile!.Value.Layer3})";
+        }
+        if (_rightRemoveLayer4Button != null)
+        {
+            _rightRemoveLayer4Button.Visible = hasTile && tile!.Value.Layer4 > 0;
+            if (hasTile) _rightRemoveLayer4Button.Text = $"Quitar decoracion L4 (GRH {tile!.Value.Layer4})";
+        }
+        if (_rightRemoveNpcButton != null)
+            _rightRemoveNpcButton.Visible = hasTile && tile!.Value.HasNpc;
+        if (_rightRemoveObjectButton != null)
+            _rightRemoveObjectButton.Visible = hasTile && tile!.Value.HasObject;
+    }
+
+    private void RemoveSelectedTileLayer(int layer)
+    {
+        if (_map == null || !_state.HasSelectedTile) return;
+        int x = _state.SelectedTileX, y = _state.SelectedTileY;
+        if (!_map.InBounds(x, y)) return;
+
+        var before = _map.Tiles[x, y];
+        ref var tile = ref _map.Tiles[x, y];
+        switch (layer)
+        {
+            case 2: tile.Layer2 = 0; break;
+            case 3: tile.Layer3 = 0; break;
+            case 4: tile.Layer4 = 0; break;
+            default: return;
+        }
+        if (before.Equals(tile)) return;
+
+        _undo.BeginBatch($"Remove Layer {layer}");
+        _undo.RecordTileChange(x, y, before, tile);
+        _undo.EndBatch();
+        _state.MarkDirty();
+        RefreshSelectedTileInfo();
+        _viewport?.QueueRedraw();
+        SetStatus($"Decoracion L{layer} quitada en ({x}, {y})");
+    }
+
+    private void RemoveSelectedTileNpc()
+    {
+        if (_map == null || !_state.HasSelectedTile) return;
+        int x = _state.SelectedTileX, y = _state.SelectedTileY;
+        if (!_map.InBounds(x, y) || !_map.Tiles[x, y].HasNpc) return;
+
+        var before = _map.Tiles[x, y];
+        _map.Tiles[x, y].NpcIndex = 0;
+        _undo.BeginBatch("Remove NPC");
+        _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+        _undo.EndBatch();
+        _state.MarkDirty();
+        RefreshSelectedTileInfo();
+        _viewport?.QueueRedraw();
+        SetStatus($"NPC quitado en ({x}, {y})");
+    }
+
+    private void RemoveSelectedTileObject()
+    {
+        if (_map == null || !_state.HasSelectedTile) return;
+        int x = _state.SelectedTileX, y = _state.SelectedTileY;
+        if (!_map.InBounds(x, y) || !_map.Tiles[x, y].HasObject) return;
+
+        var before = _map.Tiles[x, y];
+        _map.Tiles[x, y].ObjIndex = 0;
+        _map.Tiles[x, y].ObjAmount = 0;
+        _undo.BeginBatch("Remove Object");
+        _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+        _undo.EndBatch();
+        _state.MarkDirty();
+        RefreshSelectedTileInfo();
+        _viewport?.QueueRedraw();
+        SetStatus($"Objeto quitado en ({x}, {y})");
+    }
+
+    private void RefreshSelectedTileInfo()
+    {
+        _lastSelectedTileX = -2;
+        _lastSelectedTileY = -2;
     }
 
     public override void _Process(double delta)

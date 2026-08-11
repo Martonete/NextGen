@@ -207,3 +207,24 @@ Water tiles are GRH indices 1505-1520 with NO Layer2 overlay.
 - Range: +/-2 tiles horizontal (+/-3 if mounted)
 - Y-flipped sprite at half-brightness
 - Auras reflected separately (additive blend layer)
+
+### AO20 Water and Shore Port (2026-08-11)
+
+Water state is cached per map in `_waterMap`. A tile is water when its L1 GRH is
+in a known water range or when the `.aomap` tile has `AnimatedWater=true`.
+
+When `ShowWaterEffect` is enabled, `WorldRenderer` deforms the four tile corners.
+Edges shared with adjacent water tiles move together; coast-facing edges stay
+anchored so the surface does not open gaps over terrain. Wave sine/cosine values
+are precomputed once per frame and reused by every visible water tile. Rendering
+uses one convex polygon call per tile.
+
+The moving white foam is a separate L2 GRH animation, not a procedural effect.
+The imported AO20 grass-shore parent GRHs are `32881..32888`, backed by ten-frame
+regions from `6684.png`/`6685.png`. Therefore a complete coast requires:
+
+1. Water artwork on L1.
+2. The correctly oriented animated shore parent on L2.
+3. `AnimatedWater` on the intended L1 area when geometry waves are desired.
+
+The editor exposes all three operations but does not auto-detect coastline shape.

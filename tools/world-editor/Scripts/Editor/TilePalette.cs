@@ -15,11 +15,21 @@ public partial class TilePalette : VBoxContainer
 {
     [Signal] public delegate void LayerChangedEventHandler(int layer);
 
+    /// <summary>Fired when the user builds a combined stamp from Ctrl+Click multi-selection.
+    /// Listener should paste it the same way as Ctrl+V (State.Clipboard is already populated).</summary>
+    [Signal] public delegate void MultiStampReadyEventHandler();
+    [Signal] public delegate void CommerceCaptureRequestedEventHandler();
+    [Signal] public delegate void CommerceStampRequestedEventHandler();
+
     private ScrollContainer? _scrollContainer;
     private GridContainer? _grid;
     private Label? _infoLabel;
     private FlowContainer? _categoryFlow;
     private LineEdit? _searchBox;
+    private Button? _useSelectionButton;
+
+    // Ctrl+Click multi-selection, in click order — combined into one stamp via BuildMultiStamp()
+    private readonly List<TextureRef> _multiSelected = new();
 
     public TextureCatalog? Catalog;
     public GrhData[]? Grhs;
@@ -67,6 +77,104 @@ public partial class TilePalette : VBoxContainer
         brushSpin.ValueChanged += v => { if (State != null) State.PaintBrushRadius = (int)v; };
         brushRow.AddChild(brushSpin);
         AddChild(brushRow);
+
+        // Camino is deliberately a manual brush. Road art has distinct edge
+        // pieces, therefore the mapper chooses its orientation before drawing.
+        var pathRow = new HBoxContainer();
+        pathRow.AddThemeConstantOverride("separation", 6);
+        pathRow.AddChild(EditorTheme.MakeLabel("Camino:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        var pathMode = new OptionButton
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            TooltipText = "Forma usada por la herramienta Camino. Pasto pinta solamente terreno.",
+        };
+        pathMode.AddItem("Pasto", (int)PathBrushMode.Grass);
+        pathMode.AddItem("Camino centrado", (int)PathBrushMode.Centered);
+        pathMode.AddItem("Recto horizontal", (int)PathBrushMode.Horizontal);
+        pathMode.AddItem("Recto vertical", (int)PathBrushMode.Vertical);
+        pathMode.AddItem("Recto derecha", (int)PathBrushMode.Right);
+        pathMode.AddItem("Recto izquierda", (int)PathBrushMode.Left);
+        pathMode.AddItem("Curva arriba derecha", (int)PathBrushMode.UpRight);
+        pathMode.AddItem("Curva arriba izquierda", (int)PathBrushMode.UpLeft);
+        pathMode.AddItem("Curva abajo izquierda", (int)PathBrushMode.DownLeft);
+        pathMode.AddItem("Curva abajo derecha", (int)PathBrushMode.DownRight);
+        pathMode.AddItem("Costa pasto: arriba", (int)PathBrushMode.CoastTop);
+        pathMode.AddItem("Costa pasto: abajo", (int)PathBrushMode.CoastBottom);
+        pathMode.AddItem("Costa pasto: izquierda", (int)PathBrushMode.CoastLeft);
+        pathMode.AddItem("Costa pasto: derecha", (int)PathBrushMode.CoastRight);
+        pathMode.AddItem("Costa pasto: arriba izquierda", (int)PathBrushMode.CoastTopLeft);
+        pathMode.AddItem("Costa pasto: arriba derecha", (int)PathBrushMode.CoastTopRight);
+        pathMode.AddItem("Costa pasto: abajo izquierda", (int)PathBrushMode.CoastBottomLeft);
+        pathMode.AddItem("Costa pasto: abajo derecha", (int)PathBrushMode.CoastBottomRight);
+        pathMode.Select((int)(State?.PathBrush ?? PathBrushMode.Grass));
+        pathMode.ItemSelected += index =>
+        {
+            if (State != null) State.PathBrush = (PathBrushMode)index;
+        };
+        pathRow.AddChild(pathMode);
+        AddChild(pathRow);
+
+        var grassSizeRow = new HBoxContainer();
+        grassSizeRow.AddThemeConstantOverride("separation", 4);
+        grassSizeRow.AddChild(EditorTheme.MakeLabel("Pasto:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        grassSizeRow.AddChild(EditorTheme.MakeLabel("An.", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM));
+        var grassWidth = new SpinBox { MinValue = 1, MaxValue = 40, Step = 1, Value = State?.PathGrassWidth ?? 1 };
+        grassWidth.CustomMinimumSize = new Vector2(46, 0);
+        grassWidth.TooltipText = "Ancho del sello de pasto en tiles";
+        grassWidth.ValueChanged += value => { if (State != null) State.PathGrassWidth = (int)value; };
+        grassSizeRow.AddChild(grassWidth);
+        grassSizeRow.AddChild(EditorTheme.MakeLabel("Al.", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM));
+        var grassHeight = new SpinBox { MinValue = 1, MaxValue = 40, Step = 1, Value = State?.PathGrassHeight ?? 1 };
+        grassHeight.CustomMinimumSize = new Vector2(46, 0);
+        grassHeight.TooltipText = "Alto del sello de pasto en tiles";
+        grassHeight.ValueChanged += value => { if (State != null) State.PathGrassHeight = (int)value; };
+        grassSizeRow.AddChild(grassHeight);
+        AddChild(grassSizeRow);
+
+        var commerceRow = new HBoxContainer();
+        commerceRow.AddThemeConstantOverride("separation", 4);
+        var captureCommerce = new Button { Text = "Guardar comercio", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        captureCommerce.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        captureCommerce.TooltipText = "Guarda la selección actual como plantilla con todas sus capas";
+        captureCommerce.Pressed += () => EmitSignal(SignalName.CommerceCaptureRequested);
+        commerceRow.AddChild(captureCommerce);
+        var stampCommerce = new Button { Text = "Comercio", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        stampCommerce.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        stampCommerce.TooltipText = "Coloca la plantilla de comercio guardada";
+        stampCommerce.Pressed += () => EmitSignal(SignalName.CommerceStampRequested);
+        commerceRow.AddChild(stampCommerce);
+        AddChild(commerceRow);
+
+        var commerceContentRow = new HBoxContainer();
+        commerceContentRow.AddThemeConstantOverride("separation", 4);
+        commerceContentRow.AddChild(EditorTheme.MakeLabel("Incluye:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        var includeL3 = new CheckBox { Text = "L3", ButtonPressed = State?.CommerceIncludeLayer3 ?? true };
+        includeL3.TooltipText = "Incluye decoración de Layer 3 al guardar el comercio";
+        includeL3.Toggled += value => { if (State != null) State.CommerceIncludeLayer3 = value; };
+        commerceContentRow.AddChild(includeL3);
+        var includeNpcs = new CheckBox { Text = "NPC", ButtonPressed = State?.CommerceIncludeNpcs ?? true };
+        includeNpcs.TooltipText = "Incluye NPCs existentes al guardar el comercio";
+        includeNpcs.Toggled += value => { if (State != null) State.CommerceIncludeNpcs = value; };
+        commerceContentRow.AddChild(includeNpcs);
+        var includeObjects = new CheckBox { Text = "Obj.", ButtonPressed = State?.CommerceIncludeObjects ?? true };
+        includeObjects.TooltipText = "Incluye objetos de mapa al guardar el comercio";
+        includeObjects.Toggled += value => { if (State != null) State.CommerceIncludeObjects = value; };
+        commerceContentRow.AddChild(includeObjects);
+        AddChild(commerceContentRow);
+
+        // "Usar selección" — appears once Ctrl+Click has picked 2+ textures below.
+        // Combines them (in click order, wrapped at Columns per row) into a single
+        // multi-tile stamp and hands it to the same Ctrl+V/Enter paste flow.
+        _useSelectionButton = new Button
+        {
+            Text = "Usar selección",
+            Visible = false,
+            CustomMinimumSize = new Vector2(0, 26),
+        };
+        _useSelectionButton.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        _useSelectionButton.TooltipText = "Ctrl+Click en varias texturas de la grilla para armar un grupo,\nluego tocá acá para combinarlas en un solo pincel (mové y Enter para confirmar)";
+        _useSelectionButton.Pressed += BuildMultiStamp;
+        AddChild(_useSelectionButton);
 
         // Category buttons (wrapped flow — always fully visible, no scrollbar)
         _categoryFlow = new FlowContainer();
@@ -226,10 +334,12 @@ public partial class TilePalette : VBoxContainer
             if (preview != null)
                 btn.TextureNormal = preview;
 
-            // Highlight selected
-            btn.Modulate = (State?.SelectedTexture == texRef)
-                ? new Color(1, 1, 0.5f, 1)
-                : Colors.White;
+            // Highlight selected (multi-selection cyan takes priority over single-select yellow)
+            btn.Modulate = _multiSelected.Contains(texRef)
+                ? new Color(0.55f, 0.9f, 1f, 1)
+                : (State?.SelectedTexture == texRef)
+                    ? new Color(1, 1, 0.5f, 1)
+                    : Colors.White;
 
             var capturedRef = texRef;
             btn.Pressed += () => OnTextureSelected(capturedRef);
@@ -255,6 +365,23 @@ public partial class TilePalette : VBoxContainer
     private void OnTextureSelected(TextureRef texRef)
     {
         if (State == null) return;
+
+        // Ctrl+Click: toggle membership in the multi-selection instead of the normal
+        // single-texture paint selection.
+        if (Input.IsKeyPressed(Key.Ctrl))
+        {
+            ToggleMultiSelected(texRef);
+            return;
+        }
+
+        // Plain click while a multi-selection is pending clears it (avoids confusing
+        // half-built state) and falls through to the normal single-texture select.
+        if (_multiSelected.Count > 0)
+        {
+            _multiSelected.Clear();
+            SyncUseSelectionButton();
+        }
+
         State.SelectedTexture = texRef;
         State.EyedropGrh = 0; // Clear raw eyedrop when selecting from catalog
         State.ActiveTool = EditorTool.Paint;
@@ -279,10 +406,89 @@ public partial class TilePalette : VBoxContainer
     {
         foreach (var (btn, texRef) in _gridButtons)
         {
-            btn.Modulate = (State?.SelectedTexture == texRef)
-                ? new Color(1, 1, 0.5f, 1)
-                : Colors.White;
+            int multiIdx = _multiSelected.IndexOf(texRef);
+            if (multiIdx >= 0)
+            {
+                // Cyan tint for Ctrl+Click multi-selection, distinct from the
+                // single-selection yellow so both states never look the same.
+                btn.Modulate = new Color(0.55f, 0.9f, 1f, 1);
+            }
+            else
+            {
+                btn.Modulate = (State?.SelectedTexture == texRef)
+                    ? new Color(1, 1, 0.5f, 1)
+                    : Colors.White;
+            }
         }
+    }
+
+    /// <summary>Ctrl+Click handler: add/remove a texture from the multi-selection.</summary>
+    private void ToggleMultiSelected(TextureRef texRef)
+    {
+        if (!_multiSelected.Remove(texRef))
+            _multiSelected.Add(texRef);
+
+        SyncUseSelectionButton();
+        UpdateGridHighlights();
+    }
+
+    private void SyncUseSelectionButton()
+    {
+        if (_useSelectionButton == null) return;
+        _useSelectionButton.Visible = _multiSelected.Count >= 2;
+        _useSelectionButton.Text = $"Usar selección ({_multiSelected.Count})";
+
+        if (_infoLabel != null && _multiSelected.Count > 0)
+        {
+            _infoLabel.Text = _multiSelected.Count == 1
+                ? "1 textura elegida — Ctrl+Click en más para combinarlas"
+                : $"{_multiSelected.Count} texturas elegidas — tocá \"Usar selección\" para combinarlas";
+        }
+    }
+
+    /// <summary>
+    /// Combines the Ctrl+Click multi-selection (in click order, wrapped every
+    /// Columns tiles — same layout as the visible grid) into a single MapTile
+    /// buffer written straight into State.Clipboard, then asks the map editor
+    /// to paste it via the existing Ctrl+V pending-placement flow (move + Enter
+    /// to confirm, Escape to cancel).
+    /// </summary>
+    private void BuildMultiStamp()
+    {
+        if (State == null || _multiSelected.Count < 2) return;
+
+        int cols = Math.Min(Columns, _multiSelected.Count);
+        int rows = (int)Math.Ceiling(_multiSelected.Count / (double)cols);
+
+        var clip = new MapTile[cols + 1, rows + 1];
+        for (int i = 0; i < _multiSelected.Count; i++)
+        {
+            int cx = i % cols;
+            int cy = i / cols;
+            var texRef = _multiSelected[i];
+            int layer = Math.Clamp(texRef.Layer >= 1 ? texRef.Layer : 1, 1, 4);
+
+            var tile = clip[cx + 1, cy + 1];
+            switch (layer)
+            {
+                case 1: tile.Layer1 = texRef.GrhIndex; break;
+                case 2: tile.Layer2 = texRef.GrhIndex; break;
+                case 3: tile.Layer3 = texRef.GrhIndex; break;
+                case 4: tile.Layer4 = texRef.GrhIndex; break;
+            }
+            clip[cx + 1, cy + 1] = tile;
+        }
+
+        State.Clipboard = clip;
+        State.ClipWidth = cols;
+        State.ClipHeight = rows;
+
+        _multiSelected.Clear();
+        SyncUseSelectionButton();
+        UpdateGridHighlights();
+        _infoLabel!.Text = $"Grupo de {cols}x{rows} listo — moveté sobre el mapa y Enter para confirmar (Escape cancela)";
+
+        EmitSignal(SignalName.MultiStampReady);
     }
 
     private void OnTextureReordered(int fromIdx, int toIdx)

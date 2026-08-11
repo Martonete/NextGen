@@ -91,7 +91,9 @@ pub(crate) async fn accion_para_puerta(
             .get_object(new_obj_idx)
             .map(|o| o.grh_index)
             .unwrap_or(0);
-        let pkt_ho = binary_packets::write_object_create(x as i16, y as i16, new_grh as i16);
+        let pkt_ho = binary_packets::write_object_create(
+            x as i16, y as i16, new_grh as i16, new_obj_idx as i16,
+        );
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
 
         // Read door type from the NEW object (VB6 reads after ObjIndex change)
@@ -150,7 +152,9 @@ pub(crate) async fn accion_para_puerta(
         // Send HO packet with the NEW object's graphic
         let closed_obj = state.get_object(new_obj_idx).cloned();
         let new_grh = closed_obj.as_ref().map(|o| o.grh_index).unwrap_or(0);
-        let pkt_ho = binary_packets::write_object_create(x as i16, y as i16, new_grh as i16);
+        let pkt_ho = binary_packets::write_object_create(
+            x as i16, y as i16, new_grh as i16, new_obj_idx as i16,
+        );
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
 
         // Read door type from the NEW (closed) object

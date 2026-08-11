@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use super::class_race::{PlayerClass, PlayerRace};
-use super::npc::{NpcIndex, NpcState};
+use super::npc::{BotCooldowns, NpcIndex, NpcState};
 use super::world::{self, CharIndex, WorldState};
 use crate::config::ServerConfig;
 use crate::data::GameData;
@@ -782,6 +782,18 @@ pub struct GameState {
     /// Dead respawning NPCs waiting for their original tile to be free.
     pub pending_respawn_npc_indices: HashSet<usize>,
 
+    /// GM-spawned duel bots (`/BOT <clase>`) — subset of active NPCs that get
+    /// ticked by `tick_bot_ai` on a faster cadence than normal monster AI.
+    pub active_bot_indices: HashSet<usize>,
+    /// Per-bot attack-type cooldowns, keyed by NpcIndex. Compared against `game_tick_count`.
+    pub bot_cooldowns: HashMap<usize, BotCooldowns>,
+    /// Class of each active duel bot, keyed by NpcIndex — `NpcState` has no class
+    /// field, so `tick_bot_ai` needs this to branch Paladín/Mago/Cazador behavior.
+    pub bot_classes: HashMap<usize, PlayerClass>,
+    /// Monotonic 40ms game-tick counter, used to time bot AI cadence and cooldowns
+    /// without a dedicated decrement pass (see `npc::BotCooldowns`).
+    pub game_tick_count: u64,
+
     // Party system (runtime only, not persisted)
     pub parties: Vec<Option<PartyState>>,
     pub next_party_index: i32,
@@ -1037,6 +1049,10 @@ impl GameState {
             next_npc_index: 1,
             active_npc_indices: HashSet::new(),
             pending_respawn_npc_indices: HashSet::new(),
+            active_bot_indices: HashSet::new(),
+            bot_cooldowns: HashMap::new(),
+            bot_classes: HashMap::new(),
+            game_tick_count: 0,
             parties: vec![None; MAX_PARTIES + 1], // 1-indexed
             next_party_index: 1,
             num_users: 0,

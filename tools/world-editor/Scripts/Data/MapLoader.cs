@@ -171,6 +171,7 @@ public static class MapLoader
                 ref var tile = ref mapData.Tiles[x, y];
 
                 tile.Blocked = (byFlags & 1) != 0;
+                tile.AnimatedWater = (byFlags & 128) != 0;
                 tile.Layer1 = reader.ReadInt32();
 
                 tile.Layer2 = (byFlags & 2) != 0 ? reader.ReadInt32() : 0;
@@ -375,6 +376,7 @@ public static class MapLoader
                 if (tile.Trigger != 0) byFlags |= 16;
                 if (tile.ParticleGroup != 0) byFlags |= 32;
                 if (tile.LightRange != 0) byFlags |= 64;
+                if (tile.AnimatedWater) byFlags |= 128;
 
                 writer.Write(byFlags);
                 writer.Write(tile.Layer1);

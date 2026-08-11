@@ -1358,6 +1358,7 @@ pub(super) async fn user_die(
         user.paralyzed = false;
         user.immobilized = false;
         user.paralyzed_by = None;
+        user.paralyzed_by_npc = None;
         user.invisible = false;
         user.meditating = false;
         user.resting = false;
@@ -1552,8 +1553,9 @@ pub(super) async fn user_die(
                                 tile.ground_item.amount = amount;
                             }
                         }
-                        let ho_pkt =
-                            binary_packets::write_object_create(tx as i16, ty as i16, grh as i16);
+                        let ho_pkt = binary_packets::write_object_create(
+                            tx as i16, ty as i16, grh as i16, obj_idx as i16,
+                        );
                         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
                         off_idx = (idx + 1) % offsets.len();
                         placed = true;

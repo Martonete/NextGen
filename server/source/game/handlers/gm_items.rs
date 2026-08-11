@@ -986,7 +986,7 @@ pub(super) async fn handle_slash_haceritem(
 
     // Send HO packet to show item visually
     if grh > 0 {
-        let ho_pkt = binary_packets::write_object_create(x as i16, y as i16, grh as i16);
+        let ho_pkt = binary_packets::write_object_create(x as i16, y as i16, grh as i16, obj_id as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
     }
 

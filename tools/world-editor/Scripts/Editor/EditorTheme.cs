@@ -1203,6 +1203,7 @@ public static class EditorTheme
         if (lower.Contains("nuevo") || lower.Contains("new")) return "file_new";
         // Tool names (Spanish)
         if (lower.Contains("pintar") || lower.Contains("paint")) return "pencil";
+        if (lower.Contains("camino") || lower.Contains("path")) return "pencil";
         if (lower.Contains("borrar") || lower.Contains("erase")) return "eraser";
         if (lower.Contains("seleccionar") || lower.Contains("select")) return "select";
         if (lower.Contains("mover") || lower.Contains("move")) return "move";

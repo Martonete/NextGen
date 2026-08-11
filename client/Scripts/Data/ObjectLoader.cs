@@ -24,6 +24,7 @@ public class ObjInfo
     public int MochilaType;
     public bool Newbie;
     public bool Agarrable;
+    public int CreaAura;
 }
 
 public static class ObjectLoader
@@ -289,6 +290,7 @@ public static class ObjectLoader
             case "MOCHILATYPE": obj.MochilaType = ToInt(value); break;
             case "NEWBIE": obj.Newbie = ToBool(value); break;
             case "AGARRABLE": obj.Agarrable = ToBool(value); break;
+            case "CREAAURA": obj.CreaAura = ToInt(value); break;
         }
     }
 

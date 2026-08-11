@@ -128,6 +128,7 @@ public static class MapLoader
                 ref var tile = ref mapData.Tiles[x, y];
 
                 tile.Blocked = (byFlags & 1) != 0;
+                tile.AnimatedWater = (byFlags & 128) != 0;
 
                 // Layer 1 always present
                 tile.Layer1 = reader.ReadInt32();
@@ -431,6 +432,7 @@ public class MapData
 public struct MapTile
 {
     public bool Blocked;
+    public bool AnimatedWater;
     public int Layer1;  // GRH index (read as UInt16 to support indices > 32767)
     public int Layer2;
     public int Layer3;

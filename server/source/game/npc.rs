@@ -48,6 +48,23 @@ pub const ELEMENTAL_AGUA: i32 = 92;
 pub const ELEMENTAL_FUEGO: i32 = 93;
 pub const ELEMENTAL_TIERRA: i32 = 94;
 
+/// GM-spawned duel-practice bot (`/BOT <clase>`). Moves/fights at player-like
+/// pace via its own tick (see `handlers::ticks::bot_ai`), not the slow shared
+/// monster AI tick.
+pub const AI_BOT_DUEL: i32 = 30;
+
+/// Per-attack-type cooldowns for a duel bot, keyed by `NpcIndex` in
+/// `GameState::bot_cooldowns`. Compared against `GameState::game_tick_count`
+/// (incremented every 40ms game tick) rather than decremented every tick —
+/// avoids needing a dedicated decrement pass for a handful of bots.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BotCooldowns {
+    pub next_golpe: u64,
+    pub next_flecha: u64,
+    pub next_hechizo: u64,
+    pub next_control: u64,
+}
+
 /// NPC vision range for aggro detection (VB6: RANGO_VISION_X=8, RANGO_VISION_Y=6).
 /// Code uses half_x/half_y = NPC_VISION / 2, so set to 2x to match VB6's ±8/±6 range.
 pub const NPC_VISION_X: i32 = 16;

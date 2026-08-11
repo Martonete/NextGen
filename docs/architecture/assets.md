@@ -4,7 +4,8 @@
 
 ### Binary GRH Database
 
-**Location**: `client/Data/INIT/Graficos.ind` (532 KB, ~32,824 entries)
+**Source location**: `resources/data/INIT/Graficos.ind` (~537 KB, 33,112 entries).
+The client consumes the packed copy from `client/Data/init.aopak`.
 
 ### Header Detection (auto-detect 3 formats)
 
@@ -13,7 +14,7 @@ The loader tries:
 2. **With MiCabecera**: skip 263 bytes → Version(i32) + Count(i32)
 3. **Fallback**: skip 1 flag byte → Version(i32) + Count(i32)
 
-Actual file: Version=447, Count=32,824.
+Actual file after the AO20 shore import: Version=447, Count=33,112.
 
 ### Entry Formats
 
@@ -91,6 +92,16 @@ AO uses black (0,0,0) as the transparency color:
 ### Texture Caching
 - LRU cache: 256 textures (client), 512 (editor)
 - Loaded on demand via `TextureManager.GetTexture(fileNum)`
+- Cache-hit LRU promotion is amortized (client: every 60 accesses; editor: every
+  64 accesses) to avoid linked-list churn in per-tile render loops.
+
+### Imported AO20 shore assets
+
+- Source sheets: `6684.png` and `6685.png`.
+- Compact static/animation range: `32761..33112`.
+- Directional animated parent GRHs: `32881..32888`.
+- Keep the compact remap when regenerating `Graficos.ind`; using AO20's original
+  sparse `85xxx` IDs materially increases startup memory and scan cost.
 
 ---
 
@@ -163,7 +174,7 @@ Formula: GrhAt(px, py) = GrhIndice + (py × Ancho) + px
 ### Why Some Textures Don't Load
 - 644 declared but ~496 actually loaded: some REFERENCIA sections are missing from the file (gaps in numbering)
 - The loader iterates `refCount + 10` beyond declared count as safety margin
-- All loaded GrhIndice values are within valid range (max ~27,912 < 32,824 GRHs)
+- All catalog `GrhIndice` values remain within the valid 33,112-entry range.
 
 ---
 
@@ -255,7 +266,7 @@ Per FX (6 bytes):
 
 | File | Size | Format | Entries | Purpose |
 |------|------|--------|---------|---------|
-| Graficos.ind | 532K | Binary | 32,824 | All graphics/animations |
+| Graficos.ind | ~537K | Binary | 33,112 | All graphics/animations |
 | indices.ini | 35K | INI | 644 | Tile texture catalog |
 | Personajes.ind | 6.3K | Binary | 53 | Body walk animations |
 | Cabezas.ind | 8.4K | Binary | 400 | Head sprites |
@@ -322,7 +333,7 @@ Used by: Graficos.ind, Personajes.ind, Cabezas.ind, Cascos.ind, Fxs.ind
 | WaterGrhMax | 1520 | Last water GRH index |
 | MaxParticles | 105 | Particle definitions |
 | MaxAuras | 96 | Aura definitions |
-| MaxGRHs | ~32,824 | Total GRH entries |
+| MaxGRHs | 33,112 | Total GRH entries |
 | ScrollPixelsPerFrame | 8 | Movement smoothing |
 | EngineBaseSpeed | 0.0172 | Movement timing base |
 | RoofFadeSpeed | 6.0/frame | Roof alpha change rate |

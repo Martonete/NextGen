@@ -267,6 +267,7 @@ public partial class Main : Control
 	private Vector2I _windowDragStart;
 
 	private bool _connecting;
+	private int _loginAttemptId;
 
 
 	// Login form (programmatic — replaces scene-based LoginPanel)
@@ -500,9 +501,10 @@ public partial class Main : Control
 		};
 	}
 
-	private void CreateTcpSession()
+	private int CreateTcpSession()
 	{
 		_tcp?.Dispose();
+		_loginAttemptId++;
 		_tcp = new AoTcpClient();
 		_auraViewerPanel?.SetTcp(_tcp);
 		_itemSearchPanel?.SetTcp(_tcp);
@@ -522,6 +524,7 @@ public partial class Main : Control
 			}
 			_state.Config.Save(_dataPath);
 		};
+		return _loginAttemptId;
 	}
 
 	public override void _Ready()
@@ -646,10 +649,10 @@ public partial class Main : Control
 			_autoReconnectPending = false;
 			_autoSelectingCharacter = false;
 			_autoReconnectAttempts = 0;
-			CreateTcpSession();
+			int loginAttemptId = CreateTcpSession();
 			_loginForm!.Connecting = true;
 			_connecting = true;
-			_ = ConnectAndLogin(account, password);
+			_ = ConnectAndLogin(account, password, loginAttemptId);
 		};
 		_loginForm.OnCreateAccountPressed = OnCrearCuentaPressed;
 
@@ -1504,7 +1507,7 @@ public partial class Main : Control
 
 		// Check for .aopak files already present in editor Data/
 		if (System.IO.Directory.Exists(editorData) &&
-		    System.IO.Directory.GetFiles(editorData, "*.aopak").Length > 0)
+			System.IO.Directory.GetFiles(editorData, "*.aopak").Length > 0)
 		{
 			return editorData;
 		}

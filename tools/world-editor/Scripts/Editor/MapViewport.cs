@@ -618,7 +618,7 @@ public partial class MapViewport : Control
     {
         if (State == null || Map == null || _isDragging) return;
         if (State.Pending.Active) return; // Don't show paint preview during pending placement
-        if (State.ActiveTool != EditorTool.Paint && !_mosaicHandleDrag) return;
+        if (State.ActiveTool != EditorTool.Paint && State.ActiveTool != EditorTool.Path && !_mosaicHandleDrag) return;
         if (!State.HoverValid && !_mosaicHandleDrag) return;
 
         int hx = State.HoverX, hy = State.HoverY;
@@ -626,6 +626,12 @@ public partial class MapViewport : Control
 
         var previewColor = new Color(1, 1, 1, 0.55f);
         bool centerOnTile = State.ActiveLayer >= 2;
+
+        if (State.ActiveTool == EditorTool.Path)
+        {
+            DrawPathPreview(hx, hy, previewColor);
+            return;
+        }
 
         if (State.SelectedTexture != null)
         {
@@ -1330,6 +1336,8 @@ public partial class MapViewport : Control
                 }
 
         // ── Selected tile highlight (Hand tool click) ──
+        DrawGrhOverlay(ovMinX, ovMinY, ovMaxX, ovMaxY, skipDetailedOverlays);
+
         if (State.HasSelectedTile && Map.InBounds(State.SelectedTileX, State.SelectedTileY))
         {
             float sx = State.SelectedTileX * TileSize;
@@ -1396,6 +1404,115 @@ public partial class MapViewport : Control
         DrawString(ThemeDB.FallbackFont,
             new Vector2(px + 2, py + fontSize),
             text, HorizontalAlignment.Left, -1, fontSize, textColor);
+    }
+
+    private void DrawGrhOverlay(int minX, int minY, int maxX, int maxY, bool skipDetailedOverlays)
+    {
+        if (State == null || Map == null || !State.ShowGrhOverlay || skipDetailedOverlays) return;
+        if (State.Zoom < 0.45f) return;
+
+        for (int y = minY; y <= maxY; y++)
+        {
+            for (int x = minX; x <= maxX; x++)
+            {
+                ref var tile = ref Map.Tiles[x, y];
+                int row = 0;
+                DrawLayerGrhLabel(x, y, 1, tile.Layer1, ref row);
+                DrawLayerGrhLabel(x, y, 2, tile.Layer2, ref row);
+                DrawLayerGrhLabel(x, y, 3, tile.Layer3, ref row);
+                DrawLayerGrhLabel(x, y, 4, tile.Layer4, ref row);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Shows the exact road/grass stamp that a click will commit. Path stamps are
+    /// deliberately not painted while dragging: mapper feedback stays one-to-one
+    /// with the tile arrangement that is finally written to Layer 1.
+    /// </summary>
+    private void DrawPathPreview(int baseX, int baseY, Color previewColor)
+    {
+        if (State == null || Map == null) return;
+
+        if (IsAo20CoastBrush(State.PathBrush))
+        {
+            DrawTileGrh(GetPathGrh(baseX, baseY, 0, 0), baseX, baseY,
+                center: true, modulate: previewColor);
+            var coastRect = new Rect2((baseX - 1) * TileSize, (baseY - 1) * TileSize,
+                3 * TileSize, 2 * TileSize);
+            DrawRect(coastRect, new Color(1f, 0.82f, 0.18f, 0.9f), false, 2f);
+            return;
+        }
+
+        GetPathStampSize(out int width, out int height);
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+            {
+                int tx = baseX + x;
+                int ty = baseY + y;
+                if (!Map.InBounds(tx, ty)) continue;
+                DrawTileGrh(GetPathGrh(baseX, baseY, x, y), tx, ty, modulate: previewColor);
+            }
+
+        var rect = new Rect2(baseX * TileSize, baseY * TileSize,
+            width * TileSize, height * TileSize);
+        DrawRect(rect, new Color(1f, 0.82f, 0.18f, 0.9f), false, 2f);
+    }
+
+    private void DrawLayerGrhLabel(int x, int y, int layer, int grh, ref int row)
+    {
+        if (State == null || grh <= 0 || !IsLayerVisible(layer)) return;
+
+        bool active = State.ActiveLayer == layer;
+        // The active layer is already identified by the layer tab, so reserve
+        // the whole tile width for the GRH number itself. Four large digits are
+        // much easier to transcribe than a tiny repeated "L1" prefix.
+        string text = active ? grh.ToString() : $"{layer}:{grh}";
+        // Labels must fit inside one 32px tile even at high zoom. Rendering the
+        // text in a fixed-width plate prevents the next tile's label from hiding
+        // the last digits of this one.
+        int fontSize = active ? 8 : 6;
+        float textW = TileSize - 2;
+        float textH = fontSize + 3;
+        float px = x * TileSize + 1;
+        float py = y * TileSize + 1 + row * (textH + 1);
+
+        // GRH labels need to remain readable over both dark grass and light dirt.
+        // A near-black plate and a high-contrast border work more reliably than
+        // a translucent layer-color fill.
+        var border = active ? new Color(1f, 0.78f, 0.18f, 1f) : LayerLabelColor(layer);
+        var fg = active ? new Color(1f, 0.88f, 0.35f, 1f) : Colors.White;
+        var rect = new Rect2(px, py, textW, textH);
+        DrawRect(rect, new Color(0.02f, 0.025f, 0.035f, 0.92f));
+        DrawRect(rect, border with { A = 0.95f }, false, active ? 1.5f : 1f);
+        DrawString(ThemeDB.FallbackFont, new Vector2(px + 1, py + fontSize + 1),
+            text, HorizontalAlignment.Center, textW - 2, fontSize, fg);
+        row++;
+    }
+
+    private bool IsLayerVisible(int layer)
+    {
+        if (State == null) return false;
+        return layer switch
+        {
+            1 => State.ShowLayer1,
+            2 => State.ShowLayer2,
+            3 => State.ShowLayer3,
+            4 => State.ShowLayer4,
+            _ => false,
+        };
+    }
+
+    private static Color LayerLabelColor(int layer)
+    {
+        return layer switch
+        {
+            1 => new Color(0.05f, 0.25f, 0.60f, 1f),
+            2 => new Color(0.05f, 0.45f, 0.24f, 1f),
+            3 => new Color(0.58f, 0.28f, 0.06f, 1f),
+            4 => new Color(0.38f, 0.18f, 0.58f, 1f),
+            _ => new Color(0.18f, 0.18f, 0.18f, 1f),
+        };
     }
 
     /// <summary>
@@ -1659,6 +1776,19 @@ public partial class MapViewport : Control
         int tx = (int)((local.X - State!.CameraOffset.X) / State.Zoom / TileSize);
         int ty = (int)((local.Y - State.CameraOffset.Y) / State.Zoom / TileSize);
         return new Vector2I(tx, ty);
+    }
+
+    /// <summary>
+    /// Tile at the center of the currently visible viewport — used as a paste
+    /// origin fallback when nothing is hovered (e.g. paste triggered from a
+    /// sidebar button click, where the mouse is over the palette, not the map).
+    /// </summary>
+    public Vector2I GetViewCenterTile()
+    {
+        var local = Size / 2f;
+        int tx = (int)((local.X - State!.CameraOffset.X) / State.Zoom / TileSize);
+        int ty = (int)((local.Y - State.CameraOffset.Y) / State.Zoom / TileSize);
+        return ClampToMap(new Vector2I(tx, ty));
     }
 
     /// <summary>
@@ -2008,6 +2138,13 @@ public partial class MapViewport : Control
                             }
                         }
                         goto case EditorTool.Block; // fall through to paint
+                    case EditorTool.Path:
+                        // A path is a visible stamp, not a freehand stroke. The
+                        // matching preview is already under the cursor at this point.
+                        Undo?.BeginBatch("Paint Path");
+                        PaintPathAt(tile.X, tile.Y);
+                        Undo?.EndBatch();
+                        break;
                     case EditorTool.Erase:
                     case EditorTool.Block:
                         _isPainting = true;
@@ -2156,7 +2293,11 @@ public partial class MapViewport : Control
             else // Left button released
             {
                 if (_mosaicHandleDrag) { _mosaicHandleDrag = false; QueueRedraw(); }
-                if (_isPainting) { _isPainting = false; Undo?.EndBatch(); }
+                if (_isPainting)
+                {
+                    _isPainting = false;
+                    Undo?.EndBatch();
+                }
                 if (_isSelecting)
                 {
                     _isSelecting = false;
@@ -2289,6 +2430,10 @@ public partial class MapViewport : Control
             }
             else if (State.ActiveTool == EditorTool.Paint || State.ActiveTool == EditorTool.Block)
                 ApplyToolAt(tile.X, tile.Y);
+            else if (State.ActiveTool == EditorTool.Path)
+            {
+                // Stamps are committed only by a click; movement keeps the preview live.
+            }
             else
                 EraseAt(tile.X, tile.Y);
             QueueRedraw();
@@ -2990,6 +3135,268 @@ public partial class MapViewport : Control
             SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)State.EyedropGrh);
             Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
         }
+    }
+
+    // Recto horizontal: the continuous 4 x 4 section of Graficos/6005.png.
+    // This is the exact GRH block supplied by the mapper (6320-6335).
+    private static readonly int[,] PathHorizontalPattern =
+    {
+        { 6320, 6321, 6322, 6323 },
+        { 6324, 6325, 6326, 6327 },
+        { 6328, 6329, 6330, 6331 },
+        { 6332, 6333, 6334, 6335 },
+    };
+
+    // Camino centrado: exact 4 x 5 mapper capture.
+    private static readonly int[,] PathCenteredPattern =
+    {
+        { 6380, 6381, 6382, 6383 },
+        { 6528, 6529, 6530, 6531 },
+        { 6532, 6533, 6534, 6535 },
+        { 6536, 6537, 6538, 6539 },
+        { 6540, 6541, 6542, 6543 },
+    };
+
+    // Recto derecha: confirmed 4 x 4 section from the mapper capture.
+    private static readonly int[,] PathRightPattern =
+    {
+        { 6368, 6369, 6498, 6499 },
+        { 6372, 6373, 6502, 6503 },
+        { 6376, 6377, 6506, 6507 },
+        { 6380, 6381, 6510, 6511 },
+    };
+
+    // Recto izquierda: confirmed 4 x 4 section from the mapper capture.
+    private static readonly int[,] PathLeftPattern =
+    {
+        { 6512, 6513, 6370, 6367 },
+        { 6516, 6517, 6374, 6371 },
+        { 6520, 6521, 6378, 6375 },
+        { 6524, 6525, 6382, 6379 },
+    };
+
+    // Recto vertical: exact 4 x 5 matrix captured from the mapper's road set.
+    // Keep the non-sequential second row intact: those four edge pieces are what
+    // makes this strip meet the surrounding grass without a hard seam.
+    private static readonly int[,] PathVerticalPattern =
+    {
+        { 6376, 6377, 6378, 6379 },
+        { 6380, 6369, 6370, 6371 },
+        { 6372, 6373, 6374, 6375 },
+        { 6376, 6377, 6378, 6379 },
+        { 6380, 6381, 6382, 6383 },
+    };
+
+    // Curva arriba derecha: exact 4 x 5 mapper capture.
+    private static readonly int[,] PathUpRightPattern =
+    {
+        { 6400, 6401, 6402, 6403 },
+        { 6404, 6405, 6406, 6407 },
+        { 6408, 6409, 6410, 6411 },
+        { 6412, 6413, 6414, 6415 },
+        { 6368, 6369, 6370, 6371 },
+    };
+
+    // Curva arriba izquierda: exact 5 x 6 mapper capture.
+    private static readonly int[,] PathUpLeftPattern =
+    {
+        { 6323, 6416, 6417, 6418, 6419 },
+        { 6327, 6420, 6421, 6422, 6423 },
+        { 6331, 6424, 6425, 6426, 6427 },
+        { 6335, 6428, 6429, 6430, 6431 },
+        { 6003, 6368, 6369, 6370, 6371 },
+        { 6007, 6372, 6373, 6374, 6375 },
+    };
+
+    // Curva abajo izquierda: exact 4 x 6 mapper capture.
+    private static readonly int[,] PathDownLeftPattern =
+    {
+        { 6376, 6377, 6378, 6379 },
+        { 6380, 6381, 6382, 6383 },
+        { 6448, 6449, 6450, 6451 },
+        { 6452, 6453, 6454, 6455 },
+        { 6456, 6457, 6458, 6459 },
+        { 6460, 6461, 6462, 6463 },
+    };
+
+    // Curva abajo derecha: exact 4 x 6 mapper capture.
+    private static readonly int[,] PathDownRightPattern =
+    {
+        { 6376, 6377, 6378, 6379 },
+        { 6380, 6381, 6382, 6383 },
+        { 6432, 6433, 6434, 6435 },
+        { 6436, 6437, 6438, 6439 },
+        { 6440, 6441, 6442, 6443 },
+        { 6444, 6445, 6446, 6447 },
+    };
+
+    private void PaintPathAt(int tx, int ty)
+    {
+        if (Map == null || State == null || !Map.InBounds(tx, ty)) return;
+
+        switch (State.PathBrush)
+        {
+            case PathBrushMode.Grass:
+                StampGrass(tx, ty);
+                break;
+            case PathBrushMode.Centered:
+                StampPathPattern(tx, ty, PathCenteredPattern);
+                break;
+            case PathBrushMode.Right:
+                StampPathPattern(tx, ty, PathRightPattern);
+                break;
+            case PathBrushMode.Left:
+                StampPathPattern(tx, ty, PathLeftPattern);
+                break;
+            case PathBrushMode.Horizontal:
+                StampHorizontalPath(tx, ty);
+                break;
+            case PathBrushMode.Vertical:
+                StampVerticalPath(tx, ty);
+                break;
+            case PathBrushMode.UpRight:
+                StampPathPattern(tx, ty, PathUpRightPattern);
+                break;
+            case PathBrushMode.UpLeft:
+                StampPathPattern(tx, ty, PathUpLeftPattern);
+                break;
+            case PathBrushMode.DownLeft:
+                StampPathPattern(tx, ty, PathDownLeftPattern);
+                break;
+            case PathBrushMode.DownRight:
+                StampPathPattern(tx, ty, PathDownRightPattern);
+                break;
+            case PathBrushMode.CoastTop:
+            case PathBrushMode.CoastBottom:
+            case PathBrushMode.CoastLeft:
+            case PathBrushMode.CoastRight:
+            case PathBrushMode.CoastTopLeft:
+            case PathBrushMode.CoastTopRight:
+            case PathBrushMode.CoastBottomLeft:
+            case PathBrushMode.CoastBottomRight:
+                SetPathLayer2(tx, ty, GetPathGrh(tx, ty, 0, 0));
+                break;
+        }
+
+        State.MarkDirty();
+    }
+
+    private void StampGrass(int tx, int ty)
+    {
+        if (Map == null || State == null) return;
+        for (int y = 0; y < State.PathGrassHeight; y++)
+            for (int x = 0; x < State.PathGrassWidth; x++)
+                if (Map.InBounds(tx + x, ty + y))
+                    SetPathLayer1(tx + x, ty + y, GetPathGrh(tx, ty, x, y));
+    }
+
+    private void StampHorizontalPath(int tx, int ty)
+    {
+        if (Map == null) return;
+        for (int row = 0; row < PathHorizontalPattern.GetLength(0); row++)
+            for (int col = 0; col < PathHorizontalPattern.GetLength(1); col++)
+                if (Map.InBounds(tx + col, ty + row))
+                    SetPathLayer1(tx + col, ty + row, GetPathGrh(tx, ty, col, row));
+    }
+
+    private void StampVerticalPath(int tx, int ty)
+    {
+        StampPathPattern(tx, ty, PathVerticalPattern);
+    }
+
+    private void StampPathPattern(int tx, int ty, int[,] pattern)
+    {
+        if (Map == null) return;
+        for (int row = 0; row < pattern.GetLength(0); row++)
+            for (int col = 0; col < pattern.GetLength(1); col++)
+                if (Map.InBounds(tx + col, ty + row))
+                    SetPathLayer1(tx + col, ty + row, pattern[row, col]);
+    }
+
+    private int GetPathGrh(int baseX, int baseY, int x, int y)
+    {
+        if (State == null) return 0;
+        return State.PathBrush switch
+        {
+            PathBrushMode.Grass => 6000
+                + PositiveMod(baseY + y - 1, 4) * 4
+                + PositiveMod(baseX + x - 1, 4),
+            PathBrushMode.Centered => PathCenteredPattern[y, x],
+            PathBrushMode.Horizontal => PathHorizontalPattern[y, x],
+            PathBrushMode.Vertical => PathVerticalPattern[y, x],
+            PathBrushMode.Right => PathRightPattern[y, x],
+            PathBrushMode.Left => PathLeftPattern[y, x],
+            PathBrushMode.UpRight => PathUpRightPattern[y, x],
+            PathBrushMode.UpLeft => PathUpLeftPattern[y, x],
+            PathBrushMode.DownLeft => PathDownLeftPattern[y, x],
+            PathBrushMode.DownRight => PathDownRightPattern[y, x],
+            PathBrushMode.CoastTop => 32883,
+            PathBrushMode.CoastBottom => 32884,
+            PathBrushMode.CoastLeft => 32882,
+            PathBrushMode.CoastRight => 32881,
+            PathBrushMode.CoastTopLeft => 32885,
+            PathBrushMode.CoastTopRight => 32887,
+            PathBrushMode.CoastBottomLeft => 32886,
+            PathBrushMode.CoastBottomRight => 32888,
+            _ => 0,
+        };
+    }
+
+    private void GetPathStampSize(out int width, out int height)
+    {
+        if (State == null || State.PathBrush == PathBrushMode.Grass)
+        {
+            width = State?.PathGrassWidth ?? 1;
+            height = State?.PathGrassHeight ?? 1;
+            return;
+        }
+
+        int[,] pattern = State.PathBrush switch
+        {
+            PathBrushMode.Horizontal => PathHorizontalPattern,
+            PathBrushMode.Centered => PathCenteredPattern,
+            PathBrushMode.Vertical => PathVerticalPattern,
+            PathBrushMode.Right => PathRightPattern,
+            PathBrushMode.Left => PathLeftPattern,
+            PathBrushMode.UpRight => PathUpRightPattern,
+            PathBrushMode.UpLeft => PathUpLeftPattern,
+            PathBrushMode.DownLeft => PathDownLeftPattern,
+            PathBrushMode.DownRight => PathDownRightPattern,
+            _ => PathHorizontalPattern,
+        };
+        height = pattern.GetLength(0);
+        width = pattern.GetLength(1);
+    }
+
+    private void SetPathLayer1(int x, int y, int grh)
+    {
+        if (Map == null || grh <= 0) return;
+        var before = Map.Tiles[x, y];
+        if (before.Layer1 == grh) return;
+
+        Map.Tiles[x, y].Layer1 = grh;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+    }
+
+    private void SetPathLayer2(int x, int y, int grh)
+    {
+        if (Map == null || grh <= 0) return;
+        var before = Map.Tiles[x, y];
+        if (before.Layer2 == grh) return;
+
+        Map.Tiles[x, y].Layer2 = grh;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+    }
+
+    private static bool IsAo20CoastBrush(PathBrushMode mode)
+    {
+        return mode >= PathBrushMode.CoastTop && mode <= PathBrushMode.CoastBottomRight;
+    }
+
+    private static int PositiveMod(int value, int modulo)
+    {
+        int m = value % modulo;
+        return m < 0 ? m + modulo : m;
     }
 
     private void BlockTileAt(int tx, int ty)

@@ -97,7 +97,9 @@ async fn give_faction_armours(state: &mut GameState, conn_id: ConnectionId, is_c
                 false
             };
             if placed && grh_index > 0 {
-                let pkt = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
+                let pkt = binary_packets::write_object_create(
+                    x as i16, y as i16, grh_index as i16, obj_index as i16,
+                );
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
                 clean_world_add_item(state, map, x, y, 10, obj_index);
             }

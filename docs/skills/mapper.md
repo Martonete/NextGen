@@ -290,3 +290,111 @@ def patch_exit_y(filepath, target_y_1indexed, new_dest_y):
 4. **Case sensitivity**: Linux needs case-insensitive file lookup (MapaN.map vs MapaN.MAP).
 5. **Rust extensions** (bits 5-6 in .map ByFlags): VB6 maps won't have these — code must handle gracefully.
 6. **X drift in exits**: If both directions have X+1 offset, round trips drift the player sideways. Keep X identical.
+
+---
+
+## Current World Editor Workflow (2026-08-11)
+
+The standalone editor in `tools/world-editor` now uses `.aomap` + `.aoinf` as its
+authoritative writable format. Legacy `.map` + `.inf` files can still be imported,
+but every save is written as the extended format so layer GRHs remain `i32` and new
+tile metadata is preserved.
+
+### `.aomap` header and tile flags
+
+```text
+magic      6 bytes   "AOMAP\0"
+version    u16 LE    1
+width      u16 LE
+height     u16 LE
+flags      u32 LE    reserved
+```
+
+Tiles remain row-major and 1-indexed in editor/game coordinates. Each tile starts
+with `ByFlags`, followed by `Layer1` as `i32`; optional layers are also `i32`.
+
+| Bit | Hex | Meaning |
+|-----|-----|---------|
+| 0 | `0x01` | Blocked |
+| 1 | `0x02` | Layer 2 present |
+| 2 | `0x04` | Layer 3 present |
+| 3 | `0x08` | Layer 4 present |
+| 4 | `0x10` | Trigger present |
+| 5 | `0x20` | Particle group present |
+| 6 | `0x40` | Advanced light present |
+| 7 | `0x80` | `AnimatedWater` on Layer 1 |
+
+Do not patch these files by fixed tile offsets: records are variable length. Use
+`MapLoader` or iterate every preceding tile with the same flag rules.
+
+### Layer visibility and tile inspection
+
+- L1, L2, L3 and L4 start enabled and are independent visibility toggles.
+- Turning a layer off only hides it; it does not change the active paint layer.
+- The hand/pick tool inspects an existing tile from any loaded map.
+- The properties panel reports all four GRHs, blocked state, trigger, NPC, object,
+  exit, particle, light and animated-water state.
+- NPCs and decorations can be removed from the inspected tile with undo support.
+
+### Manual road brush
+
+`Camino` is a preview-and-confirm stamp tool. The mapper chooses an exact shape,
+sees the complete multi-tile preview under the cursor, and clicks to place it. The
+current presets are:
+
+- Pasto, with adjustable width and height while preserving the 4x4 GRH phase.
+- Camino centrado.
+- Recto vertical, horizontal, derecha and izquierda.
+- Curves: arriba derecha, abajo izquierda, abajo derecha and arriba izquierda.
+- Eight `Costa pasto` orientations.
+
+Road presets intentionally use explicit captured GRH matrices. Do not infer or
+rotate them automatically: these sheets contain direction-specific artwork.
+
+### Commerce templates
+
+`Guardar comercio` captures the selected rectangle as a reusable multi-layer
+template. `Comercio` previews and stamps it. Capture options independently include
+L3, NPCs and objects, which lets the same building be placed furnished or empty.
+Existing stamped or pre-existing buildings can also be cleaned tile by tile with
+the hand/pick inspector.
+
+### AO20 animated grass shores
+
+AO20 shore sheets `6684.png` and `6685.png` were imported. The eight animation
+parents use the compact local range below; each has ten frames at speed `2222`:
+
+| Orientation | Parent GRH |
+|-------------|------------|
+| Right | `32881` |
+| Left | `32882` |
+| Top | `32883` |
+| Bottom | `32884` |
+| Top-left | `32885` |
+| Bottom-left | `32886` |
+| Top-right | `32887` |
+| Bottom-right | `32888` |
+
+The animated foam/shore belongs on L2. The water below remains on L1. Marking an
+area as `agua animada` sets bit `0x80`, which enables AO20-style water geometry in
+the client; it does not generate the shore artwork automatically.
+
+### Performance constraints
+
+- Keep imported GRHs compact. The AO20 definitions are remapped into
+  `32761..33112`; leaving them at `85184..85535` allocates more than 52,000 empty
+  `GrhData` objects in both client and editor.
+- Texture cache LRU updates are approximate and amortized. Reordering the linked
+  list on every tile draw causes allocation pressure when viewing a full map.
+- In the client water hot path, wave sine/cosine values are calculated once per
+  frame and reused, and each water tile uses one polygon draw call.
+
+### Validation after map/GRH changes
+
+1. Rebuild `resources/data/INIT/Graficos.ind` from `Graficos.ini`.
+2. Repack `client/Data/init.aopak`, `maps.aopak`, and `graficos.aopak` when their
+   source groups changed.
+3. Copy server-facing `.aomap`/`.aoinf` files to `server/maps`.
+4. Run `dotnet build` in both `client` and `tools/world-editor`.
+5. Run `aopak verify` for every rebuilt archive.
+6. Restart open Godot instances; they retain the previously loaded DLL and packs.

@@ -179,12 +179,15 @@ pub fn write_create_fx(char_index: i16, fx_index: i16, fx_loops: i16) -> Vec<u8>
 // ── Objects on ground ──────────────────────────────────────
 
 /// ID 34: Object create on ground.
-pub fn write_object_create(x: i16, y: i16, grh_index: i16) -> Vec<u8> {
+/// `obj_index` (obj.dat index) is carried so the client can resolve cosmetic
+/// data — currently used to render CreaAura glow for items lying on the ground.
+pub fn write_object_create(x: i16, y: i16, grh_index: i16, obj_index: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ObjectCreate.to_byte());
     pkt.write_integer(x);
     pkt.write_integer(y);
     pkt.write_integer(grh_index);
+    pkt.write_integer(obj_index);
     pkt.into_bytes()
 }
 

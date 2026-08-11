@@ -88,7 +88,7 @@ pub(super) async fn send_area_ground_items(
                         let grh = state.get_object(obj_idx).map(|o| o.grh_index).unwrap_or(0);
                         if grh > 0 {
                             ho_packets.push(binary_packets::write_object_create(
-                                gx as i16, gy as i16, grh as i16,
+                                gx as i16, gy as i16, grh as i16, obj_idx as i16,
                             ));
                         }
                     }
@@ -977,7 +977,9 @@ async fn drop_gold_on_floor(state: &mut GameState, map: i32, x: i32, y: i32, tot
         };
 
         if is_new && grh_index > 0 {
-            let pkt = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
+            let pkt = binary_packets::write_object_create(
+                x as i16, y as i16, grh_index as i16, GOLD_OBJ_INDEX as i16,
+            );
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
         }
 
@@ -1035,8 +1037,12 @@ pub(super) async fn npc_drop_items(
                 .map(|o| o.grh_index)
                 .unwrap_or(0);
             if grh > 0 {
-                let ho_pkt =
-                    binary_packets::write_object_create(drop_x as i16, drop_y as i16, grh as i16);
+                let ho_pkt = binary_packets::write_object_create(
+                    drop_x as i16,
+                    drop_y as i16,
+                    grh as i16,
+                    *obj_index as i16,
+                );
                 state.send_data_bytes(
                     SendTarget::ToArea {
                         map,
@@ -1106,8 +1112,12 @@ pub(super) async fn npc_drop_items(
             .map(|o| o.grh_index)
             .unwrap_or(0);
         if grh > 0 {
-            let ho_pkt =
-                binary_packets::write_object_create(drop_x as i16, drop_y as i16, grh as i16);
+            let ho_pkt = binary_packets::write_object_create(
+                drop_x as i16,
+                drop_y as i16,
+                grh as i16,
+                obj_index as i16,
+            );
             state.send_data_bytes(
                 SendTarget::ToArea {
                     map,
@@ -1542,8 +1552,8 @@ pub(super) async fn npc_cast_spell(
         _ => {}
     }
 
-    // Paralysis effect — VB6: SUPERANILLO (700) blocks NPC paralysis
-    if spell.paraliza {
+    // Paralysis/immobilize effect. SUPERANILLO (700) blocks NPC control spells.
+    if spell.paraliza || spell.inmoviliza {
         const SUPERANILLO: i32 = 700;
         let ring_slot = state
             .users
@@ -1566,15 +1576,28 @@ pub(super) async fn npc_cast_spell(
                 font_index::INFO,
             );
         } else {
+            let mut applied = false;
             if let Some(user) = state.users.get_mut(&target_conn) {
-                user.paralyzed = true;
-                user.counter_paralisis = state.intervals.paralizado;
-                // VB6: flags.ParalizedByNpcIndex — track which NPC paralyzed this user
-                user.paralyzed_by_npc = Some(npc_idx);
+                if !user.paralyzed {
+                    user.paralyzed = true;
+                    if spell.inmoviliza {
+                        user.immobilized = true;
+                    }
+                    user.counter_paralisis = state.intervals.paralizado;
+                    // Track the NPC source so killing it can release the user.
+                    user.paralyzed_by_npc = Some(npc_idx);
+                    applied = true;
+                }
             }
-            let duration_secs = (state.intervals.paralizado as f32 * 0.04) as i16;
-            let pkt = binary_packets::write_paralize_ok(duration_secs);
-            state.send_bytes(target_conn, &pkt);
+            if applied {
+                let duration_secs = (state.intervals.paralizado as f32 * 0.04) as i16;
+                let pkt = binary_packets::write_paralize_ok(duration_secs);
+                state.send_bytes(target_conn, &pkt);
+                if let Some(user) = state.users.get(&target_conn) {
+                    let pu = binary_packets::write_pos_update(user.pos_x as i16, user.pos_y as i16);
+                    state.send_bytes(target_conn, &pu);
+                }
+            }
         }
     }
 

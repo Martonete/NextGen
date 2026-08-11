@@ -126,7 +126,7 @@ appended via `RecvAppend()`, then packets are consumed from the front.
 | 30 | CharacterRemove | i16 charIndex |
 | 31 | CharacterMove | i16 charIdx, u8 heading |
 | 33 | CharacterChange | (complex, see source) |
-| 34 | ObjectCreate | u8 x, u8 y, i16 grhIdx, string name |
+| 34 | ObjectCreate | i16 x, i16 y, i16 grhIdx, i16 objIdx |
 | 35 | ObjectDelete | u8 x, u8 y |
 | 37 | PlayMusic | i16 musicId |
 | 38 | PlayWave | u8 wav, u8 x, u8 y |
@@ -137,6 +137,7 @@ appended via `RecvAppend()`, then packets are consumed from the front.
 | 44 | UpdateUserStats | (bulk stat update) |
 | 46 | ChangeInventorySlot | (slot data) |
 | 48 | ChangeSpellSlot | (slot data) |
+| 82 | ParalyzeOK | i16 durationSecs; >0 sets paralyzed, 0 clears |
 
 ### Extended Opcodes (100+)
 

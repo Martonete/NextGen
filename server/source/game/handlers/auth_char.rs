@@ -4,6 +4,7 @@ use tracing::{info, warn};
 
 use super::super::common::*;
 use super::connect_user;
+use super::send_char_list;
 use crate::db::{accounts, charfile, password};
 use crate::game::types::GameState;
 use crate::net::ConnectionId;
@@ -12,6 +13,23 @@ use crate::protocol::binary_packets;
 // =====================================================================
 // Character creation/deletion handlers
 // =====================================================================
+
+/// Return an already-authenticated connection to the account panel (refreshed
+/// character list) instead of disconnecting it. Used after character
+/// creation/deletion failures and successes so the client doesn't get kicked
+/// back to the login screen.
+async fn return_to_account_panel(state: &mut GameState, conn_id: ConnectionId, account_name: &str) {
+    match accounts::load_account(&state.pool, account_name).await {
+        Ok(account) => send_char_list(state, conn_id, &account).await,
+        Err(e) => {
+            warn!(
+                "[AUTH] Failed to reload account '{}' for panel refresh: {}",
+                account_name, e
+            );
+            close_connection(state, conn_id).await;
+        }
+    }
+}
 
 /// CreateCharacter — Create new character.
 pub(crate) async fn handle_create_character(
@@ -46,13 +64,13 @@ pub(crate) async fn handle_create_character(
                 "La creacion de personajes en este servidor se ha deshabilitado.",
             ),
         );
-        close_connection(state, conn_id).await;
+        return_to_account_panel(state, conn_id, account).await;
         return;
     }
 
     if state.config.server_only_gms {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("Servidor restringido a administradores. La creacion de personajes se encuentra deshabilitada."));
-        close_connection(state, conn_id).await;
+        return_to_account_panel(state, conn_id, account).await;
         return;
     }
 
@@ -66,7 +84,7 @@ pub(crate) async fn handle_create_character(
             conn_id,
             &binary_packets::write_error_msg("Nombre invalido."),
         );
-        close_connection(state, conn_id).await;
+        return_to_account_panel(state, conn_id, account).await;
         return;
     }
 
@@ -77,7 +95,7 @@ pub(crate) async fn handle_create_character(
                 "El nombre del personaje debe tener al menos 3 caracteres.",
             ),
         );
-        close_connection(state, conn_id).await;
+        return_to_account_panel(state, conn_id, account).await;
         return;
     }
 
@@ -145,7 +163,7 @@ pub(crate) async fn handle_create_character(
         }
         Err(e) => {
             state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string()));
-            close_connection(state, conn_id).await;
+            return_to_account_panel(state, conn_id, account).await;
         }
     }
 }
@@ -189,7 +207,7 @@ pub(crate) async fn handle_delete_character(
     state: &mut GameState,
     conn_id: ConnectionId,
     char_name: &str,
-    _account_name: &str,
+    account_name: &str,
     password: &str,
 ) {
     info!(
@@ -230,7 +248,7 @@ pub(crate) async fn handle_delete_character(
             conn_id,
             &binary_packets::write_error_msg("El personaje no existe."),
         );
-        close_connection(state, conn_id).await;
+        return_to_account_panel(state, conn_id, account_name).await;
         return;
     }
 
@@ -241,7 +259,7 @@ pub(crate) async fn handle_delete_character(
                 conn_id,
                 &binary_packets::write_error_msg("Error al leer el personaje."),
             );
-            close_connection(state, conn_id).await;
+            return_to_account_panel(state, conn_id, account_name).await;
             return;
         }
     };
@@ -253,7 +271,7 @@ pub(crate) async fn handle_delete_character(
             &binary_packets::write_error_msg("Password incorrecto."),
         );
         state.send_bytes(conn_id, &binary_packets::write_finish_ok());
-        close_connection(state, conn_id).await;
+        return_to_account_panel(state, conn_id, account_name).await;
         return;
     }
 
@@ -294,7 +312,7 @@ pub(crate) async fn handle_delete_character(
         conn_id,
         &binary_packets::write_error_show("Personaje Borrado con exito."),
     );
-    close_connection(state, conn_id).await;
+    return_to_account_panel(state, conn_id, account_name).await;
 }
 
 /// ChangePassword — Change account password.

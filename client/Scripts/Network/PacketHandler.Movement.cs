@@ -392,7 +392,8 @@ public partial class PacketHandler
         int x = bq.ReadInteger();
         int y = bq.ReadInteger();
         int grhIndex = (ushort)bq.ReadInteger();
-        _state.GroundObjects[(x, y)] = grhIndex;
+        int objIndex = bq.ReadInteger();
+        _state.GroundObjects[(x, y)] = new GroundObjectData(grhIndex, objIndex);
     }
 
 

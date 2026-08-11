@@ -772,6 +772,7 @@ pub(super) async fn apply_spell_status(
                 target.immobilized = false;
                 target.counter_paralisis = 0;
                 target.paralyzed_by = None;
+                target.paralyzed_by_npc = None;
                 send_paradok_off = true;
             }
         }

@@ -21,6 +21,14 @@ public class EditorState
     // Raw GRH for painting (set by eyedrop when no TextureRef match)
     public int EyedropGrh;
 
+    // Path brush mode. The mapper chooses the intended shape explicitly so a
+    // turn never changes a straight road merely because the mouse moved.
+    public PathBrushMode PathBrush = PathBrushMode.Grass;
+    // Rectangle stamped by the Pasto variant of Camino. The GRH 4x4 phase is
+    // always derived from map coordinates, so any size remains seamless.
+    public int PathGrassWidth = 1;
+    public int PathGrassHeight = 1;
+
     // Mosaic offset: shifts the multi-tile pattern alignment on the map
     public int MosaicOffsetX, MosaicOffsetY;
 
@@ -32,6 +40,15 @@ public class EditorState
     // Clipboard (copied tiles)
     public MapTile[,]? Clipboard;
     public int ClipWidth, ClipHeight;
+
+    // Reusable multi-layer building stamp. Unlike the working clipboard, this
+    // stays intact while the mapper keeps copying or painting other content.
+    public MapTile[,]? CommerceTemplate;
+    public int CommerceWidth, CommerceHeight;
+    public bool HasCommerceTemplate => CommerceTemplate != null && CommerceWidth > 0 && CommerceHeight > 0;
+    public bool CommerceIncludeLayer3 = true;
+    public bool CommerceIncludeNpcs = true;
+    public bool CommerceIncludeObjects = true;
 
     // Pending placement: floating preview before committing (paste or move)
     public readonly PendingPlacement Pending = new();
@@ -48,6 +65,7 @@ public class EditorState
     public bool ShowObjects = true;
     public bool ShowParticles = true;
     public bool ShowLights = true;
+    public bool ShowGrhOverlay;
 
     /// <summary>Forces the "Luz avanzada" shader preview to a fixed time of day,
     /// independent of the map's own AmbientR/G/B (which stays untouched on disk).
@@ -191,6 +209,43 @@ public class EditorState
         CopyRegionFrom(map, SelX1, SelY1, SelX2, SelY2);
     }
 
+    public bool CaptureCommerceTemplate(MapData map)
+    {
+        if (!HasSelection) return false;
+        CopySelection(map);
+        if (Clipboard == null || ClipWidth <= 0 || ClipHeight <= 0) return false;
+
+        CommerceWidth = ClipWidth;
+        CommerceHeight = ClipHeight;
+        CommerceTemplate = new MapTile[CommerceWidth + 1, CommerceHeight + 1];
+        for (int y = 0; y < CommerceHeight; y++)
+            for (int x = 0; x < CommerceWidth; x++)
+            {
+                var tile = Clipboard[x + 1, y + 1];
+                if (!CommerceIncludeLayer3) tile.Layer3 = 0;
+                if (!CommerceIncludeNpcs) tile.NpcIndex = 0;
+                if (!CommerceIncludeObjects)
+                {
+                    tile.ObjIndex = 0;
+                    tile.ObjAmount = 0;
+                }
+                CommerceTemplate[x + 1, y + 1] = tile;
+            }
+        return true;
+    }
+
+    public bool PrepareCommerceClipboard()
+    {
+        if (!HasCommerceTemplate || CommerceTemplate == null) return false;
+        ClipWidth = CommerceWidth;
+        ClipHeight = CommerceHeight;
+        Clipboard = new MapTile[ClipWidth + 1, ClipHeight + 1];
+        for (int y = 0; y < ClipHeight; y++)
+            for (int x = 0; x < ClipWidth; x++)
+                Clipboard[x + 1, y + 1] = CommerceTemplate[x + 1, y + 1];
+        return true;
+    }
+
     /// <summary>
     /// Writes into THIS state's clipboard, reading tiles from a possibly-different
     /// map/selection. Used by the auxiliary map-viewer window's Ctrl+C: the selection
@@ -294,6 +349,7 @@ public enum EditorTool
 {
     Hand,     // Pan: click+drag moves the camera
     Paint,    // Draw: click+drag paints with selected texture
+    Path,     // Road/terrain brush: paints the explicitly selected path shape on Layer 1
     Erase,    // Erase: click+drag clears active layer
     Select,   // Rectangle select for copy/paste
     Move,     // Drag selected rectangle to new position (activated from selection panel)
@@ -310,6 +366,29 @@ public enum EditorTool
     Trigger,  // Set trigger type (opens properties)
     Particle, // Paint particle group on tiles
     Fog,      // Paint per-tile fog blobs (soft world-space fog)
+}
+
+/// <summary>Shape applied by the Camino tool.</summary>
+public enum PathBrushMode
+{
+    Grass,
+    Centered,
+    Horizontal,
+    Vertical,
+    Right,
+    Left,
+    UpRight,
+    UpLeft,
+    DownLeft,
+    DownRight,
+    CoastTop,
+    CoastBottom,
+    CoastLeft,
+    CoastRight,
+    CoastTopLeft,
+    CoastTopRight,
+    CoastBottomLeft,
+    CoastBottomRight,
 }
 
 /// Time-of-day override for the "Luz avanzada" shader preview (LightRenderer).

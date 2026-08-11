@@ -222,6 +222,23 @@ pub(crate) async fn handle_account_login(
         user.account_id = account.id;
     }
 
+    send_char_list(state, conn_id, &account).await;
+
+    info!(
+        "[AUTH] Account '{}' authenticated, {} characters",
+        account_name, account.num_pjs
+    );
+}
+
+/// Send the account panel packet sequence (InitAccount + AddCharPreview×N + SecurityCode)
+/// for an already-authenticated connection. Used both on initial login and after
+/// character creation/deletion, so the client returns to the account panel with a
+/// refreshed character list instead of being disconnected back to the login screen.
+pub(crate) async fn send_char_list(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    account: &accounts::AccountData,
+) {
     state.send_bytes(
         conn_id,
         &binary_packets::write_init_account(account.num_pjs as u8, &state.notice),
@@ -284,11 +301,6 @@ pub(crate) async fn handle_account_login(
     state.send_bytes(
         conn_id,
         &binary_packets::write_security_code(&account.security_code),
-    );
-
-    info!(
-        "[AUTH] Account '{}' authenticated, {} characters",
-        account_name, account.num_pjs
     );
 }
 

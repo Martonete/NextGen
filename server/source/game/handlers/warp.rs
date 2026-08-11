@@ -160,7 +160,7 @@ pub(crate) async fn check_update_needed_user(
     // Collect ground items, particles, lights, and doors in the EXTENDED area.
     // This covers the expanded viewport (up to 1920x1080) so objects like doors,
     // trees, and ground items are visible in the fog zone beyond the core viewport.
-    let mut new_items: Vec<(i32, i32, i32)> = Vec::new(); // (grh, x, y)
+    let mut new_items: Vec<(i32, i32, i32, i32)> = Vec::new(); // (grh, x, y, obj_index)
     let mut new_door_bqs: Vec<(i32, i32, bool)> = Vec::new(); // (x, y, blocked) for door tiles
     let mut new_particles: Vec<(i16, i32, i32)> = Vec::new(); // (particle_group_index, x, y)
     let mut new_lights: Vec<(i32, i32, i16, i16, i16, i16)> = Vec::new(); // (x, y, range, r, g, b)
@@ -172,7 +172,7 @@ pub(crate) async fn check_update_needed_user(
                 if let Some(tile) = grid.tile(sx, sy) {
                     if tile.ground_item.obj_index > 0 {
                         if let Some(obj) = state.get_object(tile.ground_item.obj_index) {
-                            new_items.push((obj.grh_index, sx, sy));
+                            new_items.push((obj.grh_index, sx, sy, tile.ground_item.obj_index));
                         }
                     }
                 }
@@ -205,7 +205,7 @@ pub(crate) async fn check_update_needed_user(
                     if oi >= 1 {
                         if let Some(obj) = state.game_data.objects.get(oi - 1) {
                             if obj.grh_index > 0 {
-                                new_items.push((obj.grh_index, sx, sy));
+                                new_items.push((obj.grh_index, sx, sy, tile.obj.obj_index as i32));
                             }
 
                             // VB6 ModAreas.bas:273-300 — send BQ for door tiles + adjacent tiles
@@ -298,10 +298,10 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Send ground items (HO = ObjectCreate packet) — VB6 ModAreas.bas line 264
-    for (grh, ix, iy) in new_items {
+    for (grh, ix, iy, obj_idx) in new_items {
         state.send_bytes(
             conn_id,
-            &binary_packets::write_object_create(ix as i16, iy as i16, grh as i16),
+            &binary_packets::write_object_create(ix as i16, iy as i16, grh as i16, obj_idx as i16),
         );
     }
 

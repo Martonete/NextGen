@@ -34,13 +34,44 @@ public class AoTcpClient : IDisposable
     /// <summary>
     /// Connect to the AO server asynchronously.
     /// </summary>
-    public async Task ConnectAsync(string host, int port, int timeoutMs = 5000)
+    public async Task ConnectAsync(string host, int port, int timeoutMs = 12000)
     {
-        _client = new TcpClient();
         _cts = new CancellationTokenSource();
+        long deadlineMs = System.Environment.TickCount64 + timeoutMs;
+        Exception? lastError = null;
 
-        using var connectCts = new CancellationTokenSource(timeoutMs);
-        await _client.ConnectAsync(host, port, connectCts.Token);
+        while (true)
+        {
+            _client?.Dispose();
+            _client = new TcpClient();
+            int remainingMs = (int)Math.Max(1, deadlineMs - System.Environment.TickCount64);
+            int attemptTimeoutMs = Math.Min(1500, remainingMs);
+
+            try
+            {
+                using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+                connectCts.CancelAfter(attemptTimeoutMs);
+                await _client.ConnectAsync(host, port, connectCts.Token);
+                break;
+            }
+            catch (Exception ex) when (!_cts.IsCancellationRequested && IsTransientConnectError(ex) && System.Environment.TickCount64 < deadlineMs)
+            {
+                lastError = ex;
+                try { _client.Dispose(); } catch { }
+                _client = null;
+                int delayMs = (int)Math.Min(350, Math.Max(1, deadlineMs - System.Environment.TickCount64));
+                await Task.Delay(delayMs, _cts.Token);
+            }
+            catch
+            {
+                try { _client.Dispose(); } catch { }
+                _client = null;
+                throw;
+            }
+        }
+
+        if (_client == null)
+            throw lastError ?? new SocketException((int)SocketError.NotConnected);
         _client.NoDelay = true;             // Disable Nagle — send packets immediately
         _client.SendBufferSize = 65536;     // 64KB send buffer
         _client.ReceiveBufferSize = 65536;  // 64KB receive buffer
@@ -54,6 +85,18 @@ public class AoTcpClient : IDisposable
 
         // Start reading in background
         _ = Task.Run(() => ReadLoop(_cts.Token));
+    }
+
+    private static bool IsTransientConnectError(Exception ex)
+    {
+        return ex is OperationCanceledException
+            || ex is SocketException
+            {
+                SocketErrorCode: SocketError.ConnectionRefused
+                    or SocketError.TimedOut
+                    or SocketError.HostDown
+                    or SocketError.NetworkDown
+            };
     }
 
     /// <summary>

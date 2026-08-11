@@ -99,6 +99,7 @@ pub async fn tick_intervals(state: &mut GameState) {
                 user.paralyzed = false;
                 user.immobilized = false;
                 user.paralyzed_by = None;
+                user.paralyzed_by_npc = None;
                 unparalyze.push(conn_id);
             }
         }

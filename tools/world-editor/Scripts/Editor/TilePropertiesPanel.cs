@@ -19,11 +19,13 @@ public partial class TilePropertiesPanel : PanelContainer
 
     private Label? _titleLabel;
     private CheckBox? _blockedCheck;
+    private CheckBox? _animatedWaterCheck;
     private OptionButton? _triggerSelect;
     private SpinBox? _lightRange, _lightR, _lightG, _lightB;
     private SpinBox? _exitMap, _exitX, _exitY;
     private SpinBox? _npcIndex;
     private SpinBox? _objIndex, _objAmount;
+    private Button? _clearLayer3Btn, _clearNpcBtn, _clearObjBtn;
     private Button? _applyBtn;
 
     private int _tileX, _tileY;
@@ -45,6 +47,12 @@ public partial class TilePropertiesPanel : PanelContainer
         _blockedCheck.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
         _blockedCheck.AddThemeColorOverride("font_color", EditorTheme.TEXT_DANGER);
         vbox.AddChild(_blockedCheck);
+
+        _animatedWaterCheck = new CheckBox { Text = "Agua animada" };
+        _animatedWaterCheck.TooltipText = "El cliente aplica ondas AO20 a este tile de L1";
+        _animatedWaterCheck.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        _animatedWaterCheck.AddThemeColorOverride("font_color", EditorTheme.TEXT_ACCENT);
+        vbox.AddChild(_animatedWaterCheck);
 
         // Trigger
         vbox.AddChild(EditorTheme.MakeHSeparator());
@@ -89,6 +97,15 @@ public partial class TilePropertiesPanel : PanelContainer
         _exitY = EditorTheme.MakeSpinBox(0, 100, 1); exitGrid.AddChild(_exitY);
         vbox.AddChild(exitGrid);
 
+        // Layer 3 decoration. This is especially useful after stamping a building:
+        // structural L1/L2/L4 art stays in place while interior decoration can go.
+        vbox.AddChild(EditorTheme.MakeHSeparator());
+        vbox.AddChild(EditorTheme.SectionLabel("Decoración L3"));
+        _clearLayer3Btn = new Button { Text = "Quitar L3" };
+        _clearLayer3Btn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        _clearLayer3Btn.Pressed += ClearLayer3;
+        vbox.AddChild(_clearLayer3Btn);
+
         // NPC
         vbox.AddChild(EditorTheme.MakeHSeparator());
         vbox.AddChild(EditorTheme.SectionLabel("NPC"));
@@ -98,6 +115,10 @@ public partial class TilePropertiesPanel : PanelContainer
         _npcIndex.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         npcBox.AddChild(_npcIndex);
         vbox.AddChild(npcBox);
+        _clearNpcBtn = new Button { Text = "Quitar NPC" };
+        _clearNpcBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        _clearNpcBtn.Pressed += ClearNpc;
+        vbox.AddChild(_clearNpcBtn);
 
         // Object
         vbox.AddChild(EditorTheme.MakeHSeparator());
@@ -110,6 +131,10 @@ public partial class TilePropertiesPanel : PanelContainer
         objGrid.AddChild(EditorTheme.MakeLabel("Cant:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         _objAmount = EditorTheme.MakeSpinBox(0, 9999, 1); objGrid.AddChild(_objAmount);
         vbox.AddChild(objGrid);
+        _clearObjBtn = new Button { Text = "Quitar objeto" };
+        _clearObjBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        _clearObjBtn.Pressed += ClearObject;
+        vbox.AddChild(_clearObjBtn);
 
         // Separator
         vbox.AddChild(EditorTheme.MakeHSeparator());
@@ -130,6 +155,7 @@ public partial class TilePropertiesPanel : PanelContainer
 
         _titleLabel!.Text = $"Tile ({x}, {y})";
         _blockedCheck!.ButtonPressed = tile.Blocked;
+        _animatedWaterCheck!.ButtonPressed = tile.AnimatedWater;
 
         // Map trigger value to option index
         int trigIdx = tile.Trigger switch { 0 => 0, 1 => 1, 3 => 2, 4 => 3, 5 => 4, 6 => 5, _ => 0 };
@@ -147,6 +173,9 @@ public partial class TilePropertiesPanel : PanelContainer
         _npcIndex!.Value = tile.NpcIndex;
         _objIndex!.Value = tile.ObjIndex;
         _objAmount!.Value = tile.ObjAmount;
+        _clearLayer3Btn!.Disabled = tile.Layer3 == 0;
+        _clearNpcBtn!.Disabled = tile.NpcIndex == 0;
+        _clearObjBtn!.Disabled = tile.ObjIndex == 0;
     }
 
     private void ApplyChanges()
@@ -157,6 +186,7 @@ public partial class TilePropertiesPanel : PanelContainer
         ref var tile = ref Map.Tiles[_tileX, _tileY];
 
         tile.Blocked = _blockedCheck!.ButtonPressed;
+        tile.AnimatedWater = _animatedWaterCheck!.ButtonPressed;
 
         int trigVal = _triggerSelect!.Selected switch { 0 => 0, 1 => 1, 2 => 3, 3 => 4, 4 => 5, 5 => 6, _ => 0 };
         tile.Trigger = (short)trigVal;
@@ -178,5 +208,42 @@ public partial class TilePropertiesPanel : PanelContainer
         Undo?.RecordTileChange(_tileX, _tileY, before, Map.Tiles[_tileX, _tileY]);
         Undo?.EndBatch();
         OnTileChanged?.Invoke();
+    }
+
+    private void ClearLayer3()
+    {
+        if (Map == null || !Map.InBounds(_tileX, _tileY) || Map.Tiles[_tileX, _tileY].Layer3 == 0) return;
+        var before = Map.Tiles[_tileX, _tileY];
+        Map.Tiles[_tileX, _tileY].Layer3 = 0;
+        Undo?.BeginBatch("Remove Layer 3");
+        Undo?.RecordTileChange(_tileX, _tileY, before, Map.Tiles[_tileX, _tileY]);
+        Undo?.EndBatch();
+        OnTileChanged?.Invoke();
+        LoadTile(_tileX, _tileY);
+    }
+
+    private void ClearNpc()
+    {
+        if (Map == null || !Map.InBounds(_tileX, _tileY) || Map.Tiles[_tileX, _tileY].NpcIndex == 0) return;
+        var before = Map.Tiles[_tileX, _tileY];
+        Map.Tiles[_tileX, _tileY].NpcIndex = 0;
+        Undo?.BeginBatch("Remove NPC");
+        Undo?.RecordTileChange(_tileX, _tileY, before, Map.Tiles[_tileX, _tileY]);
+        Undo?.EndBatch();
+        OnTileChanged?.Invoke();
+        LoadTile(_tileX, _tileY);
+    }
+
+    private void ClearObject()
+    {
+        if (Map == null || !Map.InBounds(_tileX, _tileY) || Map.Tiles[_tileX, _tileY].ObjIndex == 0) return;
+        var before = Map.Tiles[_tileX, _tileY];
+        Map.Tiles[_tileX, _tileY].ObjIndex = 0;
+        Map.Tiles[_tileX, _tileY].ObjAmount = 0;
+        Undo?.BeginBatch("Remove Object");
+        Undo?.RecordTileChange(_tileX, _tileY, before, Map.Tiles[_tileX, _tileY]);
+        Undo?.EndBatch();
+        OnTileChanged?.Invoke();
+        LoadTile(_tileX, _tileY);
     }
 }

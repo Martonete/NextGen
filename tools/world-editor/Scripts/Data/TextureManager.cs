@@ -88,9 +88,11 @@ public class TextureManager
 
         if (_cache.TryGetValue(fileNum, out var cached))
         {
-            // Bump LRU — O(1) using node lookup
-            if (_lruNodes.TryGetValue(fileNum, out var node))
+            // Approximate LRU: amortize linked-list churn across many tile draws.
+            if (++_lruSkipCounter >= LruBumpInterval
+                && _lruNodes.TryGetValue(fileNum, out var node))
             {
+                _lruSkipCounter = 0;
                 _lruOrder.Remove(node);
                 var newNode = _lruOrder.AddFirst(fileNum);
                 _lruNodes[fileNum] = newNode;
@@ -101,6 +103,9 @@ public class TextureManager
         // Cache miss — load on demand (fallback for files not in GrhData)
         return LoadAndCache(fileNum);
     }
+
+    private int _lruSkipCounter;
+    private const int LruBumpInterval = 64;
 
     /// <summary>
     /// Get the CPU-side Image for a texture, from cache. No GPU readback.

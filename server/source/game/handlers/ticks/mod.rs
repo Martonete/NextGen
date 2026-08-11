@@ -6,11 +6,13 @@
 //! - `player` — meditation, passive effects (regen, hunger, poison), auto-save
 //! - `world` — anti-cheat intervals, world cleanup, security
 
+mod bot_ai;
 mod npc_ai;
 mod npc_move;
 mod player;
 mod world;
 
+pub use bot_ai::*;
 pub use npc_ai::*;
 pub(crate) use npc_move::*;
 pub use player::*;

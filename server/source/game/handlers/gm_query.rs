@@ -474,6 +474,7 @@ pub(super) async fn handle_slash_mod(
 
 /// /SMOD <name> <stat> <value> — Modify another player's stats. Requires Director+.
 /// VB6: Only a subset of /MOD subcommands (no AURA, ARMA, ESCU, CASCO, HAM, AGU, ATRI, FX).
+/// SKILLS is an addition (not VB6-original) — sets all 22 skills to <value> (0-100).
 pub(super) async fn handle_slash_smod(state: &mut GameState, conn_id: ConnectionId, args: &str) {
     let gm_name = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIRECTOR => u.char_name.clone(),
@@ -515,8 +516,10 @@ fn normalize_mod_stat(raw: &str) -> String {
 }
 
 /// /MOD apply — self-modification only. VB6: TCP_HandleData3.bas:1725-1877
-/// Supports all subcommands: PART, AURA, FX, ATRI, ORO, EXP, BODY, HEAD,
+/// Supports all subcommands: PART, AURA, FX, ATRI, SKILLS, ORO, EXP, BODY, HEAD,
 /// CRI, CIU, LEVEL, CLASE, HAM, AGU, STA, MP, HP, ESCU, CASCO, ARMA.
+/// SKILLS is not VB6-original — sets all 22 skills to <value> (0-100), same
+/// bulk-set pattern as ATRI.
 pub(super) async fn apply_mod_self(
     state: &mut GameState,
     conn_id: ConnectionId,
@@ -565,6 +568,17 @@ pub(super) async fn apply_mod_self(
                 user.attributes = [value as i32; 5];
             }
             state.send_msg_id(conn_id, 571, &value.to_string());
+        }
+        "SKILLS" => {
+            let clamped = value.clamp(0, 100) as i32;
+            if let Some(user) = state.users.get_mut(&target) {
+                user.skills = [clamped; 22];
+            }
+            state.send_console(
+                conn_id,
+                &format!("Todos tus skills fueron puestos en {}.", clamped),
+                font_index::INFO,
+            );
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -966,6 +980,22 @@ pub(super) async fn apply_mod_other(
                 SendTarget::ToAdmins,
                 591,
                 &format!("{}@clase@{}@{}", gm_name, target_name, value),
+            );
+        }
+        "SKILLS" => {
+            let clamped = value.clamp(0, 100) as i32;
+            if let Some(user) = state.users.get_mut(&target) {
+                user.skills = [clamped; 22];
+            }
+            state.send_console(
+                gm_conn,
+                &format!("Skills de {} puestos en {}.", target_name, clamped),
+                font_index::INFO,
+            );
+            state.send_msg_id_to(
+                SendTarget::ToAdmins,
+                591,
+                &format!("{}@skills@{}@{}", gm_name, target_name, clamped),
             );
         }
         "STA" => {

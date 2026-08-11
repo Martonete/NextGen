@@ -119,7 +119,7 @@ public static class UIHelpers
             _ => $"Error de conexión: {se.SocketErrorCode}",
         },
         OperationCanceledException => "No se pudo conectar: el servidor no responde.",
-        NullReferenceException => "El servidor no está disponible. Intentá de nuevo en unos segundos.",
+        NullReferenceException => "Error interno del cliente al iniciar la conexion. Reintenta en unos segundos.",
         _ => $"Error de conexión: {ex.Message}",
     };
 

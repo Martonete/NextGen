@@ -359,10 +359,10 @@ public partial class PacketHandler
     private void HandleBinParalizeOk(ByteQueue bq)
     {
         short durationSecs = bq.ReadInteger();
-        _state.UserParalyzed = !_state.UserParalyzed;
-        // Set countdown bar: when becoming paralyzed use duration; when unparalyzed, clear
-        _state.ParalysisTimer = _state.UserParalyzed ? durationSecs : 0f;
-        _state.ParalysisMaxTimer = _state.UserParalyzed ? durationSecs : 0f;
+        bool isParalyzed = durationSecs > 0;
+        _state.UserParalyzed = isParalyzed;
+        _state.ParalysisTimer = isParalyzed ? durationSecs : 0f;
+        _state.ParalysisMaxTimer = isParalyzed ? durationSecs : 0f;
     }
 
 

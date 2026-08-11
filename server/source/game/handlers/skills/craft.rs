@@ -1031,7 +1031,9 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
             .get_object(FOGATA_OBJ)
             .map(|o| o.grh_index)
             .unwrap_or(0);
-        let ho_pkt = binary_packets::write_object_create(tx as i16, ty as i16, grh as i16);
+        let ho_pkt = binary_packets::write_object_create(
+            tx as i16, ty as i16, grh as i16, FOGATA_OBJ as i16,
+        );
         state.send_data_bytes(SendTarget::ToArea { map, x: tx, y: ty }, &ho_pkt);
 
         // Add to cleanup list

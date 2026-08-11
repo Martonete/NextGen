@@ -314,6 +314,15 @@ async fn main() {
             // Game tick — anti-cheat interval decrements (every 40ms)
             _ = game_tick.tick() => {
                 game::handlers::tick_intervals(&mut state).await;
+
+                // Duel-bot AI — own faster cadence (~320ms) than the shared monster
+                // AI tick, so /BOT opponents react at a player-like pace. Gated by
+                // game_tick_count (not a separate interval) so it stays cheap when
+                // no bots are active (active_bot_indices empty → tick_bot_ai no-ops).
+                state.game_tick_count = state.game_tick_count.wrapping_add(1);
+                if state.game_tick_count % 8 == 0 {
+                    game::handlers::tick_bot_ai(&mut state).await;
+                }
             }
 
             // AI tick — NPC movement and combat (every 100ms)

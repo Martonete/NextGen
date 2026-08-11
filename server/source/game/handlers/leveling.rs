@@ -459,3 +459,53 @@ fn hp_gain_from_distribution(promedio: f64, dist: &crate::data::balance::HpDistr
         return ((promedio as i32) - 2).max(1);
     }
 }
+
+/// Simulate the full level 1 → MAX_LEVEL curve for a class using the exact
+/// same per-level formula as `check_user_level`/`level_up_gains`, to get
+/// authentic "level 50" HP/Hit totals instead of an arbitrary flat number.
+/// Used by `/BOT` to size duel-bot stats realistically.
+///
+/// Only HP and Hit are returned — `NpcState` has no mana/stamina fields (bots
+/// cast for free, see `npc_cast_spell`), so those parts of the real curve
+/// have nothing to apply to and are skipped.
+///
+/// Base level-1 HP mirrors VB6 ConnectNewUser (`db/charfile.rs::create_charfile`,
+/// which is DB-insert-shaped and not reusable directly): `15 + Random(1, CON/3)`.
+/// MaxHIT/MinHIT start at 2/1, same as a freshly created character.
+pub(super) fn simulate_class_level50_stats(
+    class: PlayerClass,
+    race: PlayerRace,
+    constitution: i32,
+    intelligence: i32,
+    balance: &crate::data::balance::BalanceData,
+) -> (i32, i32, i32) {
+    let con_div3 = (constitution / 3).max(1);
+    let mut max_hp = 15 + rand_range(1, con_div3);
+    let mut max_hit = 2;
+    let mut min_hit = 1;
+
+    let mut level = 1;
+    while level < MAX_LEVEL {
+        let f_lo = virtual_level_floor(level);
+        let f_hi = virtual_level_floor(level + 1) - 1;
+        let (mut hp_gain, mut hit_gain) = (0, 0);
+        for f in f_lo..=f_hi {
+            let (h, _m, _s, hit) =
+                level_up_gains(class, race, f, constitution, intelligence, balance);
+            hp_gain += h;
+            hit_gain += hit;
+        }
+        level += 1;
+
+        max_hp = (max_hp + hp_gain).min(STAT_MAXHP);
+        let hit_cap = if virtual_level_floor(level) < 36 {
+            STAT_MAXHIT_UNDER36
+        } else {
+            STAT_MAXHIT_OVER36
+        };
+        max_hit = (max_hit + hit_gain).min(hit_cap);
+        min_hit = (min_hit + hit_gain).min(hit_cap);
+    }
+
+    (max_hp, max_hit, min_hit)
+}

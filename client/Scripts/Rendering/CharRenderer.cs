@@ -509,6 +509,34 @@ public static partial class CharRenderer
 		CollectSingleAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle, globalTimeMs, alphaOverride);
 	}
 
+	/// <summary>
+	/// Queue an aura draw for an item lying on the ground (obj.dat CreaAura).
+	/// Unlike character auras, ground items have no head/body — the glow is
+	/// centered on the tile itself, offset upward by the aura's own Offset field.
+	/// </summary>
+	public static void CollectGroundAuraDraw(
+		WorldRenderer worldRenderer, GameData data, int auraIndex, Vector2 tilePos, double globalTimeMs)
+	{
+		if (data.Auras == null || auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
+
+		var aura = data.Auras[auraIndex];
+		if (aura.GrhIndex <= 0) return;
+
+		float drawAngle = aura.Giratoria ? CalculateAuraAngle(globalTimeMs) : 0f;
+		int frame = GetTimedGrhFrame(data, aura.GrhIndex, globalTimeMs);
+
+		// DrawGrh's "center" mode bottom-anchors sprites taller than 1 tile (so a
+		// standing character's aura grows upward from their feet). Ground items lie
+		// flat on a single tile, so counteract that bottom-anchor and instead center
+		// the aura vertically on the tile, same as the item sprite itself.
+		float tileHeight = aura.GrhIndex < data.Grhs.Length ? data.Grhs[aura.GrhIndex].TileHeight : 1f;
+		float verticalCenterFix = tileHeight > 1f ? (tileHeight - 1f) * (TileSize / 2f) : 0f;
+
+		var position = new Vector2(tilePos.X, tilePos.Y - aura.Offset + verticalCenterFix);
+		var color = new Color(ByteToFloat.Table[aura.R], ByteToFloat.Table[aura.G], ByteToFloat.Table[aura.B], 1f);
+		worldRenderer.QueueAuraDraw(aura.GrhIndex, frame, position, color, drawAngle);
+	}
+
 	private static void CollectSingleAura(
 		WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
 		GameData data, int auraIndex, ref float angle, double globalTimeMs, float alphaOverride = 1f)

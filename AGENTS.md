@@ -156,6 +156,26 @@ en disco). Los 6 paks viven en `client/Data/`: `fonts`, `graficos`, `init`, `map
 
 ## Estado actual del trabajo
 
+- **Estado 2026-08-11 — World Editor/costas:** el editor ya permite pinceles manuales
+  multi-tile con preview y confirmación para pasto, caminos, curvas y costas; plantillas
+  de comercio por capas; inspección de tiles existentes con remoción de NPC/objetos; y
+  visibilidad independiente L1-L4 (las cuatro activas por defecto).
+- **Costa AO20:** se importaron `6684.png`/`6685.png`, con padres animados compactados en
+  GRH `32881..32888`; `.aomap` persiste `AnimatedWater` en el bit `0x80` y el cliente
+  combina ondas geométricas en L1 con espuma animada en L2.
+- **Rendimiento:** no volver a usar los IDs AO20 dispersos `85xxx`. El índice quedó en
+  `NumGrh=33112`; el agua precalcula ondas una vez por frame y dibuja un polígono por tile;
+  el LRU de texturas del editor se actualiza de forma amortizada cada 64 accesos.
+- **Bots de entrenamiento GM:** `/BOT Paladin|Mago|Cazador` crea un NPC de duelo para
+  privilegio DIOS y `/BOT CLEAR` elimina todos. Usan estadísticas reales simuladas a nivel
+  50, el mejor equipo permitido encontrado en `obj.dat`, hechizos por clase y una IA propia
+  (`gm_bot.rs` + `ticks/bot_ai.rs`) con cooldowns, persecución, control, autocuración,
+  ataques a distancia y limpieza de parálisis. No son usuarios falsos ni persisten/respawnean.
+- **Cliente/protocolo/mapas de esta tanda:** `ObjectCreate` ahora incluye `objIdx` para que
+  los objetos del suelo puedan resolver `CreaAura`; `ParalyzeOK` transporta duración; se
+  reforzaron reconexión/salida y limpieza de sesión; y se agregaron mapas 195/196 en formato
+  `.aomap/.aoinf` con salida local desde mapa 196 hacia Tanaris (mapa 28).
+
 - **Estado 2026-07-20:** se cerro una tanda grande de gameplay, UI, rendering y tooling:
   buscador de items GM con preview/creacion, mochila/equipamiento, preview de login con NPCs,
   `/salir` hacia seleccion de personaje, niebla configurable, drag-and-drop de inventario,

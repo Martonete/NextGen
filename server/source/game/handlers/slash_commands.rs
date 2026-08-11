@@ -214,6 +214,12 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             limpiar_clan_pretoriano(state).await;
             state.send_console(conn_id, "Clan pretoriano eliminado.", font_index::INFO);
         }
+    } else if cmd_upper == "/BOT CLEAR" {
+        // /BOT CLEAR — remove all active duel bots without killing them one by one
+        handle_slash_bot_clear(state, conn_id).await;
+    } else if cmd_upper.starts_with("/BOT ") {
+        // /BOT <clase> — spawn a max-level duel-practice bot (Paladin/Mago/Cazador)
+        handle_slash_bot(state, conn_id, cmd[5..].trim()).await;
     } else if cmd_upper == "/REGRESAR" {
         handle_slash_regresar(state, conn_id).await;
     } else if cmd_upper == "/SALIR" {
