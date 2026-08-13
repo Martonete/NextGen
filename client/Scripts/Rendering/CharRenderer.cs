@@ -39,6 +39,7 @@ public static partial class CharRenderer
 	// Static buffers for DrawShadowProjected — reused every call to avoid per-frame allocations
 	private static readonly Vector2[] _shadowVerts = new Vector2[4];
 	private static readonly Color[] _shadowColors = new Color[4];
+	private static readonly List<Ao20ShadowRenderer.SpritePart> _ao20ShadowParts = new(5);
 
 	private readonly struct AuraDrawData
 	{
@@ -61,19 +62,20 @@ public static partial class CharRenderer
 	}
 
 	/// <summary>
-	/// Fade speed: characters transition from visible to invisible over ~250ms.
-	/// Rate = 1.0 / 250ms = 4.0 per second.
+	/// Fade speed from AO Libre's MapContainer (FADE_DURATION = 0.4s).
+	/// A slightly longer transition prevents creatures from popping at the
+	/// peripheral vision boundary.
 	/// </summary>
-	private const float FovFadeRate = 4.0f;
+	private const float FovFadeRate = 2.5f;
 
 	/// <summary>
-	/// Check if a character is inside the core 17x13 viewport (the original 800x600 area).
-	/// Characters outside this area should fade out smoothly.
+	/// Check whether a character is in the expanded creature range.  AO Libre
+	/// keeps creatures visible slightly beyond the opaque visual core, avoiding
+	/// pop-in while the peripheral darkness is fading them out.
 	/// </summary>
 	private static bool IsInsideCoreViewport(int charPosX, int charPosY, int userX, int userY)
 	{
-		return Math.Abs(charPosX - userX) <= ResolutionManager.CoreHalfX
-			&& Math.Abs(charPosY - userY) <= ResolutionManager.CoreHalfY;
+		return VisionRange.IsInsideCreatureView(charPosX, charPosY, userX, userY);
 	}
 
 	public static void DrawCharacter(
@@ -120,7 +122,7 @@ public static partial class CharRenderer
 			drawShadow = isNpc ? state.Config.ShowNpcShadows : state.Config.ShowShadows;
 		}
 		if (drawShadow && !ch.Invisible && fovAlpha > 0.3f)
-			DrawShadow(canvas, ch, screenPos, heading, data, animator);
+			DrawAo20Shadow(canvas, ch, screenPos, heading, data, state!, charTileX, charTileY, charIdx);
 
 		// VB6: invisible self = pulsing transparency (TransparenciaBody 0-100)
 		// Combined with FOV fade alpha for smooth boundary transitions
@@ -344,6 +346,54 @@ public static partial class CharRenderer
 			new[] { new Vector2(u0, vBot), new Vector2(u1, vBot),
 					new Vector2(u1, vTop), new Vector2(u0, vTop) },
 			texture);
+	}
+
+	/// <summary>
+	/// Builds AO20's 256x256 composed character silhouette and projects that one
+	/// texture through clsBatch.DrawShadow's geometry. The normal character still
+	/// uses DrawCharParts below; only its shadow is composited.
+	/// </summary>
+	private static void DrawAo20Shadow(Node2D canvas, Character ch, Vector2 screenPos, int heading,
+		GameData data, GameState state, int charTileX, int charTileY, int charIdx)
+	{
+		if (ch.Body <= 0 || ch.Body >= data.Bodies.Length || charTileX <= 0 || charTileY <= 0) return;
+		_ao20ShadowParts.Clear();
+		Vector2 bodyPos = Ao20ShadowRenderer.CompositeAnchor;
+		Vector2 headOffset = new(data.Bodies[ch.Body].HeadOffsetX, data.Bodies[ch.Body].HeadOffsetY);
+		int walkingFrame = ch.Moving ? (int)ch.WalkFrame : 0;
+
+		void AddPart(int grhIndex, int frame, Vector2 anchor)
+		{
+			if (grhIndex <= 0) return;
+			var resolved = data.ResolveGrh(grhIndex, frame);
+			if (resolved == null || resolved.FileNum <= 0) return;
+			var texture = data.Textures?.GetTexture(resolved.FileNum);
+			if (texture == null) return;
+			float x = anchor.X, y = anchor.Y;
+			if (resolved.TileWidth != 1f && resolved.TileWidth > 0) x -= (int)(resolved.TileWidth * 16f) - 16;
+			if (resolved.TileHeight != 1f && resolved.TileHeight > 0) y -= (int)(resolved.TileHeight * 32f) - 32;
+			_ao20ShadowParts.Add(new Ao20ShadowRenderer.SpritePart(resolved, texture, new Vector2(x, y)));
+		}
+
+		int bodyGrh = data.Bodies[ch.Body].Walk[heading];
+		int headGrh = ch.Head > 0 && ch.Head < data.Heads.Length ? data.Heads[ch.Head].Head[heading] : 0;
+		int helmetGrh = ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length ? data.Cascos[ch.CascoAnim].Head[heading] : 0;
+		int weaponGrh = ch.WeaponAnim > 0 && ch.WeaponAnim < data.Weapons.Length ? data.Weapons[ch.WeaponAnim].Walk[heading] : 0;
+		int shieldGrh = ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length ? data.Shields[ch.ShieldAnim].Walk[heading] : 0;
+		Vector2 headPos = bodyPos + new Vector2(headOffset.X + (ch.Mounted ? 1f : 0f), headOffset.Y + 1f);
+		Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + (ch.Mounted ? 1f : 0f), headOffset.Y + HELMET_Y_OFFSET);
+
+		switch (heading)
+		{
+			case 1: AddPart(weaponGrh, walkingFrame, bodyPos); AddPart(shieldGrh, walkingFrame, bodyPos); AddPart(bodyGrh, walkingFrame, bodyPos); AddPart(headGrh, 0, headPos); AddPart(helmetGrh, 0, helmetPos); break;
+			case 2: AddPart(shieldGrh, walkingFrame, bodyPos); AddPart(bodyGrh, walkingFrame, bodyPos); AddPart(headGrh, 0, headPos); AddPart(helmetGrh, 0, helmetPos); AddPart(weaponGrh, walkingFrame, bodyPos); break;
+			case 3: AddPart(bodyGrh, walkingFrame, bodyPos); AddPart(headGrh, 0, headPos); AddPart(helmetGrh, 0, helmetPos); AddPart(weaponGrh, walkingFrame, bodyPos); AddPart(shieldGrh, walkingFrame, bodyPos); break;
+			case 4: AddPart(weaponGrh, walkingFrame, bodyPos); AddPart(bodyGrh, walkingFrame, bodyPos); AddPart(headGrh, 0, headPos); AddPart(helmetGrh, 0, helmetPos); AddPart(shieldGrh, walkingFrame, bodyPos); break;
+		}
+
+		int cacheId = charIdx >= 0 ? charIdx : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(ch);
+		Ao20ShadowRenderer.DrawCharacterShadow(canvas, cacheId, _ao20ShadowParts, screenPos,
+			Ao20ShadowRenderer.GetLightCorners(state, charTileX, charTileY));
 	}
 
 	/// <summary>

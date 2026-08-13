@@ -296,6 +296,18 @@ public partial class Main
 	{
 		if (_consoleLabel == null) return;
 		bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
+		// Fullscreen has a fixed lower-left console. The minimap lives in the
+		// upper-right HUD and must not reduce this text area.
+		if (ResolutionManager.FullscreenWorld)
+		{
+			float fullscreenRight = ResolutionManager.S(586);
+			_consoleLabel.OffsetRight = fullscreenRight;
+			if (_chatInputNode != null)
+				_chatInputNode.OffsetRight = fullscreenRight;
+			if (_minimapBorder != null)
+				_minimapBorder.Visible = minimapVisible;
+			return;
+		}
 		// Console right edge: full width when minimap hidden, shrink when visible
 		// Gap S(5) between console text and minimap border (5px@800, ~10px@1920)
 		float fullRight = ResolutionManager.ConsoleRight;
@@ -406,7 +418,10 @@ public partial class Main
 		// Day/Night Cycle
 		_dayNightCycle = new Rendering.DayNightCycle();
 		_dayNightCycle.Init(_state);
+		_dayNightCycle.OnGlobalLightChanged = light => _worldRenderer?.SetGlobalLight(light);
 		_dayNightCycle.Enabled = _state.Config.ShowDayNight;
+		// Publish the default AO20 daylight value now that the renderer is subscribed.
+		_dayNightCycle.SetPhase(0);
 		_gameUI!.AddChild(_dayNightCycle);
 
 		// Loading Screen
@@ -541,7 +556,11 @@ public partial class Main
 		_dialogManager.OnLogout = RequestLogoutToCharacterSelect;
 		_dialogManager.OnQuit = () => GetTree().Quit();
 		_dialogManager.OnOptions = () => _optionsPanel?.Open();
-		_dialogManager.OnRestoreFullscreen = () => EnterFullscreen();
+		_dialogManager.OnRestoreFullscreen = () =>
+		{
+			ResolutionManager.SetFullscreenWorld(_state.Config.Fullscreen);
+			EnterFullscreen();
+		};
 		_dialogManager.OnWindowModeChosen = (windowed) => OnWindowModeChosen(windowed);
 		_dialogManager.OnDropItem = (slot, qty) =>
 		{
@@ -571,8 +590,18 @@ public partial class Main
 		_inputRouter.HideEscapeMenu = () => HideEscapeMenu();
 		_inputRouter.HandleDisconnect = (msg) => HandleDisconnect(msg);
 		_inputRouter.DataPath = _dataPath;
-		_inputRouter.OnEnterFullscreen = () => EnterFullscreen();
-		_inputRouter.OnExitFullscreen = () => ExitFullscreen();
+		_inputRouter.OnEnterFullscreen = () =>
+		{
+			_state.Config.Fullscreen = true;
+			ResolutionManager.SetFullscreenWorld(true);
+			EnterFullscreen();
+		};
+		_inputRouter.OnExitFullscreen = () =>
+		{
+			_state.Config.Fullscreen = false;
+			ResolutionManager.SetFullscreenWorld(false);
+			ExitFullscreen();
+		};
 		_inputRouter.OnSpellMacroToggle = () => _inventoryUI?.HandleSpellMacroToggle();
 		_inputRouter.OnMinimapToggle = () =>
 		{

@@ -56,6 +56,9 @@ public partial class PacketHandler
     /// Callback when visual config changes (e.g. lights toggle) — triggers a render-dirty.
     public Action? OnVisualStateChanged;
 
+    /// Callback when a persistent map visual (currently a ground object) changes.
+    public Action? OnStaticMapChanged;
+
     /// Callback when the day/night phase changes. Arg: 0=day, 1=evening, 2=night.
     public Action<byte>? OnDayPhaseChanged;
 

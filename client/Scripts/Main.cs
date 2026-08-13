@@ -169,18 +169,33 @@ public partial class Main : Control
 		if (_blindOverlay != null)
 			_blindOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 
-		// Console + ChatInput offsets (scaled from design values)
+		// Fullscreen console: lower-left panel matching the Eternal-style game
+		// composition. Its design rect is x=50..586, y=425..562 at 800x600;
+		// this keeps it clear of both the player view and right-side HUD.
+		int consoleLeft = ResolutionManager.FullscreenWorld ? S(50) : ResolutionManager.LeftMargin + S(5);
+		int consoleTop = ResolutionManager.FullscreenWorld
+			? S(425)
+			: ResolutionManager.TopMargin + S(6);
+		int consoleBottom = ResolutionManager.FullscreenWorld
+			? S(540)
+			: ResolutionManager.TopMargin + S(100);
+		int chatTop = ResolutionManager.FullscreenWorld
+			? S(544)
+			: ResolutionManager.TopMargin + S(108);
+		int chatBottom = ResolutionManager.FullscreenWorld
+			? S(562)
+			: ResolutionManager.TopMargin + S(124);
 		if (_consoleLabel != null)
 		{
-			_consoleLabel.OffsetLeft = S(27);
-			_consoleLabel.OffsetTop = S(28);
-			_consoleLabel.OffsetBottom = S(115);
+			_consoleLabel.OffsetLeft = consoleLeft;
+			_consoleLabel.OffsetTop = consoleTop;
+			_consoleLabel.OffsetBottom = consoleBottom;
 		}
 		if (_chatInputNode != null)
 		{
-			_chatInputNode.OffsetLeft = S(22);
-			_chatInputNode.OffsetTop = S(118);
-			_chatInputNode.OffsetBottom = S(139);
+			_chatInputNode.OffsetLeft = consoleLeft;
+			_chatInputNode.OffsetTop = chatTop;
+			_chatInputNode.OffsetBottom = chatBottom;
 		}
 		// Right edge depends on minimap visibility
 		UpdateConsoleWidth();
@@ -491,6 +506,7 @@ public partial class Main : Control
 		}
 		_packetHandler.OnInventoryChanged = () => _inventoryPanel?.MarkDirty();
 		_packetHandler.OnVisualStateChanged = () => _worldRenderer?.MarkRenderDirty();
+		_packetHandler.OnStaticMapChanged = () => _worldRenderer?.InvalidateStaticLayers();
 		_packetHandler.OnDayPhaseChanged = (phase) => _dayNightCycle?.SetPhase(phase);
 		_packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
 		{
@@ -567,7 +583,8 @@ public partial class Main : Control
 		Engine.MaxFps = _state.Config.FpsLimit > 0 ? _state.Config.FpsLimit : 0;
 
 		// Apply dynamic resolution (window size + tile calculation)
-		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
+		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight,
+			_state.Config.Fullscreen);
 
 		// Load key bindings (Teclas.ao)
 		_state.Keys = KeyBindings.Load(dataPath);
@@ -666,6 +683,11 @@ public partial class Main : Control
 
 		// Grab Game UI nodes
 		_gameUI = GetNode<Control>("GameUI");
+		// This node is an editor-only alignment guide so the main scene can be
+		// laid out visually. The runtime HUD is created by GameHudFrame below.
+		var hudLayoutPreview = _gameUI.GetNodeOrNull<TextureRect>("HudLayoutPreview");
+		if (hudLayoutPreview != null)
+			hudLayoutPreview.Visible = false;
 
 		// === Apply dynamic resolution to viewport/UI ===
 		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
@@ -684,10 +706,11 @@ public partial class Main : Control
 		var console = GetNode<RichTextLabel>("GameUI/Console");
 		_consoleLabel = console;
 		// Set scaled offsets (design: left=27, top=28, bottom=115, right=ConsoleRight)
-		console.OffsetLeft = S(27);
-		console.OffsetTop = S(28);
-		console.OffsetBottom = S(115);
+		console.OffsetLeft = ResolutionManager.LeftMargin + S(5);
+		console.OffsetTop = ResolutionManager.TopMargin + S(6);
+		console.OffsetBottom = ResolutionManager.TopMargin + S(100);
 		console.OffsetRight = ResolutionManager.ConsoleRight;
+		console.Modulate = Colors.White;
 		var consoleStyle = new StyleBoxEmpty();
 		consoleStyle.ContentMarginLeft = 2;
 		consoleStyle.ContentMarginRight = 2;
@@ -704,23 +727,20 @@ public partial class Main : Control
 		var chatInput = GetNode<LineEdit>("GameUI/ChatInput");
 		_chatInputNode = chatInput;
 		// Set scaled offsets (design: left=22, top=118, bottom=139, right=ConsoleRight)
-		chatInput.OffsetLeft = S(22);
-		chatInput.OffsetTop = S(118);
-		chatInput.OffsetBottom = S(139);
+		chatInput.OffsetLeft = ResolutionManager.LeftMargin + S(1);
+		chatInput.OffsetTop = ResolutionManager.TopMargin + S(108);
+		chatInput.OffsetBottom = ResolutionManager.TopMargin + S(124);
 		chatInput.OffsetRight = ResolutionManager.ConsoleRight;
 		chatInput.Visible = false;
 		chatInput.MaxLength = 160;
 		// RPG-styled input for chat
 		var chatNormal = new StyleBoxFlat();
-		chatNormal.BgColor = new Color(0.10f, 0.08f, 0.06f, 0.85f);
-		chatNormal.BorderColor = new Color(0.45f, 0.38f, 0.25f, 0.9f);
-		chatNormal.SetBorderWidthAll(2);
-		chatNormal.SetCornerRadiusAll(2);
-		chatNormal.ContentMarginLeft = 6; chatNormal.ContentMarginRight = 6;
+		chatNormal.BgColor = new Color(0.104888f, 0.192391f, 0.192544f, 0.392157f);
+		chatNormal.ContentMarginLeft = 4; chatNormal.ContentMarginRight = 4;
 		chatNormal.ContentMarginTop = 2;  chatNormal.ContentMarginBottom = 2;
 		chatInput.AddThemeStyleboxOverride("normal", chatNormal);
 		var chatFocus = (StyleBoxFlat)chatNormal.Duplicate();
-		chatFocus.BorderColor = new Color(0.65f, 0.55f, 0.35f, 1f);
+		chatFocus.BorderColor = new Color(0.42f, 0.75f, 0.76f, 0.75f);
 		chatInput.AddThemeStyleboxOverride("focus", chatFocus);
 		chatInput.AddThemeStyleboxOverride("read_only", (StyleBoxFlat)chatNormal.Duplicate());
 		chatInput.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
@@ -1469,8 +1489,9 @@ public partial class Main : Control
 			&& f12Key.Keycode == Key.F12)
 		{
 			bool goFullscreen = DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen;
-			if (goFullscreen) EnterFullscreen(); else ExitFullscreen();
 			_state.Config.Fullscreen = goFullscreen;
+			ResolutionManager.SetFullscreenWorld(goFullscreen);
+			if (goFullscreen) EnterFullscreen(); else ExitFullscreen();
 			_state.Config.Save(_dataPath);
 			GetViewport().SetInputAsHandled();
 			// Re-center any visible form after fullscreen toggle

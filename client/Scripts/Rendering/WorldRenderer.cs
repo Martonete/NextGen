@@ -40,6 +40,10 @@ public partial class WorldRenderer : Node2D
 	private ReflectionBodyLayer? _reflBodyLayer;
 	private NonWaterMaskLayer? _maskLayer;
 	private Layer2Layer? _layer2Layer;
+	private StaticGroundLayer? _staticGroundLayer;
+	private StaticLayer2Layer? _staticLayer2Layer;
+	private StaticObjectsLayer? _staticObjectsLayer;
+	private StaticForegroundLayer? _staticForegroundLayer;
 	private AuraAdditiveLayer? _auraLayer;
 	private ContentLayer? _contentLayer;
 	private DialogOverlayLayer? _dialogLayer;
@@ -113,6 +117,10 @@ public partial class WorldRenderer : Node2D
 	// path — only extended-motor particles (RotateVisual/ScaleOverLife) set them.
 	private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle, float scale)> _pendingMapParticleDraws = new();
 	private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle, float scale)> _pendingCharParticleDraws = new();
+	// A particle stream commonly reuses one GRH across hundreds of particles.
+	// Cache its animation frame for this draw only instead of resolving it per mote.
+	private readonly Dictionary<int, int> _particleFrameCache = new();
+	private const float ParticleDrawCullMarginPx = 128f;
 
 	// Pending aura draws for the aura additive layer (VB6: D3DBLEND_ONE/ONE)
 	private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingAuraDraws = new();
@@ -135,12 +143,29 @@ public partial class WorldRenderer : Node2D
 	// _Process only calls QueueRedraw when this is true, avoiding per-frame redraws
 	// when nothing has changed (e.g., paused game, no movement, no animation tick).
 	private bool _renderDirty = true;
+	// Retained canvas commands for non-animated terrain. They are rebuilt after
+	// a tile camera step; within the 32px smooth scroll Godot only translates them.
+	private bool _staticLayersDirty = true;
+	private bool _staticLayerCacheActive;
+	private int _staticBaseUserX, _staticBaseUserY;
+	private float _staticBasePixelOffsetX, _staticBasePixelOffsetY;
 
 	/// <summary>
 	/// Mark the renderer as needing a redraw on the next _Process tick.
 	/// Call this whenever map data, characters, lights, or animations change.
 	/// </summary>
 	public void MarkRenderDirty() => _renderDirty = true;
+
+	/// <summary>Call for a map-tile/object mutation that invalidates retained terrain.</summary>
+	public void InvalidateStaticLayers() => _staticLayersDirty = true;
+
+	/// <summary>Discard map-scoped visual caches when the current map changes.</summary>
+	public void ResetMapVisualCaches()
+	{
+		Ao20ShadowRenderer.ClearCharacterCache();
+		_particleFrameCache.Clear();
+		_staticLayersDirty = true;
+	}
 
 	/// <summary>
 	/// Camera values for the current frame. Updated in _Process before any Draw calls.
@@ -177,6 +202,9 @@ public partial class WorldRenderer : Node2D
 	private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY; // L1 water (small buffer for perf)
 	private int _frameCharMinX, _frameCharMaxX, _frameCharMinY, _frameCharMaxY; // characters (viewport only)
 	private bool _frameHasLights;
+	// AO20's global_light. It is a multiplicative RGB applied to every world draw,
+	// independently from the map's base light and local tile lights.
+	private Color _globalLight = Colors.White;
 
 	// GPU lightmap shader — samples a 101×101 texture for smooth per-vertex lighting.
 	// Bilinear interpolation between corner pixels eliminates visible tile edges.
@@ -193,7 +221,9 @@ uniform bool use_lightmap;
 varying vec2 v_world_px;
 
 void vertex() {
-	v_world_px = VERTEX + world_origin;
+	// MODEL_MATRIX includes retained-layer translations during smooth scroll.
+	// Dynamic layers have identity here, so this is also the old calculation.
+	v_world_px = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy + world_origin;
 }
 
 void fragment() {
@@ -216,6 +246,18 @@ void fragment() {
 	/// Called by Main after RecalculateLights() to trigger lightmap texture rebuild.
 	/// </summary>
 	public void MarkLightmapDirty() => _lightmapDirty = true;
+
+	/// <summary>
+	/// Receives AO20's current global_light from DayNightCycle.  Changing it does not
+	/// rebuild the tile lightmap: Godot's canvas modulation applies it to all passes.
+	/// </summary>
+	public void SetGlobalLight(Color light)
+	{
+		light.A = 1f;
+		if (_globalLight.IsEqualApprox(light)) return;
+		_globalLight = light;
+		MarkRenderDirty();
+	}
 
 	/// <summary>Rebuild the fog overlay texture — call when the fog intensity option changes.</summary>
 	public void RebuildFogOverlay() => _fogOverlay?.RebuildFogTexture();
@@ -354,6 +396,16 @@ void fragment() {
 		_maskLayer.SetRenderer(this);
 		AddChild(_maskLayer);
 
+		// Retained static L1 draws before reflections, matching the parent's normal
+		// terrain pass. It is translated during smooth scrolling instead of rebuilt.
+		_staticGroundLayer = new StaticGroundLayer();
+		_staticGroundLayer.Name = "StaticGroundLayer";
+		_staticGroundLayer.Material = _lightmapMaterial;
+		_staticGroundLayer.ZIndex = 0;
+		_staticGroundLayer.SetRenderer(this);
+		AddChild(_staticGroundLayer);
+		MoveChild(_staticGroundLayer, 0);
+
 		// Layer 2 layer: standard blend, z=-1 (draws L2 borders/objects on top,
 		// occluding reflected auras under border opaque portions)
 		_layer2Layer = new Layer2Layer();
@@ -362,6 +414,14 @@ void fragment() {
 		_layer2Layer.ZIndex = 0;
 		_layer2Layer.SetRenderer(this);
 		AddChild(_layer2Layer);
+
+		_staticLayer2Layer = new StaticLayer2Layer();
+		_staticLayer2Layer.Name = "StaticLayer2Layer";
+		_staticLayer2Layer.Material = _lightmapMaterial;
+		_staticLayer2Layer.ZIndex = 0;
+		_staticLayer2Layer.SetRenderer(this);
+		AddChild(_staticLayer2Layer);
+		MoveChild(_staticLayer2Layer, GetChildCount() - 2); // before dynamic L2
 
 		// Aura layer: additive blend, z=0 (normal auras only)
 		// Added BEFORE ContentLayer — same z draws in tree order,
@@ -378,6 +438,18 @@ void fragment() {
 		_contentLayer.ZIndex = 0;
 		_contentLayer.SetRenderer(this);
 		AddChild(_contentLayer);
+
+		_staticObjectsLayer = new StaticObjectsLayer();
+		_staticObjectsLayer.Name = "StaticObjectsLayer";
+		_staticObjectsLayer.ZIndex = 0;
+		_staticObjectsLayer.SetRenderer(this);
+		MoveChild(_staticObjectsLayer, GetChildCount() - 2); // immediately before Content
+
+		_staticForegroundLayer = new StaticForegroundLayer();
+		_staticForegroundLayer.Name = "StaticForegroundLayer";
+		_staticForegroundLayer.ZIndex = 0;
+		_staticForegroundLayer.SetRenderer(this);
+		AddChild(_staticForegroundLayer);
 
 		// Dialog overlay: z=1 — above characters/NPCs, below particles/roof
 		_dialogLayer = new DialogOverlayLayer();
@@ -517,8 +589,9 @@ void fragment() {
 	}
 
 	/// <summary>
-	/// VB6: all tiles/characters are drawn with the map's ambient RGB.
-	/// Default is 200,200,200 (slightly dimmed). Applied via Godot's Modulate.
+	/// AO20 combines the map ambient RGB with global_light before drawing every
+	/// tile, object and character. This is multiplicative colour modulation, not an
+	/// alpha overlay, so the original palette remains visible at dusk and night.
 	/// </summary>
 	private void UpdateAmbientLight()
 	{
@@ -530,7 +603,7 @@ void fragment() {
 		float r = _state.MapColorR / 255f;
 		float g = _state.MapColorG / 255f;
 		float b = _state.MapColorB / 255f;
-		Modulate = new Color(r, g, b, 1f);
+		Modulate = new Color(r * _globalLight.R, g * _globalLight.G, b * _globalLight.B, 1f);
 	}
 
 	private void UpdateRoofFade()
@@ -765,6 +838,7 @@ void fragment() {
 		// Clear pending draws from previous frame
 		_pendingMapParticleDraws.Clear();
 		_pendingCharParticleDraws.Clear();
+		_particleFrameCache.Clear();
 		_pendingAuraDraws.Clear();
 		_pendingReflAuraDraws.Clear();
 		_pendingReflBodyDraws.Clear();
@@ -836,10 +910,10 @@ void fragment() {
 
 		_frameHasLights = (_state.Config?.ShowLights ?? true)
 						  && _state.MapLights.Count > 0 && _state.TileLightColors != null;
+		UpdateStaticLayerCache();
 
-		// GPU lightmap: when lights active, the shader handles ambient + light tinting
-		// on terrain layers. Modulate = white so shader is the sole color source.
-		// ContentLayer gets map ambient via its own Modulate (characters stay tinted).
+		// GPU lightmap handles map ambient + local lights. AO20 global_light still
+		// modulates every pass here, including characters and world objects.
 		if (_frameHasLights)
 		{
 			if (_lightmapDirty && _state.TileLightColors != null)
@@ -864,26 +938,17 @@ void fragment() {
 			float originX = (_frameUserX - HalfWindowTileWidth) * TileSize - _framePixelOffsetX;
 			float originY = (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY;
 			_lightmapMaterial?.SetShaderParameter("world_origin", new Vector2(originX, originY));
-			Modulate = Colors.White;
-			// Parent is white → ContentLayer inherits white → full brightness. No correction needed.
+			Modulate = (_state.Config?.ShowDayNight ?? true) ? _globalLight : Colors.White;
+			// Content must inherit both global and local ambient light, like AO20.
 			if (_contentLayer != null) _contentLayer.SelfModulate = Colors.White;
 		}
 		else
 		{
 			_lightmapMaterial?.SetShaderParameter("use_lightmap", false);
 			UpdateAmbientLight();
-			// Parent Modulate = map ambient → ContentLayer inherits dark tint.
-			// Cancel it with inverse SelfModulate so characters draw at full brightness.
+			// No local lightmap: Content inherits the same map/global ambient as terrain.
 			if (_contentLayer != null)
-			{
-				float r = _state.MapColorR / 255f;
-				float g = _state.MapColorG / 255f;
-				float b = _state.MapColorB / 255f;
-				_contentLayer.SelfModulate = new Color(
-					r > 0.01f ? 1f / r : 1f,
-					g > 0.01f ? 1f / g : 1f,
-					b > 0.01f ? 1f / b : 1f, 1f);
-			}
+				_contentLayer.SelfModulate = Colors.White;
 		}
 
 		// ==========================================
@@ -1046,6 +1111,13 @@ void fragment() {
 			{
 				if (!stream.Active || stream.CharIndex >= 0) continue;
 				if (stream.DefIndex < 1 || stream.DefIndex >= _state.ParticleDefs.Length) continue;
+				// Streams are map-attached. A generous four-tile guard band keeps
+				// fast effects from popping at the edge while avoiding all per-particle
+				// work for the majority of a large map outside the viewport.
+				const int streamCullMarginTiles = 4;
+				if (stream.MapX < _frameMinX - streamCullMarginTiles || stream.MapX > _frameMaxX + streamCullMarginTiles
+					|| stream.MapY < _frameMinY - streamCullMarginTiles || stream.MapY > _frameMaxY + streamCullMarginTiles)
+					continue;
 				var def = _state.ParticleDefs[stream.DefIndex];
 
 				Vector2 streamPos = TileToScreen(stream.MapX, stream.MapY, _frameUserX, _frameUserY,
@@ -1059,7 +1131,14 @@ void fragment() {
 						: p.Alpha;
 					var color = new Color(ByteToFloat.Table[p.ColR], ByteToFloat.Table[p.ColG], ByteToFloat.Table[p.ColB], alpha);
 					Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
-					int frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
+					if (pPos.X < -ParticleDrawCullMarginPx || pPos.X > ViewportWidth + ParticleDrawCullMarginPx
+						|| pPos.Y < -ParticleDrawCullMarginPx || pPos.Y > ViewportHeight + ParticleDrawCullMarginPx)
+						continue;
+					if (!_particleFrameCache.TryGetValue(p.GrhIndex, out int frame))
+					{
+						frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
+						_particleFrameCache[p.GrhIndex] = frame;
+					}
 					float angle = def.RotateVisual ? Mathf.DegToRad(p.Angle) : 0f;
 					float scale = ScaleForLife(def, p);
 					_pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color, angle, scale));
@@ -1111,6 +1190,61 @@ void fragment() {
 		_dialogLayer?.QueueRedraw();
 		_additiveLayer?.QueueRedraw();
 		_roofLayer?.QueueRedraw();
+	}
+
+	/// <summary>
+	/// Keeps terrain commands alive across the pixel-by-pixel part of a camera
+	/// movement. The lightmap shader includes MODEL_MATRIX, therefore its world
+	/// sampling remains correct after a retained layer is translated.
+	/// </summary>
+	private void UpdateStaticLayerCache()
+	{
+		// The retained-layer experiment cannot safely cover mapper objects yet:
+		// those are authored in .aoinf and may be changed by server packets. Keep
+		// the established dynamic passes authoritative so no map decoration drops.
+		bool active = false;
+		if (_staticLayerCacheActive != active)
+		{
+			_staticLayerCacheActive = active;
+			_staticLayersDirty = true;
+			if (_staticGroundLayer != null) _staticGroundLayer.Visible = active;
+			if (_staticLayer2Layer != null) _staticLayer2Layer.Visible = active;
+			if (_staticObjectsLayer != null) _staticObjectsLayer.Visible = active;
+			if (_staticForegroundLayer != null) _staticForegroundLayer.Visible = active;
+		}
+		if (!active) return;
+
+		bool rebuild = _staticLayersDirty || _staticBaseUserX != _frameUserX || _staticBaseUserY != _frameUserY;
+		Vector2 translation;
+		if (rebuild)
+		{
+			_staticBaseUserX = _frameUserX;
+			_staticBaseUserY = _frameUserY;
+			_staticBasePixelOffsetX = _framePixelOffsetX;
+			_staticBasePixelOffsetY = _framePixelOffsetY;
+			_staticLayersDirty = false;
+			translation = Vector2.Zero;
+			_staticGroundLayer?.QueueRedraw();
+			_staticLayer2Layer?.QueueRedraw();
+			_staticObjectsLayer?.QueueRedraw();
+			_staticForegroundLayer?.QueueRedraw();
+		}
+		else
+		{
+			translation = new Vector2(
+				(_staticBaseUserX - _frameUserX) * TileSize + _framePixelOffsetX - _staticBasePixelOffsetX,
+				(_staticBaseUserY - _frameUserY) * TileSize + _framePixelOffsetY - _staticBasePixelOffsetY);
+		}
+
+		if (_staticGroundLayer != null) _staticGroundLayer.Position = translation;
+		if (_staticLayer2Layer != null) _staticLayer2Layer.Position = translation;
+		if (_staticObjectsLayer != null) _staticObjectsLayer.Position = translation;
+		if (_staticForegroundLayer != null) _staticForegroundLayer.Position = translation;
+	}
+
+	private bool IsStaticGrh(int grhIndex)
+	{
+		return _data != null && grhIndex > 0 && grhIndex < _data.Grhs.Length && _data.Grhs[grhIndex].NumFrames <= 1;
 	}
 
 	/// <summary>

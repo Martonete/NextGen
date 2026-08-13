@@ -177,7 +177,8 @@ public class ParticleSystem
             MapY = mapY,
             CharIndex = -1,
             Active = true,
-            LifeCountdown = def.LifeCounter == 0 ? -1 : def.LifeCounter,
+            Persistent = true,
+            LifeCountdown = -1,
             Particles = new Particle[def.NumParticles]
         };
 
@@ -205,6 +206,7 @@ public class ParticleSystem
             DefIndex = defIndex,
             CharIndex = charIndex,
             Active = true,
+            Persistent = false,
             LifeCountdown = def.LifeCounter == 0 ? -1 : def.LifeCounter,
             Particles = new Particle[def.NumParticles]
         };
@@ -258,7 +260,7 @@ public class ParticleSystem
             stream.FrameCounter = 0;
 
         // Stream lifetime countdown (VB6: life_counter per-tick decrement)
-        if (doMove && stream.LifeCountdown > 0)
+        if (!stream.Persistent && doMove && stream.LifeCountdown > 0)
         {
             stream.LifeCountdown--;
             if (stream.LifeCountdown <= 0)
@@ -340,7 +342,7 @@ public class ParticleSystem
         p.VelY = RandRange(def.VecY1, def.VecY2);
 
         // VB6: alive_counter = RandomNumber(life1, life2) — integer steps
-        p.Life = (int)RandRange(def.LifeMin, def.LifeMax);
+        p.Life = Math.Max(1, (int)RandRange(def.LifeMin, def.LifeMax));
         p.MaxLife = p.Life;
 
         // VB6: angle from def (not random)

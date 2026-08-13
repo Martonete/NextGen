@@ -713,6 +713,8 @@ public class ParticleStream
 	public Particle[] Particles = System.Array.Empty<Particle>();
 	public float FrameCounter;   // VB6: frame_counter accumulator (EngineBaseSpeed * deltaMs)
 	public int LifeCountdown = -1; // VB6: life_counter — -1 = infinite, >0 = ticks remaining
+	// Map-authored ambient effects are persistent; only transient effects count down.
+	public bool Persistent;
 	public bool Active = true;
 }
 

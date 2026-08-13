@@ -43,9 +43,20 @@ public partial class WorldRenderer
 
                 // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
                 if (_state.GroundObjects.TryGetValue((x, y), out var groundObj) && groundObj.Grh > 0
-                    && groundObj.Grh != tile.Layer3)
+                    && groundObj.Grh != tile.Layer3
+					&& !(_staticLayerCacheActive && IsStaticGrh(groundObj.Grh)))
                 {
                     var light = GetContentLightColor(x, y);
+					// AO20 TileEngine_RenderScreen: only ground objects whose ObjType
+					// is otArboles (4) receive Draw_Sombra, immediately before the tree.
+					if ((_state.Config?.ShowShadows ?? true)
+						&& groundObj.ObjIndex > 0 && groundObj.ObjIndex < _data.Objects.Length
+						&& _data.Objects[groundObj.ObjIndex].ObjType == 4)
+					{
+						Ao20ShadowRenderer.DrawGrhShadow(canvas, _data, groundObj.Grh,
+							_animator.GetCurrentFrame(groundObj.Grh, _data), tilePos, true,
+							Ao20ShadowRenderer.GetLightCorners(_state, x, y));
+					}
                     DrawTileGrhTo(canvas, groundObj.Grh, tilePos, center: true, modulate: MultiplyColor(objColor, light));
                 }
 
@@ -86,8 +97,17 @@ public partial class WorldRenderer
                 }
 
                 // Layer 3 (trees/objects) — dimmed slightly, with proximity transparency for trees
-                if (tile.Layer3 > 0)
+                if (tile.Layer3 > 0 && !(_staticLayerCacheActive && IsStaticGrh(tile.Layer3) && !IsTree(tile.Layer3)))
                 {
+					// AO20 AgregarSombra() is deliberately a narrow GRH whitelist, not
+					// a generic L3/tree rule. Keep it exact to avoid darkening scenery
+					// that the original client left untouched.
+					if ((_state.Config?.ShowShadows ?? true) && Ao20ShadowRenderer.HasLayer3Shadow(tile.Layer3))
+					{
+						Ao20ShadowRenderer.DrawGrhShadow(canvas, _data, tile.Layer3,
+							_animator.GetCurrentFrame(tile.Layer3, _data), tilePos, true,
+							Ao20ShadowRenderer.GetLightCorners(_state, x, y));
+					}
                     float l3Alpha = 1f;
                     if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(tile.Layer3))
                     {
@@ -330,14 +350,83 @@ public partial class WorldRenderer
     // noisePhase) instead of re-seeding System.Random per-segment/per-tick makes
     // adjacent vertices — and adjacent frames — flow into each other smoothly,
     // reading as a living current instead of a flickering zig-zag.
-    private Color GetContentLightColor(int x, int y)
+	private Color GetContentLightColor(int x, int y)
     {
         if (_state == null || !(_state.Config?.ShowLights ?? true))
             return Colors.White;
         return LightSystem.GetTileLight(_state, x, y);
-    }
+	}
 
-    private static Color MultiplyColor(Color color, Color light)
+	/// <summary>Retained non-water L1 for ambient-only maps.</summary>
+	public void DrawStaticGround(CanvasItem canvas)
+	{
+		if (!_staticLayerCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
+		for (int y = _frameMinY; y <= _frameMaxY; y++)
+		{
+			float sy = _screenYCache[y - _frameMinY];
+			for (int x = _frameMinX; x <= _frameMaxX; x++)
+			{
+				if (!TryResolveTile(x, y, out var tile) || tile.Layer1 <= 0 || IsWaterGrh(tile.Layer1) || !IsStaticGrh(tile.Layer1)) continue;
+				DrawTileGrhTo(canvas, tile.Layer1, new Vector2(_screenXCache[x - _frameMinX], sy));
+			}
+		}
+	}
+
+	/// <summary>Retained static L2; animated tiles stay in DrawLayer2.</summary>
+	public void DrawStaticLayer2(CanvasItem canvas)
+	{
+		if (!_staticLayerCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
+		for (int y = _frameMinY; y <= _frameMaxY; y++)
+		{
+			float sy = _screenYCache[y - _frameMinY];
+			for (int x = _frameMinX; x <= _frameMaxX; x++)
+			{
+				if (!TryResolveTile(x, y, out var tile) || tile.Layer2 <= 0 || !IsStaticGrh(tile.Layer2)) continue;
+				DrawTileGrhTo(canvas, tile.Layer2, new Vector2(_screenXCache[x - _frameMinX], sy), center: true);
+			}
+		}
+	}
+
+	/// <summary>Retained ground objects; their packet mutations explicitly invalidate the cache.</summary>
+	public void DrawStaticObjects(CanvasItem canvas)
+	{
+		if (!_staticLayerCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
+		const float objBright = 220f / 255f;
+		var objColor = new Color(objBright, objBright, objBright, 1f);
+		foreach (var entry in _state.GroundObjects)
+		{
+			var (x, y) = entry.Key;
+			var groundObj = entry.Value;
+			if (x < _frameMinX || x > _frameMaxX || y < _frameMinY || y > _frameMaxY || !IsStaticGrh(groundObj.Grh)) continue;
+			if (!TryResolveTile(x, y, out var tile) || groundObj.Grh <= 0 || groundObj.Grh == tile.Layer3) continue;
+			var pos = new Vector2(_screenXCache[x - _frameMinX], _screenYCache[y - _frameMinY]);
+			if ((_state.Config?.ShowShadows ?? true) && groundObj.ObjIndex > 0 && groundObj.ObjIndex < _data.Objects.Length && _data.Objects[groundObj.ObjIndex].ObjType == 4)
+				Ao20ShadowRenderer.DrawGrhShadow(canvas, _data, groundObj.Grh, 0, pos, true, Ao20ShadowRenderer.GetLightCorners(_state, x, y));
+			DrawTileGrhTo(canvas, groundObj.Grh, pos, center: true, modulate: MultiplyColor(objColor, GetContentLightColor(x, y)));
+		}
+	}
+
+	/// <summary>Retained L3 foreground; animated trees/decorations remain dynamic.</summary>
+	public void DrawStaticForeground(CanvasItem canvas)
+	{
+		if (!_staticLayerCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
+		const float treeBright = 220f / 255f;
+		var color = new Color(treeBright, treeBright, treeBright, 1f);
+		for (int y = _frameMinY; y <= _frameMaxY; y++)
+		{
+			float sy = _screenYCache[y - _frameMinY];
+			for (int x = _frameMinX; x <= _frameMaxX; x++)
+			{
+				if (!TryResolveTile(x, y, out var tile) || tile.Layer3 <= 0 || !IsStaticGrh(tile.Layer3) || IsTree(tile.Layer3)) continue;
+				var pos = new Vector2(_screenXCache[x - _frameMinX], sy);
+				if ((_state.Config?.ShowShadows ?? true) && Ao20ShadowRenderer.HasLayer3Shadow(tile.Layer3))
+					Ao20ShadowRenderer.DrawGrhShadow(canvas, _data, tile.Layer3, 0, pos, true, Ao20ShadowRenderer.GetLightCorners(_state, x, y));
+				DrawTileGrhTo(canvas, tile.Layer3, pos, center: true, modulate: MultiplyColor(color, GetContentLightColor(x, y)));
+			}
+		}
+	}
+
+	private static Color MultiplyColor(Color color, Color light)
     {
         return new Color(color.R * light.R, color.G * light.G, color.B * light.B, color.A);
     }
@@ -528,6 +617,10 @@ public partial class WorldRenderer
                 if (!TryResolveTile(x, y, out var tile)) continue;
                 if (tile.Layer1 <= 0) continue;
                 if (IsWaterGrh(tile.Layer1)) continue; // skip water
+				// Retained L1 is already visible below reflections. Only redraw it
+				// every frame when it is animated, or when a reflection needs this
+				// pass as an occlusion mask over land.
+				if (_staticLayerCacheActive && !_frameAnyReflection && IsStaticGrh(tile.Layer1)) continue;
 
                 // Opt 4: use pre-computed screen coords
                 Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
@@ -551,6 +644,7 @@ public partial class WorldRenderer
             {
                 if (!TryResolveTile(x, y, out var tile)) continue;
                 if (tile.Layer2 <= 0) continue;
+				if (_staticLayerCacheActive && IsStaticGrh(tile.Layer2)) continue;
 
 				// Opt 4: use pre-computed screen coords
 				Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);

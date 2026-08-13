@@ -525,7 +525,7 @@ public partial class OptionsPanel : RpgBaseForm
 
         // Apply new resolution and reposition all UI
         // RepositionUI() + CenterPanelsInViewport() handles everything including this panel
-        ResolutionManager.ApplyResolution(w, h);
+		ResolutionManager.ApplyResolution(w, h, _config.Fullscreen);
     }
 
     // ── Performance preset ────────────────────────────────

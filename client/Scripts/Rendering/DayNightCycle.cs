@@ -1,164 +1,166 @@
-using Godot;
 using System;
+using Godot;
 using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.Rendering;
 
 /// <summary>
-/// Client-side day/night cycle system.
-/// Modulates world ambient lighting based on in-game hour (0-23).
-/// VB6 had hours 0-23 with darkness at night (20:00-06:00).
-/// Uses a ColorRect overlay on the game viewport with varying alpha.
-/// Server sends current game hour via existing packet; this system
-/// smoothly transitions between light levels each frame.
+/// AO20 global daylight controller.
+///
+/// AO20 does not put a translucent colour rectangle over the screen.  It gives every
+/// world vertex the current <c>global_light</c> RGB, which multiplies the source sprite.
+/// This node keeps that exact 24-hour palette and exposes the resulting multiplier to
+/// WorldRenderer.  It remains a transparent Control only to preserve the existing UI tree.
 /// </summary>
 public partial class DayNightCycle : ColorRect
 {
-    private GameState? _state;
+    // ModMetereologia.bas: LIGHT_TRANSITION_DURATION = 5000.
+    private const float LightTransitionDurationSeconds = 5f;
 
-    // Current and target alpha for smooth transitions
-    private float _currentAlpha;
-    private float _targetAlpha;
-    private int _currentHour = 12; // Default: noon
+    // Palette transcribed from AO20 ModMetereologia.IniciarMeteorologia().
+    // The VB array is stored offset by one (DayColors(23) is 00:00), so this table is
+    // deliberately indexed by the human-readable hour instead.
+    private static readonly Color[] Ao20HourLights =
+    {
+        Rgb(120, 120, 120), // 00
+        Rgb(120, 120, 120), // 01
+        Rgb(120, 120, 120), // 02
+        Rgb(120, 120, 120), // 03
+        Rgb(120, 120, 120), // 04
+        Rgb(138, 138, 138), // 05
+        Rgb(156, 156, 145), // 06
+        Rgb(170, 170, 155), // 07
+        Rgb(185, 185, 185), // 08
+        Rgb(200, 200, 200), // 09
+        Rgb(220, 220, 220), // 10
+        Rgb(235, 235, 235), // 11
+        Rgb(245, 245, 245), // 12
+        Rgb(255, 255, 255), // 13
+        Rgb(255, 255, 255), // 14
+        Rgb(255, 255, 255), // 15
+        Rgb(245, 245, 245), // 16
+        Rgb(230, 230, 230), // 17
+        Rgb(220, 220, 220), // 18
+        Rgb(200, 200, 180), // 19
+        Rgb(180, 160, 160), // 20
+        Rgb(160, 160, 160), // 21
+        Rgb(140, 140, 140), // 22
+        Rgb(120, 120, 140), // 23
+    };
+
+    // The three current server commands are artistic anchors rather than a live HORA
+    // packet. Keep them near AO20's palette, while making the requested daytime a
+    // little softer and sunset slightly warmer. The full table above stays untouched
+    // for real clock updates.
+    private static readonly Color ForcedDayLight = Ao20HourLights[12];       // AO20 12:00, 245/245/245
+    private static readonly Color ForcedEveningLight = Rgb(190, 155, 135);   // subtly warmer than AO20 20:00
+
+    private GameState? _state;
+    private Color _currentLight = Colors.White;
+    private Color _lastLight = Colors.White;
+    private Color _nextLight = Colors.White;
+    private float _lightTransition = 1f;
+    private int _currentHour = 13;
     private bool _enabled = true;
 
-    // Which reference tint we're transitioning toward — drives color, not just alpha,
-    // so evening reads as a warm dusk instead of "a bit less night-blue".
-    private Color _targetTint = DayTint;
-    private Color _currentTint = DayTint;
+    /// <summary>Raised whenever AO20's global_light changes.</summary>
+    public Action<Color>? OnGlobalLightChanged { get; set; }
 
-    // Transition speed (alpha/color units per second)
-    private const float TransitionSpeed = 0.15f;
-
-    // Hour-to-darkness mapping (realistic curve):
-    // 0-4: deep night, 5-7: dawn (warming up from dark), 8-16: full day,
-    // 17-19: golden hour / dusk (warm, moderately dark), 20-23: night.
-    private static readonly float[] HourAlpha = new float[24]
-    {
-        0.60f, 0.62f, 0.60f, 0.55f, 0.48f,           // 00-04: deep night
-        0.38f, 0.24f, 0.10f,                            // 05-07: dawn brightening
-        0.05f, 0.03f, 0.02f, 0.02f, 0.02f,             // 08-12: day (faint warm haze, not a flat 0)
-        0.02f, 0.03f, 0.05f, 0.10f,                     // 13-16: afternoon, warming toward dusk
-        0.22f, 0.34f, 0.30f,                            // 17-19: golden hour peak → fading dusk
-        0.42f, 0.50f, 0.58f, 0.60f,                     // 20-23: night falling
-    };
-
-    // Which tint applies at each hour: 0=day (warm haze), 1=evening (golden dusk), 2=night (cool violet-blue).
-    private static readonly byte[] HourTintKind = new byte[24]
-    {
-        2, 2, 2, 2, 2,       // 00-04: night
-        1, 1, 1,              // 05-07: dawn reads warm, like sunrise
-        0, 0, 0, 0, 0,       // 08-12: day
-        0, 0, 0, 1,           // 13-16: day → warming into dusk
-        1, 1, 1,              // 17-19: golden hour / dusk
-        2, 2, 2, 2,          // 20-23: night
-    };
-
-    // Night tint: deep blue with a faint violet cast, like real moonlight rather than flat black-blue.
-    private static readonly Color NightTint = new Color(0.05f, 0.06f, 0.16f, 1f);
-    // Evening tint: saturated golden-hour orange — the warm low-sun glow, not just "dim brown".
-    private static readonly Color EveningTint = new Color(0.55f, 0.24f, 0.07f, 1f);
-    // Day tint: faint warm haze (real daylight is never a perfectly neutral "no filter").
-    private static readonly Color DayTint = new Color(0.30f, 0.20f, 0.10f, 1f);
+    public Color CurrentLight => _enabled ? _currentLight : Colors.White;
 
     public bool Enabled
     {
         get => _enabled;
         set
         {
+            if (_enabled == value) return;
             _enabled = value;
-            if (!_enabled) _currentAlpha = 0f;
+            PublishLight();
         }
     }
 
-    /// <summary>
-    /// Initialize the day/night cycle overlay.
-    /// Should be added as a child of the game viewport UI layer.
-    /// </summary>
     public void Init(GameState state)
     {
         _state = state;
-        _currentAlpha = 0f;
-        _targetAlpha = 0f;
+        _currentHour = 13;
+        _currentLight = Ao20HourLights[_currentHour];
+        _lastLight = _currentLight;
+        _nextLight = _currentLight;
+        _lightTransition = 1f;
         MouseFilter = MouseFilterEnum.Ignore;
-        ZIndex = 50; // Above world, below UI panels
+        Color = new Color(0f, 0f, 0f, 0f);
     }
 
     public override void _Ready()
     {
-        // Cover the game viewport area with a small margin
-        Position = new Vector2(ResolutionManager.LeftMargin - 5, ResolutionManager.TopMargin - 5);
-        Size = new Vector2(ResolutionManager.ViewportW + 10, ResolutionManager.ViewportH + 10);
-        Color = new Color(0, 0, 0, 0);
+        // No screen overlay: AO20 applies global_light to the world draw calls.
         MouseFilter = MouseFilterEnum.Ignore;
-        ResolutionManager.OnResolutionChanged += OnResolutionChanged;
-    }
-
-    public override void _ExitTree()
-    {
-        ResolutionManager.OnResolutionChanged -= OnResolutionChanged;
-    }
-
-    private void OnResolutionChanged()
-    {
-        Position = new Vector2(ResolutionManager.LeftMargin - 5, ResolutionManager.TopMargin - 5);
-        Size = new Vector2(ResolutionManager.ViewportW + 10, ResolutionManager.ViewportH + 10);
+        Color = new Color(0f, 0f, 0f, 0f);
     }
 
     /// <summary>
-    /// Set the current in-game hour (0-23). Called when server sends time update.
+    /// Selects an AO20 clock hour.  Updates use the same 5-second LerpRGBA transition
+    /// performed by frmMain.UpdateLight_Timer.
     /// </summary>
     public void SetHour(int hour)
     {
-        _currentHour = Mathf.Clamp(hour, 0, 23);
-        _targetAlpha = _enabled ? HourAlpha[_currentHour] : 0f;
-        _targetTint = HourTintKind[_currentHour] switch
-        {
-            1 => EveningTint,
-            2 => NightTint,
-            _ => DayTint,
-        };
+        SetTargetLight(Mathf.Clamp(hour, 0, 23), Ao20HourLights[Mathf.Clamp(hour, 0, 23)]);
+    }
 
-        // Update IsNight flag in game state
+    private void SetTargetLight(int hour, Color target)
+    {
+        _currentHour = hour;
+        _lastLight = _currentLight;
+        _nextLight = target;
+        _lightTransition = 0f;
+
         if (_state != null)
-            _state.IsNight = _currentHour >= 20 || _currentHour < 6;
+        {
+            _state.GameHour = _currentHour;
+            // AO20 uses TimeIndex 0..2 (00:00 through 05:59) as its night band.
+            _state.IsNight = _currentHour < 6;
+        }
+
+        PublishLight();
     }
 
     /// <summary>
-    /// Set day/evening/night directly from the server's forced-phase NOC packet
-    /// (0=day, 1=evening, 2=night). The server tracks a phase, not a live clock,
-    /// so we map each phase to a representative hour and reuse SetHour's
-    /// smooth alpha+color transition and tint selection.
+    /// NOC currently transports three server-controlled states.  Their anchors are
+    /// actual AO20 palette values: daylight 13:00, sunset 20:00 and night 00:00.
     /// </summary>
     public void SetPhase(byte phase)
     {
-        SetHour(phase switch
+        switch (phase)
         {
-            1 => 18, // evening
-            2 => 22, // night
-            _ => 12, // day
-        });
+            case 1:
+                SetTargetLight(20, ForcedEveningLight);
+                break;
+            case 2:
+                SetTargetLight(0, Ao20HourLights[0]);
+                break;
+            default:
+                SetTargetLight(12, ForcedDayLight);
+                break;
+        }
     }
 
-    /// <summary>
-    /// Get the current hour for display purposes.
-    /// </summary>
     public int CurrentHour => _currentHour;
 
     public override void _Process(double delta)
     {
-        if (_state == null || !Visible) return;
+        if (_state == null || _lightTransition >= 1f) return;
 
-        float targetAlpha = _enabled ? _targetAlpha : 0f;
-        float t = TransitionSpeed * (float)delta;
-
-        float prevAlpha = _currentAlpha;
-        _currentAlpha = Mathf.MoveToward(_currentAlpha, targetAlpha, t);
-        _currentTint = _currentTint.Lerp(_targetTint, Mathf.Clamp(t * 3f, 0f, 1f));
-
-        if (Math.Abs(_currentAlpha - prevAlpha) > 0.0001f || _currentTint != Color)
-        {
-            Color = new Color(_currentTint.R, _currentTint.G, _currentTint.B, _currentAlpha);
-        }
+        _lightTransition = Mathf.Min(1f, _lightTransition + (float)delta / LightTransitionDurationSeconds);
+        _currentLight = _lastLight.Lerp(_nextLight, _lightTransition);
+        PublishLight();
     }
+
+    private void PublishLight()
+    {
+        // Keep this node wholly transparent; only WorldRenderer consumes the colour.
+        Color = new Color(0f, 0f, 0f, 0f);
+        OnGlobalLightChanged?.Invoke(CurrentLight);
+    }
+
+    private static Color Rgb(byte r, byte g, byte b) => new(r / 255f, g / 255f, b / 255f, 1f);
 }

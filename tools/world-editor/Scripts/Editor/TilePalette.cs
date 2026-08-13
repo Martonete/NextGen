@@ -64,6 +64,28 @@ public partial class TilePalette : VBoxContainer
         _searchBox.TextChanged += OnSearchChanged;
         AddChild(_searchBox);
 
+        // The catalog is intentionally curated, but maps also need access to
+        // valid GRHs that have not yet been described in indices.ini.
+        var rawGrhButton = new Button
+        {
+            Text = "Explorar GRH libres...",
+            TooltipText = "Abre todos los sprites válidos de Graficos.ind para pintarlos sin crear una referencia en indices.ini.",
+            CustomMinimumSize = new Vector2(0, 26),
+        };
+        rawGrhButton.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        rawGrhButton.Pressed += OpenRawGrhPicker;
+        AddChild(rawGrhButton);
+
+        var sheetButton = new Button
+        {
+            Text = "Abrir lámina PNG...",
+            TooltipText = "Busca un PNG por número, muestra la lámina completa y deja elegir sus regiones para mapear.",
+            CustomMinimumSize = new Vector2(0, 26),
+        };
+        sheetButton.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        sheetButton.Pressed += OpenGraphicsSheetPicker;
+        AddChild(sheetButton);
+
         // Brush size — circular radius applied to Paint/Erase/Block so large
         // terrain areas don't have to be painted one tile at a time. 0 = single
         // tile (classic behavior). Same UX pattern as HumoConfigPanel's fog brush.
@@ -270,6 +292,52 @@ public partial class TilePalette : VBoxContainer
     {
         _searchFilter = text.Trim().ToLowerInvariant();
         PopulateGrid();
+    }
+
+    private void OpenRawGrhPicker()
+    {
+        if (Grhs == null || Textures == null) return;
+
+        var picker = new RawGrhPickerPopup
+        {
+            Grhs = Grhs,
+            Textures = Textures,
+        };
+        picker.GrhSelected += SelectRawGrh;
+        AddChild(picker);
+        picker.PopupCentered();
+    }
+
+    private void OpenGraphicsSheetPicker()
+    {
+        if (Grhs == null || Textures == null) return;
+
+        var picker = new GraphicsSheetPickerPopup { Grhs = Grhs, Textures = Textures };
+        picker.GrhSelected += SelectRawGrh;
+        picker.MainGrhSelected += SelectMainSheetGrh;
+        AddChild(picker);
+        picker.PopupCentered();
+    }
+
+    private void SelectMainSheetGrh(int grhIndex)
+    {
+        if (State == null || grhIndex <= 0) return;
+        State.SelectedTexture = null;
+        State.EyedropGrh = grhIndex;
+        State.ActiveTool = EditorTool.Paint;
+        _infoLabel!.Text = $"GRH {grhIndex} completo listo - elegí L1, L2, L3 o L4 y hacé clic en el mapa";
+        UpdateGridHighlights();
+    }
+
+    private void SelectRawGrh(int grhIndex)
+    {
+        if (State == null || grhIndex <= 0) return;
+
+        State.SelectedTexture = null;
+        State.EyedropGrh = grhIndex;
+        State.ActiveTool = EditorTool.Paint;
+        _infoLabel!.Text = $"GRH libre {grhIndex} — capa activa L{State.ActiveLayer}";
+        UpdateGridHighlights();
     }
 
     private void OnCategorySelected(string category)

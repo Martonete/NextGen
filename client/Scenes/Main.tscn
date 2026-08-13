@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://c5nujss43knw6"]
+[gd_scene load_steps=3 format=3 uid="uid://c5nujss43knw6"]
 
 [ext_resource type="Script" path="res://Scripts/Main.cs" id="1"]
+[ext_resource type="Texture2D" path="res://Data/UI/main_hud.png" id="2_hud_preview"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -22,6 +23,15 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
+
+[node name="HudLayoutPreview" type="TextureRect" parent="GameUI"]
+layout_mode = 0
+offset_right = 1920.0
+offset_bottom = 1080.0
+texture = ExtResource("2_hud_preview")
+expand_mode = 1
+stretch_mode = 5
 mouse_filter = 2
 
 [node name="GameViewportContainer" type="SubViewportContainer" parent="GameUI"]

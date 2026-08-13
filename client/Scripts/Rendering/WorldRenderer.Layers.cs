@@ -4,6 +4,38 @@ using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.Rendering;
 
+/// <summary>Retained ambient-only non-water terrain.</summary>
+public partial class StaticGroundLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+    public void SetRenderer(WorldRenderer renderer) => _renderer = renderer;
+    public override void _Draw() => _renderer?.DrawStaticGround(this);
+}
+
+/// <summary>Retained ambient-only static layer 2 tiles.</summary>
+public partial class StaticLayer2Layer : Node2D
+{
+    private WorldRenderer? _renderer;
+    public void SetRenderer(WorldRenderer renderer) => _renderer = renderer;
+    public override void _Draw() => _renderer?.DrawStaticLayer2(this);
+}
+
+/// <summary>Retained static objects drawn behind characters.</summary>
+public partial class StaticObjectsLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+    public void SetRenderer(WorldRenderer renderer) => _renderer = renderer;
+    public override void _Draw() => _renderer?.DrawStaticObjects(this);
+}
+
+/// <summary>Retained static L3 decor drawn in front of characters.</summary>
+public partial class StaticForegroundLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+    public void SetRenderer(WorldRenderer renderer) => _renderer = renderer;
+    public override void _Draw() => _renderer?.DrawStaticForeground(this);
+}
+
 /// <summary>
 /// Child Node2D for character body reflections. Draws AFTER ReflectedAuraLayer
 /// so auras appear behind the reflected body (same order as normal rendering).

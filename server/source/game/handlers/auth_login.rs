@@ -775,20 +775,17 @@ pub(crate) async fn connect_user(
         user.levitando = char_data.levitando;
         user.montado_body = char_data.montado_body;
 
-        // Safety: if charfile has invalid body (0=invisible, 8=ghost) but dead=false,
-        // restore naked body. body=0 can happen if a GM disconnects while invisible.
-        // SKIP if navigating (boat has head=0) or montado (flying mount has head=0).
+        // Safety: recover a corrupt/invisible appearance on login. Navigation keeps
+        // head=0 intentionally (the boat sprite contains its own occupant), but a
+        // mounted player still needs their normal head drawn above the mount.
         let parsed_race = PlayerRace::from_str_or_default(&char_data.race);
-        if !user.dead
-            && !char_data.navigating
-            && !char_data.montado
-            && (user.body <= 0
-                || user.body == DEAD_BODY_NEUTRAL
-                || user.head <= 0
-                || user.head == DEAD_HEAD_NEUTRAL)
-        {
-            user.body = naked_body(parsed_race, char_data.gender);
-            // Head 500 is ghost head, head 0 is invisible — use a default for race/gender
+        if !user.dead && !char_data.navigating {
+            // Never replace a valid mount body with a naked body.
+            if !char_data.montado && (user.body <= 0 || user.body == DEAD_BODY_NEUTRAL) {
+                user.body = naked_body(parsed_race, char_data.gender);
+            }
+            // Head 500 is ghost head and 0 is invisible. Unlike boats, mounts do
+            // not own the rider's head, so restore it for both mounted and on-foot users.
             if user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL {
                 user.head = default_head_for_race(parsed_race, char_data.gender);
             }

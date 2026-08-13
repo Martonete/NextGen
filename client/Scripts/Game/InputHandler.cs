@@ -456,16 +456,20 @@ public class InputHandler
 	}
 
 	/// <summary>
-	/// Check if a click position is inside the illuminated core viewport (17x13).
-	/// Clicks in the fog area (extra tiles at higher resolutions) are blocked.
+	/// Check whether a click lands inside AO Libre's central interaction/core
+	/// rectangle. The wider creature range deliberately remains non-interactive.
 	/// </summary>
 	private bool IsInCoreViewport(Vector2 viewportPos)
 	{
-		// Core area is centered in the SubViewport
-		float coreLeft = (ResolutionManager.ViewportW - 544f) / 2f;
-		float coreTop = (ResolutionManager.ViewportH - 416f) / 2f;
-		return viewportPos.X >= coreLeft && viewportPos.X < coreLeft + 544
-			&& viewportPos.Y >= coreTop && viewportPos.Y < coreTop + 416;
+		// VB6 receives clicks over the entire MainViewPic in fullscreen.
+		if (ResolutionManager.FullscreenWorld)
+			return viewportPos.X >= 0 && viewportPos.X < ResolutionManager.ViewportW
+				&& viewportPos.Y >= 0 && viewportPos.Y < ResolutionManager.ViewportH;
+
+		float coreLeft = (ResolutionManager.ViewportW - VisionRange.CoreWidth) * 0.5f;
+		float coreTop = (ResolutionManager.ViewportH - VisionRange.CoreHeight) * 0.5f;
+		return viewportPos.X >= coreLeft && viewportPos.X < coreLeft + VisionRange.CoreWidth
+			&& viewportPos.Y >= coreTop && viewportPos.Y < coreTop + VisionRange.CoreHeight;
 	}
 
 	public void HandleLeftClick(Vector2 viewportPos)

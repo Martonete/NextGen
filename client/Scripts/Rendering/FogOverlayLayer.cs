@@ -4,21 +4,17 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Rendering;
 
 /// <summary>
-/// Draws an animated, textured fog over tiles outside the core 17x13 viewport,
-/// using vision_fog.gdshader: a static mask (transparent core, thin gradient at
-/// the boundary, opaque outside) modulated by drifting noise so the fog reads
-/// as real mist instead of a flat color tint.
-/// Only active when resolution > 800x600.
+/// Draws the peripheral darkness used by the AO Libre game screen.  It keeps a
+/// transparent central rectangle and fades smoothly to near-black at the
+/// extended viewport edges. The rectangle follows the reference shader's UV
+/// values and is scaled to the active viewport without changing resolution.
 /// The mask texture is rebuilt on resolution change (event-driven, not per-frame);
 /// intensity changes just update the shader's max_alpha uniform (no rebuild needed).
 /// </summary>
 public partial class FogOverlayLayer : Node2D
 {
-    // Neutral near-black. Low opacity settings stay subtle through the curve
-    // below, while 100% can close the extended viewport almost completely.
-    private static readonly Color FogColor = new Color(0.045f, 0.05f, 0.06f, 1f);
-    // Very wide feather keeps the overlay from reading as a moving rectangle.
-    private const float TransitionPx = 118f;
+    // Same cold near-black used by the reference peripheral_fog shader.
+    private static readonly Color FogColor = new Color(0.02f, 0.03f, 0.05f, 1f);
     private const int MaskScale = 2;
 
     private GameState? _state;
@@ -38,24 +34,8 @@ public partial class FogOverlayLayer : Node2D
         GD.Print($"[FOG] shader loaded: {shader != null}");
         if (shader != null)
         {
-            var noise = new FastNoiseLite
-            {
-                Seed = 7,
-                Frequency = 0.012f,
-                FractalOctaves = 3,
-                FractalGain = 0.45f,
-            };
-            var noiseTexture = new NoiseTexture2D
-            {
-                Noise = noise,
-                Seamless = true,
-                Width = 256,
-                Height = 256,
-            };
             _material = new ShaderMaterial { Shader = shader };
-            _material.SetShaderParameter("noise_texture", noiseTexture);
             _material.SetShaderParameter("fog_color", FogColor);
-            _material.SetShaderParameter("edge_color", new Color(0.075f, 0.085f, 0.10f, 1f));
             Material = _material;
         }
         else
@@ -90,41 +70,40 @@ public partial class FogOverlayLayer : Node2D
         }
 
         int intensity = _state?.Config?.FogIntensity ?? 30;
-        // Non-linear opacity: the default 30% remains subtle, while 100%
-        // reaches near-black as requested from the Video options slider.
+        // Keep the video option as the final opacity control. Unlike the old
+        // texture-noise version this maps directly to the reference shader's
+        // fog_intensity uniform.
         float t = System.Math.Clamp(intensity / 100f, 0f, 1f);
-        float maxAlpha = System.MathF.Pow(t, 1.7f) * 0.985f;
-        _material?.SetShaderParameter("max_alpha", maxAlpha);
+        _material?.SetShaderParameter("max_alpha", t);
         QueueRedraw();
     }
 
     public override void _Draw()
     {
-        int extraX = ResolutionManager.ExtraTilesX;
-        int extraY = ResolutionManager.ExtraTilesY;
-        if (extraX <= 0 && extraY <= 0) return;
+        // Eternal/VB6 has no peripheral visibility mask in its full RenderScreen.
+        if (ResolutionManager.FullscreenWorld) return;
+        if (VisionRange.FogWidth >= _cachedVpW && VisionRange.FogHeight >= _cachedVpH) return;
         if (_maskTex == null) return;
 
         DrawTextureRect(_maskTex, new Rect2(0, 0, _cachedVpW, _cachedVpH), false);
     }
 
     /// <summary>
-    /// Build the fog MASK only (red channel = 0..1 shape): transparent inside
-    /// core, wide rounded gradient at core edge, then flat 1.0 outside. The
-    /// actual color/alpha/noise is applied by vision_fog.gdshader at draw time.
+    /// Build the fog MASK only (red channel = 0..1 shape). This is the same
+    /// rounded-distance calculation as peripheral_fog.gdshader in AO Libre:
+    /// smoothstep(0, 0.15, distance outside the central rectangle).
     /// Built at half resolution.
     /// </summary>
     private static ImageTexture BuildFogMask(int vpW, int vpH)
     {
         int texW = System.Math.Max(1, vpW / MaskScale);
         int texH = System.Math.Max(1, vpH / MaskScale);
-        int coreW = 544 / MaskScale;
-        int coreH = 416 / MaskScale;
+        int coreW = VisionRange.FogWidth / MaskScale;
+        int coreH = VisionRange.FogHeight / MaskScale;
         float centerX = texW / 2f;
         float centerY = texH / 2f;
         float halfCoreW = coreW / 2f;
         float halfCoreH = coreH / 2f;
-        float transition = TransitionPx / MaskScale;
 
         var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
 
@@ -132,27 +111,13 @@ public partial class FogOverlayLayer : Node2D
         {
             for (int px = 0; px < texW; px++)
             {
-                // Rounded distance from the core edge (0 = inside core, >0 = outside).
-                // Using length instead of max() softens the corners of the curtain.
-                float dx = System.Math.Max(0, System.Math.Abs(px - centerX) - halfCoreW);
-                float dy = System.Math.Max(0, System.Math.Abs(py - centerY) - halfCoreH);
-                float dist = System.MathF.Sqrt(dx * dx + dy * dy);
-
-                float mask;
-                if (dist <= 0f)
-                {
-                    mask = 0f; // inside core: no fog
-                }
-                else if (dist < transition)
-                {
-                    float t = dist / transition;
-                    t = t * t * t * (t * (t * 6f - 15f) + 10f); // smoother-step
-                    mask = t;
-                }
-                else
-                {
-                    mask = 1f; // beyond transition: full fog
-                }
+                // Coordinates are normalized independently per axis, exactly
+                // as Godot's UV values are in the source shader.
+                float dx = System.Math.Max(0, System.Math.Abs(px - centerX) / texW - halfCoreW / texW);
+                float dy = System.Math.Max(0, System.Math.Abs(py - centerY) / texH - halfCoreH / texH);
+                float distance = System.MathF.Sqrt(dx * dx + dy * dy);
+                float t = System.Math.Clamp(distance / 0.15f, 0f, 1f);
+                float mask = t * t * (3f - 2f * t); // GLSL smoothstep(0, .15, distance)
 
                 img.SetPixel(px, py, new Color(mask, mask, mask, 1f));
             }

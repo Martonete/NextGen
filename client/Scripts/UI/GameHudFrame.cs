@@ -36,7 +36,6 @@ public partial class GameHudFrame : Control
         if (FrameOverlay != null) FrameOverlay.Size = new Vector2(winW, winH);
         if (_overlayTex != null) _overlayTex.Size = new Vector2(winW, winH);
 
-        // Reposition dark insets
         if (_consoleInset != null)
         {
             int consoleW = ResolutionManager.ConsoleRight - S(18);
@@ -59,7 +58,7 @@ public partial class GameHudFrame : Control
         Size = new Vector2(winW, winH);
         MouseFilter = MouseFilterEnum.Ignore;
 
-        // === BACKGROUND: big_bar_bg.png (fills behind content) ===
+        // === New full HUD artwork (transparent world area) ===
         _bgFrame = new TextureRect();
         _bgFrame.Texture = RpgTheme.GetTex("big_bar_bg.png");
         _bgFrame.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
@@ -72,16 +71,17 @@ public partial class GameHudFrame : Control
         // === DARK INSETS — only where we need black behind content ===
 
         // Console area — semi-transparent with border (extends to near sidebar)
+        // Game viewport — the world renders here
         int consoleW = ResolutionManager.ConsoleRight - S(18);
         _consoleInset = CreateStyledInset(S(18), S(14), consoleW, S(128));
         AddChild(_consoleInset);
 
-        // Game viewport — the world renders here
         _viewportInset = CreateDarkInset(ResolutionManager.LeftMargin, ResolutionManager.TopMargin,
                      ResolutionManager.ViewportW, ResolutionManager.ViewportH);
         AddChild(_viewportInset);
 
-        // === OVERLAY: big_bar_frame.png (borders only) on top of everything ===
+        // A second copy is placed immediately above the SubViewport by Main.
+        // It restores the world border while later UI controls stay on top.
         FrameOverlay = new Control();
         FrameOverlay.Position = Vector2.Zero;
         FrameOverlay.Size = new Vector2(winW, winH);
@@ -113,7 +113,7 @@ public partial class GameHudFrame : Control
         var panel = new Panel();
         panel.Position = new Vector2(x, y);
         panel.Size = new Vector2(w, h);
-        panel.MouseFilter = MouseFilterEnum.Ignore;
+        panel.MouseFilter = Control.MouseFilterEnum.Ignore;
         var style = new StyleBoxFlat();
         style.BgColor = new Color(0f, 0f, 0f, 0.55f);
         style.BorderColor = new Color(0.4f, 0.33f, 0.2f, 0.6f);
@@ -122,4 +122,5 @@ public partial class GameHudFrame : Control
         panel.AddThemeStyleboxOverride("panel", style);
         return panel;
     }
+
 }

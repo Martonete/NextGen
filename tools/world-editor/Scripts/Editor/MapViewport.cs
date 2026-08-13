@@ -1602,11 +1602,14 @@ public partial class MapViewport : Control
 
         if (center)
         {
-            drawX += (TileSize - grh.PixelWidth) / 2f;
-            drawY += (TileSize - grh.PixelHeight);
+            // Mirror the game client's CharRenderer.DrawGrh anchor calculation.
+            if (grh.TileWidth > 0 && grh.TileWidth != 1f)
+                drawX -= (int)(grh.TileWidth * (TileSize / 2f)) - TileSize / 2f;
+            if (grh.TileHeight > 0 && grh.TileHeight != 1f)
+                drawY -= (int)(grh.TileHeight * TileSize) - TileSize;
         }
 
-        var destRect = new Rect2(drawX, drawY, drawW, drawH);
+        var destRect = new Rect2(MathF.Round(drawX), MathF.Round(drawY), drawW, drawH);
         DrawTextureRectRegion(texture, destRect, srcRect, modulate ?? Colors.White);
     }
 
@@ -1634,9 +1637,13 @@ public partial class MapViewport : Control
         if (!TryGetSafeGrhRegion(grh, texture, out var srcRect, out int drawW, out int drawH))
             return;
 
-        float drawX = tileX * TileSize + (TileSize - grh.PixelWidth) / 2f + ofsX;
-        float drawY = tileY * TileSize + (TileSize - grh.PixelHeight) + ofsY;
-        var destRect = new Rect2(drawX, drawY, drawW, drawH);
+        float drawX = tileX * TileSize + ofsX;
+        float drawY = tileY * TileSize + ofsY;
+        if (grh.TileWidth > 0 && grh.TileWidth != 1f)
+            drawX -= (int)(grh.TileWidth * (TileSize / 2f)) - TileSize / 2f;
+        if (grh.TileHeight > 0 && grh.TileHeight != 1f)
+            drawY -= (int)(grh.TileHeight * TileSize) - TileSize;
+        var destRect = new Rect2(MathF.Round(drawX), MathF.Round(drawY), drawW, drawH);
         DrawTextureRectRegion(texture, destRect, srcRect, modulate ?? Colors.White);
     }
 
@@ -1709,12 +1716,14 @@ public partial class MapViewport : Control
         if (grh.SX < 0 || grh.SY < 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0)
             return false;
 
-        width = Math.Min(grh.PixelWidth, texture.GetWidth() - grh.SX);
-        height = Math.Min(grh.PixelHeight, texture.GetHeight() - grh.SY);
+        int sx = grh.SX % texture.GetWidth();
+        int sy = grh.SY % texture.GetHeight();
+        width = Math.Min(grh.PixelWidth, texture.GetWidth() - sx);
+        height = Math.Min(grh.PixelHeight, texture.GetHeight() - sy);
         if (width <= 0 || height <= 0)
             return false;
 
-        srcRect = new Rect2(grh.SX, grh.SY, width, height);
+        srcRect = new Rect2(sx, sy, width, height);
         return true;
     }
 
@@ -3330,14 +3339,14 @@ public partial class MapViewport : Control
             PathBrushMode.UpLeft => PathUpLeftPattern[y, x],
             PathBrushMode.DownLeft => PathDownLeftPattern[y, x],
             PathBrushMode.DownRight => PathDownRightPattern[y, x],
-            PathBrushMode.CoastTop => 32883,
-            PathBrushMode.CoastBottom => 32884,
-            PathBrushMode.CoastLeft => 32882,
-            PathBrushMode.CoastRight => 32881,
-            PathBrushMode.CoastTopLeft => 32885,
-            PathBrushMode.CoastTopRight => 32887,
-            PathBrushMode.CoastBottomLeft => 32886,
-            PathBrushMode.CoastBottomRight => 32888,
+            PathBrushMode.CoastTop => 60397,
+            PathBrushMode.CoastBottom => 60398,
+            PathBrushMode.CoastLeft => 60396,
+            PathBrushMode.CoastRight => 60395,
+            PathBrushMode.CoastTopLeft => 60399,
+            PathBrushMode.CoastTopRight => 60401,
+            PathBrushMode.CoastBottomLeft => 60400,
+            PathBrushMode.CoastBottomRight => 60402,
             _ => 0,
         };
     }

@@ -349,16 +349,16 @@ public static class EditorTheme
         var color = layerNum >= 1 && layerNum <= 4 ? LAYER_COLORS[layerNum] : TEXT_PRIMARY;
         string label = layerNum switch
         {
-            1 => "L1",
-            2 => "L2",
-            3 => "L3",
-            4 => "L4",
+            1 => "L1 Terreno",
+            2 => "L2 Piso",
+            3 => "L3 Objetos",
+            4 => "L4 Techos",
             _ => $"L{layerNum}"
         };
         string fullName = layerNum switch
         {
             1 => "Terreno",
-            2 => "Mascara",
+            2 => "Piso / detras del personaje",
             3 => "Objetos",
             4 => "Techos",
             _ => ""
@@ -367,7 +367,7 @@ public static class EditorTheme
         {
             Text = label,
             ToggleMode = true,
-            CustomMinimumSize = new Vector2(44, 28),
+            CustomMinimumSize = new Vector2(92, 28),
             SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             TooltipText = $"Capa {layerNum} ({fullName}) — tecla {layerNum}",
         };

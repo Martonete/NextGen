@@ -391,16 +391,17 @@ public partial class EditorMain : Control
 
         _toolBar.AddChild(EditorTheme.ToolBarGroupSeparator());
 
-        // -- Group 5: Layer tabs (compact) --
+        // -- Group 5: explicit paint-layer selector. Visibility stays in Ver. --
         var layerGroup = EditorTheme.ToolBarGroup();
         var layerGroupH = new HBoxContainer();
         layerGroupH.AddThemeConstantOverride("separation", 6);
+        layerGroupH.AddChild(new Label { Text = "Pintar en:" });
         for (int li = 1; li <= 4; li++)
         {
             int capturedLayer = li;
             var layerBtn = EditorTheme.LayerTabCompact(li, () =>
             {
-                ToggleLayerVisibility(capturedLayer);
+                ActivateLayer(capturedLayer);
             });
             layerGroupH.AddChild(layerBtn);
             _layerTabButtons[li - 1] = layerBtn;
@@ -3344,10 +3345,8 @@ public partial class EditorMain : Control
 
     private void SyncLayerTabs()
     {
-        _layerTabButtons[0].ButtonPressed = _state.ShowLayer1;
-        _layerTabButtons[1].ButtonPressed = _state.ShowLayer2;
-        _layerTabButtons[2].ButtonPressed = _state.ShowLayer3;
-        _layerTabButtons[3].ButtonPressed = _state.ShowLayer4;
+        for (int i = 0; i < _layerTabButtons.Length; i++)
+            _layerTabButtons[i].SetPressedNoSignal(_state.ActiveLayer == i + 1);
     }
 
     private void ActivateLayer(int layer)

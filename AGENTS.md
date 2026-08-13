@@ -156,6 +156,11 @@ en disco). Los 6 paks viven en `client/Data/`: `fonts`, `graficos`, `init`, `map
 
 ## Estado actual del trabajo
 
+- **Estado 2026-08-12 — continuidad cliente/editor:** ver
+  `docs/CONTINUIDAD-2026-08-12.md` para el estado exacto de la tanda de render AO20/Eternal, HUD,
+  importacion de graficos y World Editor. El editor tiene selector de capa de pintura explicito;
+  el anclaje de GRH grandes esta alineado con el cliente y las particulas de mapa son persistentes.
+
 - **Estado 2026-08-11 — World Editor/costas:** el editor ya permite pinceles manuales
   multi-tile con preview y confirmación para pasto, caminos, curvas y costas; plantillas
   de comercio por capas; inspección de tiles existentes con remoción de NPC/objetos; y

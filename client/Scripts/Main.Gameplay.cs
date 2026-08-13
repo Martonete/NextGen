@@ -214,7 +214,9 @@ public partial class Main
 		Engine.MaxFps = cfg.FpsLimit > 0 ? cfg.FpsLimit : 0;
 		ApplyLoginBackdropFramePolicy(_state.CurrentScreen != Screen.Game);
 
-		// Apply display mode
+		// Fullscreen restores Eternal/VB6's RenderScreen: the world fills the
+		// back buffer while the existing HUD remains an overlay above it.
+		ResolutionManager.SetFullscreenWorld(cfg.Fullscreen);
 		if (cfg.Fullscreen)
 			EnterFullscreen();
 		else
@@ -223,6 +225,10 @@ public partial class Main
 		// Apply day/night cycle toggle
 		if (_dayNightCycle != null)
 			_dayNightCycle.Enabled = cfg.ShowDayNight;
+
+		// Static terrain may contain tree/object shadows whose visibility follows
+		// video options, so rebuild its retained commands after an option change.
+		_worldRenderer?.InvalidateStaticLayers();
 
 		// Apply fog intensity (rebuild the overlay texture with the new alpha)
 		_worldRenderer?.RebuildFogOverlay();
@@ -716,6 +722,12 @@ public partial class Main
 			_state.MapData = MapLoader.Load(_resources, _state.CurrentMap);
 			_animator.Clear(); // Resets global clock — all tile anims restart from frame 0
 			_gameData.Textures?.ResetPreload(); // Allow re-evaluation of preload state on map change
+			_worldRenderer?.ResetMapVisualCaches(); // drops textures cached for the previous map
+
+			// .aoinf stores mapper-placed objects as ObjIndex/ObjAmount on tiles.
+			// Unlike runtime ObjectCreate packets, MapLoader does not create draw
+			// entries for them automatically; materialize them before rendering.
+			LoadMapObjects(_state);
 
 			// Load particles and lights from the map plus TS AO's hard-coded map effect table.
 			LoadTileParticlesAndLights(_state);
@@ -730,6 +742,38 @@ public partial class Main
 		{
 			GD.PrintErr($"[MAIN] Failed to load map {_state.CurrentMap}: {ex.Message}");
 		}
+	}
+
+	/// <summary>
+	/// Converts static objects authored in MapaN.aoinf into the same render list
+	/// used by server-created ground objects. The map format stores an obj.dat ID,
+	/// while the renderer needs the ID's GRH graphic.
+	/// </summary>
+	private void LoadMapObjects(GameState state)
+	{
+		if (state.MapData == null) return;
+
+		state.GroundObjects.Clear();
+		int loaded = 0;
+		var map = state.MapData;
+		for (int y = 1; y <= map.Height; y++)
+		{
+			for (int x = 1; x <= map.Width; x++)
+			{
+				ref var tile = ref map.Tiles[x, y];
+				int objIndex = tile.ObjIndex;
+				if (objIndex <= 0 || objIndex >= _gameData.Objects.Length) continue;
+				int grhIndex = _gameData.Objects[objIndex].GrhIndex;
+				if (grhIndex <= 0) continue;
+
+				state.GroundObjects[(x, y)] = new GroundObjectData(grhIndex, objIndex);
+				loaded++;
+			}
+		}
+
+		_worldRenderer?.InvalidateStaticLayers();
+		if (loaded > 0)
+			GD.Print($"[MAIN] Map {state.CurrentMap}: loaded {loaded} mapper objects from .aoinf");
 	}
 
 	private void LoadTileParticlesAndLights(GameState state)
@@ -883,6 +927,7 @@ public partial class Main
 	private void OnWindowModeChosen(bool windowed)
 	{
 		_state.Config.Fullscreen = !windowed;
+		ResolutionManager.SetFullscreenWorld(!windowed);
 		if (!windowed)
 			_state.Config.AspectRatioMode = 1;
 

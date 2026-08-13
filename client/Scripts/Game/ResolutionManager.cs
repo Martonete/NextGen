@@ -14,7 +14,9 @@ public static class ResolutionManager
     public const int DesignWidth = 800;
     public const int DesignHeight = 600;
     public const int DesignLeftMargin = 13;
-    public const int DesignTopMargin = 149;
+    // AO Libre's GameScreen starts the render at y=4 and overlays the chat
+    // console on top of it. This only changes layout, never window resolution.
+    public const int DesignTopMargin = 4;
     public const int DesignSidebarWidth = 240;
     public const int DesignBottomBarHeight = 35;
     public const int DesignSidebarGap = 3;
@@ -23,6 +25,7 @@ public static class ResolutionManager
     public const int CoreHalfX = 8;
     public const int CoreHalfY = 6;
     public const int TileSize = 32;
+
 
     // ── UIScale: scales ALL UI elements (sidebar, labels, fonts, margins) ──
     // Based on height ratio for balanced growth (height is the tighter constraint)
@@ -65,15 +68,51 @@ public static class ResolutionManager
     public static int BottomBarY { get; private set; } = 565;
     public static int ConsoleRight { get; private set; } = 547;
 
+    /// <summary>
+    /// VB6-style display mode: RenderScreen covers the complete back buffer and
+    /// the HUD is drawn above it. Windowed mode preserves the compact sidebar.
+    /// </summary>
+    public static bool FullscreenWorld { get; private set; }
+
     public static Action? OnResolutionChanged;
 
-    public static void ApplyResolution(int width, int height)
+    public static void ApplyResolution(int width, int height, bool fullscreenWorld = false)
     {
         WindowWidth = width;
         WindowHeight = height;
+        FullscreenWorld = fullscreenWorld;
 
         // UIScale based on height (more balanced than width for AO's layout)
         UIScale = height / (float)DesignHeight;
+
+        // Original VB6 RenderScreen uses the full configured back buffer. The
+        // UI remains an overlay and must never take pixels from the world.
+        if (FullscreenWorld)
+        {
+            LeftMargin = 0;
+            TopMargin = 0;
+            ActualSidebarWidth = 0;
+            ActualBottomBarHeight = 0;
+            ViewportW = width;
+            ViewportH = height;
+            TilesX = Math.Max(17, (int)MathF.Ceiling(width / (float)TileSize));
+            TilesY = Math.Max(13, (int)MathF.Ceiling(height / (float)TileSize));
+            HalfTilesX = (int)MathF.Round(width / (float)(TileSize * 2));
+            HalfTilesY = (int)MathF.Round(height / (float)(TileSize * 2));
+            ExtraTilesX = Math.Max(0, HalfTilesX - CoreHalfX);
+            ExtraTilesY = Math.Max(0, HalfTilesY - CoreHalfY);
+
+            // HUD anchors only: they no longer reserve part of RenderScreen.
+            SidebarX = width - S(240);
+            BottomBarY = height - S(35);
+            ConsoleRight = SidebarX - S(10);
+
+            ResizeWindowIfNeeded(width, height);
+            GD.Print($"[RES] {width}x{height} VB6 fullscreen world=" +
+                     $"{ViewportW}x{ViewportH} tiles={TilesX}x{TilesY}");
+            OnResolutionChanged?.Invoke();
+            return;
+        }
 
         // Scale margins and sidebar
         LeftMargin = S(DesignLeftMargin);
@@ -93,7 +132,8 @@ public static class ResolutionManager
         // Shrink margins slightly to fit +2 tiles when leftover is close to 2 tiles
         int leftoverH = availH - TilesY * TileSize;
         int extraNeededH = 2 * TileSize - leftoverH;
-        int minTopMargin = S(128); // console area minimum (~128 design px)
+        // The console overlays the world now; it no longer reserves a black strip.
+        int minTopMargin = S(DesignTopMargin);
         if (extraNeededH > 0 && TopMargin - extraNeededH >= minTopMargin)
         {
             TilesY += 2;
@@ -125,22 +165,33 @@ public static class ResolutionManager
         ConsoleRight = SidebarX - sidebarGap - S(10);
 
         // Resize window (only in windowed mode — fullscreen is handled by the caller)
-        bool isFullscreen = DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen
-                         || DisplayServer.WindowGetMode() == DisplayServer.WindowMode.ExclusiveFullscreen;
-        if (!isFullscreen)
-        {
-            DisplayServer.WindowSetSize(new Vector2I(width, height));
-            var screen = DisplayServer.ScreenGetSize();
-            DisplayServer.WindowSetPosition(new Vector2I(
-                Math.Max(0, (screen.X - width) / 2),
-                Math.Max(0, (screen.Y - height) / 2)));
-        }
+        ResizeWindowIfNeeded(width, height);
 
         GD.Print($"[RES] {width}x{height} UIScale={UIScale:F2} " +
                  $"viewport={ViewportW}x{ViewportH} tiles={TilesX}x{TilesY} " +
                  $"sidebar={ActualSidebarWidth}px@{SidebarX} extra={ExtraTilesX},{ExtraTilesY}");
 
         OnResolutionChanged?.Invoke();
+    }
+
+    /// <summary>Recalculate the layout when changing only the display mode.</summary>
+    public static void SetFullscreenWorld(bool enabled)
+    {
+        if (FullscreenWorld == enabled) return;
+        ApplyResolution(WindowWidth, WindowHeight, enabled);
+    }
+
+    private static void ResizeWindowIfNeeded(int width, int height)
+    {
+        bool isFullscreen = DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen
+                         || DisplayServer.WindowGetMode() == DisplayServer.WindowMode.ExclusiveFullscreen;
+        if (isFullscreen) return;
+
+        DisplayServer.WindowSetSize(new Vector2I(width, height));
+        var screen = DisplayServer.ScreenGetSize();
+        DisplayServer.WindowSetPosition(new Vector2I(
+            Math.Max(0, (screen.X - width) / 2),
+            Math.Max(0, (screen.Y - height) / 2)));
     }
 
     public static readonly (int w, int h, string label)[] Presets = new[]

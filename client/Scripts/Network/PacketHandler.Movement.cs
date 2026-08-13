@@ -394,6 +394,7 @@ public partial class PacketHandler
         int grhIndex = (ushort)bq.ReadInteger();
         int objIndex = bq.ReadInteger();
         _state.GroundObjects[(x, y)] = new GroundObjectData(grhIndex, objIndex);
+        OnStaticMapChanged?.Invoke();
     }
 
 
@@ -402,6 +403,7 @@ public partial class PacketHandler
         int x = bq.ReadInteger();
         int y = bq.ReadInteger();
         _state.GroundObjects.Remove((x, y));
+        OnStaticMapChanged?.Invoke();
     }
 
 
