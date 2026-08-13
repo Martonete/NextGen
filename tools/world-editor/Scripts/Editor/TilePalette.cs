@@ -18,6 +18,9 @@ public partial class TilePalette : VBoxContainer
     /// <summary>Fired when the user builds a combined stamp from Ctrl+Click multi-selection.
     /// Listener should paste it the same way as Ctrl+V (State.Clipboard is already populated).</summary>
     [Signal] public delegate void MultiStampReadyEventHandler();
+
+    /// <summary>Asks the editor to switch to the docked "Láminas" sidebar tab.</summary>
+    [Signal] public delegate void SheetTabRequestedEventHandler();
     [Signal] public delegate void CommerceCaptureRequestedEventHandler();
     [Signal] public delegate void CommerceStampRequestedEventHandler();
 
@@ -27,6 +30,7 @@ public partial class TilePalette : VBoxContainer
     private FlowContainer? _categoryFlow;
     private LineEdit? _searchBox;
     private Button? _useSelectionButton;
+    private Label? _zoomLabel;
 
     // Ctrl+Click multi-selection, in click order — combined into one stamp via BuildMultiStamp()
     private readonly List<TextureRef> _multiSelected = new();
@@ -40,8 +44,24 @@ public partial class TilePalette : VBoxContainer
     private string _activeCategory = "";
     private string _searchFilter = "";
     private readonly List<Button> _categoryButtons = new();
-    private const int PreviewSize = 64; // px per preview cell
-    private const int Columns = 4;
+
+    // Preview cell size is user-adjustable: big art (trees, houses) is unreadable
+    // at thumbnail size, while terrain tiles are easier to scan when many fit.
+    private const int PreviewSizeMin = 48;
+    private const int PreviewSizeMax = 128;
+    private const int PreviewSizeStep = 16;
+    private int _previewSize = 64;
+
+    // Godot reserves horizontal room for the vertical scrollbar inside a
+    // ScrollContainer. Ignoring it makes the last column slide underneath the
+    // bar, which is what made the grid look offset against the panel edge.
+    private const int ScrollbarReserve = 14;
+    private const int GridSeparation = 4;
+
+    // Columns are derived from the real available width instead of a fixed 4,
+    // so the grid stays aligned at any sidebar width or preview size.
+    private int _columns = 4;
+    private float _lastGridWidth = -1;
 
     // Preview cache: GRH index → cached preview texture (AtlasTexture or composited)
     private readonly Dictionary<int, Texture2D?> _previewCache = new();
@@ -79,11 +99,17 @@ public partial class TilePalette : VBoxContainer
         var sheetButton = new Button
         {
             Text = "Abrir lámina PNG...",
-            TooltipText = "Busca un PNG por número, muestra la lámina completa y deja elegir sus regiones para mapear.",
+            TooltipText = "Abre el explorador de láminas en el panel (pestaña \"Láminas\"), sin tapar el mapa.\nShift+clic para la ventana grande.",
             CustomMinimumSize = new Vector2(0, 26),
         };
         sheetButton.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        sheetButton.Pressed += OpenGraphicsSheetPicker;
+        // Docked by default — the map stays visible while choosing. The old modal
+        // window is still one Shift+click away for a full-screen look at a sheet.
+        sheetButton.Pressed += () =>
+        {
+            if (Input.IsKeyPressed(Key.Shift)) OpenGraphicsSheetPicker();
+            else EmitSignal(SignalName.SheetTabRequested);
+        };
         AddChild(sheetButton);
 
         // Brush size — circular radius applied to Paint/Erase/Block so large
@@ -203,6 +229,26 @@ public partial class TilePalette : VBoxContainer
         _categoryFlow.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         AddChild(_categoryFlow);
 
+        // Preview zoom — lets the mapper trade cell size for how many fit on screen.
+        var zoomRow = new HBoxContainer();
+        zoomRow.AddThemeConstantOverride("separation", 4);
+        zoomRow.AddChild(EditorTheme.MakeLabel("Zoom:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        var zoomOut = new Button { Text = "-", CustomMinimumSize = new Vector2(26, 22) };
+        zoomOut.TooltipText = "Previews más chicos (entran más por fila)";
+        zoomOut.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        zoomOut.Pressed += () => ChangePreviewSize(-PreviewSizeStep);
+        zoomRow.AddChild(zoomOut);
+        _zoomLabel = EditorTheme.MakeLabel($"{_previewSize}px", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+        _zoomLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _zoomLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        zoomRow.AddChild(_zoomLabel);
+        var zoomIn = new Button { Text = "+", CustomMinimumSize = new Vector2(26, 22) };
+        zoomIn.TooltipText = "Previews más grandes (mejor para objetos grandes)";
+        zoomIn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        zoomIn.Pressed += () => ChangePreviewSize(PreviewSizeStep);
+        zoomRow.AddChild(zoomIn);
+        AddChild(zoomRow);
+
         // Info label — 2 lines, clipped, no width expansion
         _infoLabel = EditorTheme.MakeLabel("Selecciona una textura", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
         _infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
@@ -218,15 +264,66 @@ public partial class TilePalette : VBoxContainer
         _scrollContainer.CustomMinimumSize = new Vector2(0, 200);
         _scrollContainer.MouseFilter = MouseFilterEnum.Stop;
         _scrollContainer.ClipContents = true;
+        // The grid never scrolls sideways; keeping the horizontal bar off stops
+        // it from stealing a row of height and nudging the layout.
+        _scrollContainer.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        _scrollContainer.VerticalScrollMode = ScrollContainer.ScrollMode.Auto;
+        _scrollContainer.Resized += OnScrollResized;
         AddChild(_scrollContainer);
 
         _grid = new GridContainer();
-        _grid.Columns = Columns;
-        _grid.AddThemeConstantOverride("h_separation", 4);
-        _grid.AddThemeConstantOverride("v_separation", 4);
+        _grid.Columns = _columns;
+        _grid.AddThemeConstantOverride("h_separation", GridSeparation);
+        _grid.AddThemeConstantOverride("v_separation", GridSeparation);
         _grid.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _grid.MouseFilter = MouseFilterEnum.Stop;
         _scrollContainer.AddChild(_grid);
+    }
+
+    /// <summary>
+    /// Recomputes the column count from the width actually left over after the
+    /// scrollbar, then rebuilds only when it changed.
+    /// </summary>
+    private void OnScrollResized()
+    {
+        if (_scrollContainer == null) return;
+
+        float usable = _scrollContainer.Size.X - ScrollbarReserve;
+        if (usable <= 0) return;
+        if (Mathf.IsEqualApprox(usable, _lastGridWidth)) return;
+        _lastGridWidth = usable;
+
+        int cols = Mathf.Max(1, (int)((usable + GridSeparation) / (_previewSize + GridSeparation)));
+        if (cols == _columns) return;
+
+        _columns = cols;
+        if (_grid != null) _grid.Columns = cols;
+        PopulateGrid();
+    }
+
+    private void ChangePreviewSize(int delta)
+    {
+        int next = Math.Clamp(_previewSize + delta, PreviewSizeMin, PreviewSizeMax);
+        if (next == _previewSize) return;
+
+        _previewSize = next;
+        if (_zoomLabel != null) _zoomLabel.Text = $"{_previewSize}px";
+
+        // Composited multi-tile previews are rasterized at the old cell size.
+        _previewCache.Clear();
+
+        // Recompute columns for the new cell size directly; OnScrollResized()
+        // early-outs on an unchanged width and would skip this.
+        if (_scrollContainer != null)
+        {
+            float usable = _scrollContainer.Size.X - ScrollbarReserve;
+            if (usable > 0)
+            {
+                _columns = Mathf.Max(1, (int)((usable + GridSeparation) / (_previewSize + GridSeparation)));
+                if (_grid != null) _grid.Columns = _columns;
+            }
+        }
+        PopulateGrid();
     }
 
     /// <summary>
@@ -324,6 +421,7 @@ public partial class TilePalette : VBoxContainer
         if (State == null || grhIndex <= 0) return;
         State.SelectedTexture = null;
         State.EyedropGrh = grhIndex;
+        State.ClearSheetMosaic();
         State.ActiveTool = EditorTool.Paint;
         _infoLabel!.Text = $"GRH {grhIndex} completo listo - elegí L1, L2, L3 o L4 y hacé clic en el mapa";
         UpdateGridHighlights();
@@ -335,6 +433,7 @@ public partial class TilePalette : VBoxContainer
 
         State.SelectedTexture = null;
         State.EyedropGrh = grhIndex;
+        State.ClearSheetMosaic();
         State.ActiveTool = EditorTool.Paint;
         _infoLabel!.Text = $"GRH libre {grhIndex} — capa activa L{State.ActiveLayer}";
         UpdateGridHighlights();
@@ -389,10 +488,14 @@ public partial class TilePalette : VBoxContainer
         foreach (var texRef in refs)
         {
             var btn = new DraggableTextureButton();
-            btn.CustomMinimumSize = new Vector2(PreviewSize, PreviewSize);
+            btn.CustomMinimumSize = new Vector2(_previewSize, _previewSize);
+            // KeepAspectCentered preserves the piece's real proportions, so a 2x4
+            // object reads as tall instead of being squashed into a square.
             btn.StretchMode = TextureButton.StretchModeEnum.KeepAspectCentered;
             btn.IgnoreTextureSize = true;
-            btn.TooltipText = $"{texRef.Name}\nGRH: {texRef.GrhIndex}\n{texRef.TileWidth}x{texRef.TileHeight}";
+            int tw = Math.Max(texRef.TileWidth, 1);
+            int th = Math.Max(texRef.TileHeight, 1);
+            btn.TooltipText = $"{texRef.Name}\nGRH: {texRef.GrhIndex}\n{tw}x{th} tiles";
             btn.TexRef = texRef;
             btn.GridIndex = gridIdx;
             btn.SearchMode = isSearch;
@@ -413,6 +516,21 @@ public partial class TilePalette : VBoxContainer
             btn.Pressed += () => OnTextureSelected(capturedRef);
             btn.Reordered += OnTextureReordered;
             btn.ContextMenuRequested += OnContextMenuRequested;
+
+            // Multi-tile pieces carry a corner badge with their footprint. Knowing
+            // a piece is 3x5 before placing it is the difference between one click
+            // and undoing a misplaced building.
+            if (tw > 1 || th > 1)
+            {
+                var badge = EditorTheme.MakeLabel($"{tw}x{th}", Colors.White, EditorTheme.FONT_XS);
+                badge.AddThemeStyleboxOverride("normal",
+                    EditorTheme.FlatBox(new Color(0, 0, 0, 0.72f), 2, 3, 0));
+                badge.MouseFilter = MouseFilterEnum.Ignore;
+                badge.SetAnchorsPreset(LayoutPreset.BottomRight);
+                badge.GrowHorizontal = GrowDirection.Begin;
+                badge.GrowVertical = GrowDirection.Begin;
+                btn.AddChild(badge);
+            }
 
             _grid.AddChild(btn);
             _gridButtons.Add((btn, texRef));
@@ -452,6 +570,7 @@ public partial class TilePalette : VBoxContainer
 
         State.SelectedTexture = texRef;
         State.EyedropGrh = 0; // Clear raw eyedrop when selecting from catalog
+        State.ClearSheetMosaic(); // and any sheet mosaic armed from the Láminas tab
         State.ActiveTool = EditorTool.Paint;
 
         // Auto-switch layer based on texture category (e.g. Costas→L2, Techos→L4)
@@ -525,7 +644,7 @@ public partial class TilePalette : VBoxContainer
     {
         if (State == null || _multiSelected.Count < 2) return;
 
-        int cols = Math.Min(Columns, _multiSelected.Count);
+        int cols = Math.Min(_columns, _multiSelected.Count);
         int rows = (int)Math.Ceiling(_multiSelected.Count / (double)cols);
 
         var clip = new MapTile[cols + 1, rows + 1];
@@ -737,8 +856,13 @@ public partial class TilePalette : VBoxContainer
                     new Vector2I(px * 32, py * 32));
             }
 
-        // Scale down to preview size (maintain aspect ratio)
-        composite.Resize(PreviewSize, PreviewSize, Image.Interpolation.Nearest);
+        // Scale to fit the cell along the longer side and keep the real aspect
+        // ratio. The button then centers it, so wide and tall pieces stay
+        // recognisable instead of every preview looking square.
+        float fit = Math.Min(_previewSize / (float)fullW, _previewSize / (float)fullH);
+        int outW = Math.Max(1, (int)Math.Round(fullW * fit));
+        int outH = Math.Max(1, (int)Math.Round(fullH * fit));
+        composite.Resize(outW, outH, Image.Interpolation.Nearest);
         return ImageTexture.CreateFromImage(composite);
     }
 

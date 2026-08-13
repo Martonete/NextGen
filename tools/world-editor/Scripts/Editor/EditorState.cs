@@ -21,6 +21,11 @@ public class EditorState
     // Raw GRH for painting (set by eyedrop when no TextureRef match)
     public int EyedropGrh;
 
+    // When a raw GRH covers several tiles, block the tiles it visually occupies
+    // so later strokes don't paint into ground the piece already claims.
+    // Off for terrain work, where big seamless textures are meant to be walkable.
+    public bool ReserveBigGrhFootprint = true;
+
     // Path brush mode. The mapper chooses the intended shape explicitly so a
     // turn never changes a straight road merely because the mouse moved.
     public PathBrushMode PathBrush = PathBrushMode.Grass;
@@ -31,6 +36,22 @@ public class EditorState
 
     // Mosaic offset: shifts the multi-tile pattern alignment on the map
     public int MosaicOffsetX, MosaicOffsetY;
+
+    // Sheet mosaic: a rectangle of GRHs lifted straight from a PNG sheet and
+    // tiled while painting. Terrain sheets have no indices.ini entry, so the
+    // catalog's TextureRef mosaic cannot express them; this covers that gap.
+    // Row-major, SheetMosaicW * SheetMosaicH entries.
+    public int[]? SheetMosaic;
+    public int SheetMosaicW, SheetMosaicH;
+
+    public bool HasSheetMosaic => SheetMosaic != null && SheetMosaicW > 0 && SheetMosaicH > 0;
+
+    public void ClearSheetMosaic()
+    {
+        SheetMosaic = null;
+        SheetMosaicW = 0;
+        SheetMosaicH = 0;
+    }
 
     // Selection rectangle (tile coords, inclusive)
     public bool HasSelection;

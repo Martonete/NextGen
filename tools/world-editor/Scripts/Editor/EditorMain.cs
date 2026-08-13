@@ -42,6 +42,7 @@ public partial class EditorMain : Control
     private PopupMenu? _mapsMenu;
     private TabContainer? _sidebarTabs;
     private TilePalette? _palette;
+    private SheetPalette? _sheetPalette;
     private NpcPalette? _npcPalette;
     private ObjectPalette? _objPalette;
     private ParticlePalette? _particlePalette;
@@ -90,6 +91,7 @@ public partial class EditorMain : Control
 
     // Sidebar border
     private ColorRect? _sidebarBorder;
+    private Control? _sidebarSplitter;
     private ColorRect? _headerBg; // opaque background behind toolbar+navbar to prevent viewport overflow
 
     // Right sidebar (selected texture preview)
@@ -164,10 +166,20 @@ public partial class EditorMain : Control
     private Panel? _preloadOverlay;
     private int _preloadPhase; // 0=idle, 1=loading+previews, 2=done (fade-out)
     private IEnumerator<int>? _previewPreloadIter;
+    private System.Diagnostics.Stopwatch? _preloadStopwatch;
     private float _loadingFadeAlpha = 1f;
     private bool _loadingFadingOut;
 
-    private const float PaletteWidth = 280;
+    // Left sidebar width is draggable: 280 suits the tile grid, but browsing a
+    // full PNG sheet needs far more room. Kept as a field (not a const) so the
+    // splitter can move it; every layout call reads it each frame.
+    private const float PaletteWidthDefault = 280;
+    private const float PaletteWidthMin = 240;
+    private const float PaletteWidthMax = 900;
+    private float PaletteWidth = PaletteWidthDefault;
+    private const float SplitterWidth = 6;
+    private bool _draggingSplitter;
+
     private const float StatusHeight = 28;
     private const float ToolBarHeight = 62;
     private const float TileInfoHeight = 110;
@@ -450,7 +462,17 @@ public partial class EditorMain : Control
         _palette.MultiStampReady += PasteClipboard;
         _palette.CommerceCaptureRequested += CaptureCommerceTemplate;
         _palette.CommerceStampRequested += PlaceCommerceTemplate;
+        _palette.SheetTabRequested += ShowSheetTab;
         _sidebarTabs.AddChild(_palette);
+
+        // Docked sheet browser: same job as the modal popup, but the map stays
+        // visible so large pieces can be judged against their surroundings.
+        _sheetPalette = new SheetPalette { Name = "Láminas", State = _state };
+        _sheetPalette.GrhPicked += OnSheetGrhPicked;
+        _sheetPalette.MainGrhPicked += OnSheetMainGrhPicked;
+        _sheetPalette.SheetStampReady += OnSheetStampReady;
+        _sheetPalette.SheetMosaicReady += OnSheetMosaicReady;
+        _sidebarTabs.AddChild(_sheetPalette);
 
         _npcPalette = new NpcPalette { Name = "NPCs", State = _state };
         _npcPalette.NpcSelected += OnNpcPaletteSelected;
@@ -541,6 +563,16 @@ public partial class EditorMain : Control
         // Sidebar right border (1px separator between sidebar and viewport)
         _sidebarBorder = new ColorRect { Color = EditorTheme.BORDER };
         AddChild(_sidebarBorder);
+
+        // Invisible grab strip over the border: drag to resize the left sidebar.
+        _sidebarSplitter = new Control
+        {
+            MouseFilter = MouseFilterEnum.Stop,
+            MouseDefaultCursorShape = CursorShape.Hsize,
+            TooltipText = "Arrastrá para ensanchar el panel (doble clic restaura el ancho normal)",
+        };
+        _sidebarSplitter.GuiInput += OnSplitterInput;
+        AddChild(_sidebarSplitter);
 
         // --- Right sidebar: selected texture preview ---
         _rightSidebar = new PanelContainer();
@@ -955,6 +987,34 @@ public partial class EditorMain : Control
         BuildExportDialogs();
     }
 
+    /// <summary>
+    /// Drag the sidebar/viewport splitter. Double click snaps back to the
+    /// default width so an accidental drag is trivial to undo.
+    /// </summary>
+    private void OnSplitterInput(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+        {
+            if (mb.DoubleClick && mb.Pressed)
+            {
+                PaletteWidth = PaletteWidthDefault;
+                _draggingSplitter = false;
+                return;
+            }
+            _draggingSplitter = mb.Pressed;
+            return;
+        }
+
+        if (@event is InputEventMouseMotion && _draggingSplitter)
+        {
+            float x = GetViewport().GetMousePosition().X;
+            // Never let the sidebar squeeze the map area below a usable width.
+            float hardMax = Math.Max(PaletteWidthMin,
+                GetViewportRect().Size.X - RightSidebarWidth - 200);
+            PaletteWidth = Math.Clamp(x, PaletteWidthMin, Math.Min(PaletteWidthMax, hardMax));
+        }
+    }
+
     private void DoLayout()
     {
         var win = GetViewportRect().Size;
@@ -1018,6 +1078,14 @@ public partial class EditorMain : Control
         {
             _sidebarBorder.Position = new Vector2(PaletteWidth, contentTop);
             _sidebarBorder.Size = new Vector2(SidebarBorderWidth, contentH);
+        }
+
+        // Grab strip straddles the border so it is easy to hit with the mouse
+        if (_sidebarSplitter != null)
+        {
+            _sidebarSplitter.Position = new Vector2(PaletteWidth - SplitterWidth * 0.5f, contentTop);
+            _sidebarSplitter.Size = new Vector2(SplitterWidth, contentH);
+            _sidebarSplitter.ZIndex = 3;
         }
 
         // Right sidebar
@@ -1731,6 +1799,13 @@ public partial class EditorMain : Control
         _palette.IndicesPath = System.IO.Path.Combine(_dataPath, "INIT", "indices.ini");
         _palette.Rebuild();
 
+        if (_sheetPalette != null)
+        {
+            _sheetPalette.Grhs = _grhs;
+            _sheetPalette.Textures = _textures;
+            _sheetPalette.Rebuild();
+        }
+
         // Push data to NPC + Object + Particle palettes
         SyncNpcPaletteData();
         SyncObjPaletteData();
@@ -1765,6 +1840,11 @@ public partial class EditorMain : Control
         // internally, so textures are loaded as each preview is generated — one pass, 0→100%.
         if (_palette != null)
         {
+            // Decode every PNG the catalog needs up front, in parallel. Doing it
+            // lazily inside the preview loop meant thousands of sequential
+            // single-threaded PNG decodes, which dominated startup.
+            PreloadCatalogTexturesParallel();
+
             _preloadPhase = 1;
             _previewPreloadIter = _palette.PreloadAllPreviews();
             if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
@@ -1772,6 +1852,7 @@ public partial class EditorMain : Control
             if (_loadingLabel != null) { _loadingLabel.Visible = true; _loadingLabel.Text = "Cargando..."; }
             if (_loadingBar != null) { _loadingBar.Visible = true; _loadingBar.Value = 0; }
             int total = _palette.PreviewPreloadTotal;
+            _preloadStopwatch = System.Diagnostics.Stopwatch.StartNew();
             GD.Print($"[Editor] Starting preload: {total} texture refs");
         }
         else
@@ -1782,17 +1863,53 @@ public partial class EditorMain : Control
         }
     }
 
+    /// <summary>
+    /// Resolve the distinct PNG files backing the catalog's texture refs and
+    /// decode them on worker threads. Only sheets the palette actually shows
+    /// are touched, so this does not pull in the whole 1.3 GB Graficos folder.
+    /// </summary>
+    private void PreloadCatalogTexturesParallel()
+    {
+        if (_catalog == null || _grhs == null || _textures == null) return;
+
+        var fileNums = new HashSet<int>();
+        foreach (var texRef in _catalog.AllRefs)
+        {
+            int grhIndex = texRef.GrhIndex;
+            if (grhIndex <= 0 || grhIndex >= _grhs.Length) continue;
+
+            var grh = _grhs[grhIndex];
+            // Animated GRHs point at frames; the preview uses the first one.
+            if (grh.NumFrames > 1 && grh.Frames is { Length: > 0 })
+            {
+                int frameIdx = grh.Frames[0];
+                if (frameIdx > 0 && frameIdx < _grhs.Length) grh = _grhs[frameIdx];
+            }
+            if (grh.FileNum > 0) fileNums.Add(grh.FileNum);
+        }
+
+        if (fileNums.Count == 0) return;
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _textures.PreloadParallel(new List<int>(fileNums));
+        sw.Stop();
+        GD.Print($"[Editor] Parallel texture preload: {fileNums.Count} sheets in {sw.ElapsedMilliseconds}ms");
+    }
+
     private void TickTexturePreload()
     {
         // Phase 1: load textures + generate previews in a single time-budgeted pass
         if (_preloadPhase == 1 && _previewPreloadIter != null)
         {
+            // Textures are already decoded by PreloadCatalogTexturesParallel, so
+            // each step here is only an AtlasTexture allocation (~1ms for all
+            // 4851). The budget just caps a pathological frame.
             var sw = System.Diagnostics.Stopwatch.StartNew();
             while (sw.Elapsed.TotalMilliseconds < 12.0)
             {
                 if (!_previewPreloadIter.MoveNext())
                 {
-                    GD.Print("[Editor] Preload complete");
+                    GD.Print($"[Editor] Preload complete in {_preloadStopwatch?.ElapsedMilliseconds ?? 0}ms");
                     _previewPreloadIter = null;
                     _preloadPhase = 2;
                     _loadingFadingOut = true;
@@ -1897,7 +2014,7 @@ public partial class EditorMain : Control
             case 10: _state.ShowLights = !_state.ShowLights; break;
             case 15: _state.ShowGrhOverlay = !_state.ShowGrhOverlay; break;
             case 11: OpenWalkMode(); return; // not a checkbox — early return
-            case 12: if (_sidebarTabs != null) _sidebarTabs.CurrentTab = 3; return;
+            case 12: if (_sidebarTabs != null && _particlePalette != null) _sidebarTabs.CurrentTab = _particlePalette.GetIndex(); return;
             case 13: _viewport?.ZoomToFit(); return; // not a checkbox — early return
             case 14: OpenAuxMapWindow(); return; // not a checkbox — early return
         }
@@ -3313,8 +3430,8 @@ public partial class EditorMain : Control
         SyncToolBar();
         UpdateLightSection();
         UpdateTriggerPanel();
-        if (_sidebarTabs != null && tool == EditorTool.Particle)
-            _sidebarTabs.CurrentTab = 3;
+        if (_sidebarTabs != null && tool == EditorTool.Particle && _particlePalette != null)
+            _sidebarTabs.CurrentTab = _particlePalette.GetIndex();
         if (_sidebarTabs != null && tool == EditorTool.Fog && _humoLayersPanel != null)
             _sidebarTabs.CurrentTab = _humoLayersPanel.GetIndex();
         // Show the Humo config panel on the right only while Humo tool is active
@@ -3565,6 +3682,99 @@ public partial class EditorMain : Control
     {
         if (_statusLabel != null) _statusLabel.Text = msg;
         GD.Print($"[Editor] {msg}");
+    }
+
+    /// <summary>
+    /// Switches the sidebar to the docked sheet browser, widening the panel if
+    /// it is still at its default width — a full PNG sheet is unreadable at 280px.
+    /// </summary>
+    private void ShowSheetTab()
+    {
+        if (_sidebarTabs == null || _sheetPalette == null) return;
+        _sidebarTabs.CurrentTab = _sheetPalette.GetIndex();
+
+        if (PaletteWidth <= PaletteWidthDefault + 1)
+        {
+            float hardMax = Math.Max(PaletteWidthMin,
+                GetViewportRect().Size.X - RightSidebarWidth - 200);
+            PaletteWidth = Math.Clamp(560, PaletteWidthMin, Math.Min(PaletteWidthMax, hardMax));
+        }
+    }
+
+    /// <summary>
+    /// A region was picked in the docked sheet browser. Mirrors TilePalette's
+    /// raw-GRH selection so painting behaves identically either way.
+    /// </summary>
+    private void OnSheetGrhPicked(int grhIndex)
+    {
+        if (grhIndex <= 0) return;
+        _state.SelectedTexture = null;
+        _state.EyedropGrh = grhIndex;
+        _state.ClearSheetMosaic();
+        SetActiveTool(EditorTool.Paint);
+        SetStatus($"GRH {grhIndex} listo — clic en el mapa para pintarlo en L{_state.ActiveLayer}");
+    }
+
+    /// <summary>
+    /// A repeating terrain mosaic was captured from a sheet: switch to Paint so
+    /// the very next click already tiles it.
+    /// </summary>
+    private void OnSheetMosaicReady(int cols, int rows)
+    {
+        SetActiveTool(EditorTool.Paint);
+        SetStatus($"Mosaico {cols}x{rows} activo en L{_state.ActiveLayer} — pintá y se repite (usá Pincel para cubrir más)");
+    }
+
+    /// <summary>
+    /// A whole sheet arrived as several GRHs laid out on a grid. Writes them
+    /// into the clipboard and reuses the Ctrl+V pending-placement flow, so the
+    /// mapper positions the assembled object and confirms with Enter.
+    /// </summary>
+    private void OnSheetStampReady(int[] pieces, int cols, int rows)
+    {
+        if (pieces.Length == 0 || cols <= 0 || rows <= 0) return;
+
+        int layer = Math.Clamp(_state.ActiveLayer, 1, 4);
+        var clip = new MapTile[cols + 1, rows + 1];
+        for (int i = 0; i + 2 < pieces.Length; i += 3)
+        {
+            int grh = pieces[i];
+            int cx = pieces[i + 1];
+            int cy = pieces[i + 2];
+            if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) continue;
+
+            var tile = clip[cx + 1, cy + 1];
+            switch (layer)
+            {
+                case 1: tile.Layer1 = grh; break;
+                case 2: tile.Layer2 = grh; break;
+                case 3: tile.Layer3 = grh; break;
+                case 4: tile.Layer4 = grh; break;
+            }
+            clip[cx + 1, cy + 1] = tile;
+        }
+
+        _state.Clipboard = clip;
+        _state.ClipWidth = cols;
+        _state.ClipHeight = rows;
+        _state.SelectedTexture = null;
+        _state.EyedropGrh = 0;
+        _state.ClearSheetMosaic();
+
+        // A placement already floating would make PasteClipboard bail out.
+        _state.Pending.Active = false;
+        PasteClipboard();
+        SetStatus($"Lámina completa {cols}x{rows} en L{layer} — moveté y Enter para confirmar (Escape cancela)");
+    }
+
+    private void OnSheetMainGrhPicked(int grhIndex)
+    {
+        if (grhIndex <= 0) return;
+        _state.SelectedTexture = null;
+        _state.EyedropGrh = grhIndex;
+        _state.ClearSheetMosaic();
+        SetActiveTool(EditorTool.Paint);
+        SetStatus($"GRH {grhIndex} completo — elegí capa (L1-L4) y clic en el mapa");
     }
 
     private void ToggleGrhOverlay()
@@ -4184,6 +4394,7 @@ public partial class EditorMain : Control
         _previewPreloadIter = null;
 
         _palette?.Cleanup();
+        _sheetPalette?.Cleanup();
         _viewport?.Cleanup();
         _walkPanel?.Cleanup();
         _textures?.Cleanup();

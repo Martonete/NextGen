@@ -550,6 +550,24 @@ public partial class MapViewport : Control
     }
 
     /// <summary>
+    /// GRH from the captured sheet rectangle for a map tile. Same modular
+    /// wrapping as GetMosaicGrh, so the pattern stays seamless and keeps its
+    /// phase regardless of where the stroke starts.
+    /// </summary>
+    private int GetSheetMosaicGrh(int tileX, int tileY)
+    {
+        if (State?.SheetMosaic == null) return 0;
+        int tw = State.SheetMosaicW;
+        int th = State.SheetMosaicH;
+        if (tw <= 0 || th <= 0) return 0;
+
+        int px = (((tileX - 1 - State.MosaicOffsetX) % tw) + tw) % tw;
+        int py = (((tileY - 1 - State.MosaicOffsetY) % th) + th) % th;
+        int idx = py * tw + px;
+        return idx >= 0 && idx < State.SheetMosaic.Length ? State.SheetMosaic[idx] : 0;
+    }
+
+    /// <summary>
     /// Get the top-left tile of the pattern instance nearest to the given tile.
     /// </summary>
     private (int baseX, int baseY) GetMosaicBase(int hoverX, int hoverY, TextureRef texRef)
@@ -693,11 +711,69 @@ public partial class MapViewport : Control
                     new Color(0, 0, 0, 0.6f));
             }
         }
+        else if (State.HasSheetMosaic)
+        {
+            // Preview the mosaic over the tiles the brush will actually touch.
+            int r = State.PaintBrushRadius;
+            for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    if (r > 0 && dx * dx + dy * dy > r * r) continue;
+                    int tx = hx + dx, ty = hy + dy;
+                    if (!Map.InBounds(tx, ty)) continue;
+                    int grhIdx = GetSheetMosaicGrh(tx, ty);
+                    if (grhIdx > 0)
+                        DrawTileGrh(grhIdx, tx, ty, center: centerOnTile, modulate: previewColor);
+                }
+        }
         else if (State.EyedropGrh > 0)
         {
-            // Single raw GRH preview
             DrawTileGrh(State.EyedropGrh, hx, hy, center: centerOnTile, modulate: previewColor);
+
+            // Big sheet pieces cover several tiles. Outlining the real footprint
+            // shows how much ground the piece claims before committing to it.
+            var (gw, gh) = GetGrhTileFootprint(State.EyedropGrh);
+            if (gw > 1 || gh > 1)
+            {
+                var (ox, oy) = GetGrhFootprintOrigin(State.EyedropGrh, hx, hy, centerOnTile);
+                var footprint = new Rect2(ox * TileSize, oy * TileSize, gw * TileSize, gh * TileSize);
+                DrawRect(footprint, new Color(0.4f, 0.9f, 1f, 0.28f), false, 1.5f);
+            }
         }
+    }
+
+    /// <summary>
+    /// Size of a GRH in whole tiles, rounded up: a 48px-wide sprite still
+    /// occupies two tile columns.
+    /// </summary>
+    public (int W, int H) GetGrhTileFootprint(int grhIndex)
+    {
+        if (Grhs == null || grhIndex <= 0 || grhIndex >= Grhs.Length) return (1, 1);
+        var grh = Grhs[grhIndex];
+        if (grh.NumFrames > 1 && grh.Frames is { Length: > 0 })
+        {
+            int frameIdx = grh.Frames[0];
+            if (frameIdx > 0 && frameIdx < Grhs.Length) grh = Grhs[frameIdx];
+        }
+        if (grh.PixelWidth <= 0 || grh.PixelHeight <= 0) return (1, 1);
+        int w = Math.Max(1, (grh.PixelWidth + TileSize - 1) / TileSize);
+        int h = Math.Max(1, (grh.PixelHeight + TileSize - 1) / TileSize);
+        return (w, h);
+    }
+
+    /// <summary>
+    /// Top-left tile a GRH actually covers when drawn at (tileX, tileY).
+    /// Layers 2+ render centered horizontally and anchored at the bottom (see
+    /// DrawTileGrh), so the covered area is not the anchor tile's own corner.
+    /// </summary>
+    private (int X, int Y) GetGrhFootprintOrigin(int grhIndex, int tileX, int tileY, bool center)
+    {
+        var (gw, gh) = GetGrhTileFootprint(grhIndex);
+        if (!center) return (tileX, tileY);
+        // Mirrors DrawTileGrh's centered anchor, converted from px to tiles.
+        int ox = tileX - (gw - 1) / 2;
+        int oy = tileY - (gh - 1);
+        return (ox, oy);
     }
 
     /// <summary>
@@ -3137,13 +3213,62 @@ public partial class MapViewport : Control
             SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)grhIdx);
             Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
         }
+        else if (State.HasSheetMosaic)
+        {
+            // Sheet mosaic: repeat the captured rectangle across the map, so a
+            // multi-tile terrain is painted in one stroke instead of tile by tile.
+            int grhIdx = GetSheetMosaicGrh(tx, ty);
+            if (grhIdx > 0)
+            {
+                var before = Map.Tiles[tx, ty];
+                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, grhIdx);
+                Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+            }
+        }
         else if (State.EyedropGrh > 0)
         {
             // Paint with raw GRH captured by eyedrop
             var before = Map.Tiles[tx, ty];
             SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)State.EyedropGrh);
             Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+
+            // A sheet piece larger than one tile is a single GRH drawn from its
+            // anchor tile. Without reserving the tiles it visually covers, the
+            // next stroke paints straight over it and the map has no record that
+            // the ground is taken. Blocking keeps the footprint intact.
+            ReserveGrhFootprint(tx, ty, State.EyedropGrh);
         }
+    }
+
+    /// <summary>
+    /// Marks the tiles a multi-tile GRH covers as blocked, so later strokes and
+    /// collision treat the piece as occupying its real area rather than one tile.
+    /// The anchor tile itself keeps whatever it already had.
+    /// </summary>
+    private void ReserveGrhFootprint(int tx, int ty, int grhIndex)
+    {
+        if (Map == null || State == null || !State.ReserveBigGrhFootprint) return;
+
+        var (gw, gh) = GetGrhTileFootprint(grhIndex);
+        if (gw <= 1 && gh <= 1) return;
+
+        // Use the same anchor the renderer uses, otherwise the blocked area sits
+        // offset from the art the mapper actually sees.
+        bool center = State.ActiveLayer >= 2;
+        var (ox, oy) = GetGrhFootprintOrigin(grhIndex, tx, ty, center);
+
+        for (int dy = 0; dy < gh; dy++)
+            for (int dx = 0; dx < gw; dx++)
+            {
+                int x = ox + dx, y = oy + dy;
+                if (x == tx && y == ty) continue;
+                if (!Map.InBounds(x, y)) continue;
+                if (Map.Tiles[x, y].Blocked) continue;
+
+                var before = Map.Tiles[x, y];
+                Map.Tiles[x, y].Blocked = true;
+                Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+            }
     }
 
     // Recto horizontal: the continuous 4 x 4 section of Graficos/6005.png.

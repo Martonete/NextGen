@@ -62,6 +62,54 @@ public class TextureManager
     }
 
     /// <summary>
+    /// Decode + color-key a batch of PNGs on worker threads, then hand the
+    /// finished Images back for GPU upload on the main thread.
+    ///
+    /// Startup spent nearly all its time in Image.LoadFromFile plus the
+    /// per-pixel color key — both pure CPU work on independent files, so they
+    /// parallelize cleanly. Only ImageTexture.CreateFromImage has to stay on
+    /// the main thread, and that part is comparatively cheap.
+    /// </summary>
+    public void PreloadParallel(IReadOnlyList<int> fileNums)
+    {
+        var pending = new List<int>();
+        foreach (int fn in fileNums)
+            if (fn > 0 && !_cache.ContainsKey(fn)) pending.Add(fn);
+        if (pending.Count == 0) return;
+
+        var decoded = new Image?[pending.Count];
+        System.Threading.Tasks.Parallel.For(0, pending.Count,
+            new System.Threading.Tasks.ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Max(2, System.Environment.ProcessorCount - 1),
+            },
+            i =>
+            {
+                string path = System.IO.Path.Combine(_graficosPath, $"{pending[i]}.png");
+                if (!System.IO.File.Exists(path)) return;
+                var img = Image.LoadFromFile(path);
+                if (img == null) return;
+                ApplyBlackColorKeyFast(img);
+                decoded[i] = img;
+            });
+
+        for (int i = 0; i < pending.Count; i++)
+        {
+            var img = decoded[i];
+            if (img == null) continue;
+            int fn = pending[i];
+            if (_cache.ContainsKey(fn)) continue;
+
+            _imageCache[fn] = img;
+            _cache[fn] = ImageTexture.CreateFromImage(img);
+            var node = _lruOrder.AddFirst(fn);
+            _lruNodes[fn] = node;
+        }
+
+        PreloadDone = _cache.Count;
+    }
+
+    /// <summary>
     /// Time-budgeted preload tick. Loads textures until the frame budget is exhausted.
     /// Returns true when preload is complete.
     /// </summary>

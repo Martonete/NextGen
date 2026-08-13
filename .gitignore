@@ -41,3 +41,9 @@ skills-lock.json
 tools/swap_water_textures.py
 *.sln
 13.3 vb6/
+
+# Godot 4.4 regenerates these per machine; 4.3 doesn't use them at all
+*.uid
+# Editor/tooling backups
+*.old
+*.old.*
