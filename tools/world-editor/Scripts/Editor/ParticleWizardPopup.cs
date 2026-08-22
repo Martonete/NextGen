@@ -73,8 +73,10 @@ public partial class ParticleWizardPopup : Window
 
         _step1Box.AddChild(EditorTheme.SectionLabel("Paso 1 — Punto de partida"));
         _step1Box.AddChild(EditorTheme.MakeLabel(
-            "Empezá desde una definición real (ya balanceada) o en blanco.",
-            EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM));
+            "«En blanco» arranca de cero. Copiar una existente reutiliza sus valores\n" +
+            "ya ajustados (velocidad, vida, colores) para tocar solo lo que quieras.\n" +
+            "Los sprites se eligen después, en el editor.",
+            EditorTheme.TEXT_MUTED, EditorTheme.FONT_XS));
 
         _baseOption = new OptionButton();
         _baseOption.AddItem("En blanco", 0);
@@ -134,13 +136,16 @@ public partial class ParticleWizardPopup : Window
         root.AddChild(_step2Box);
 
         _step2Box.AddChild(EditorTheme.SectionLabel("Paso 2 — Forma y Movimiento"));
+        _step2Box.AddChild(EditorTheme.MakeLabel(
+            "Un punto de partida nomás: todo se puede ajustar después, viendo\nel resultado animado en el preview del editor.",
+            EditorTheme.TEXT_MUTED, EditorTheme.FONT_XS));
 
-        _step2Box.AddChild(EditorTheme.MakeLabel("Forma de emisión:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _step2Box.AddChild(EditorTheme.MakeLabel("Desde dónde salen las partículas:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         _shapeOption = new OptionButton();
-        _shapeOption.AddItem("Punto", 0);
-        _shapeOption.AddItem("Círculo", 1);
-        _shapeOption.AddItem("Rectángulo", 2);
-        _shapeOption.AddItem("Línea", 3);
+        _shapeOption.AddItem("Punto — todas del mismo lugar", 0);
+        _shapeOption.AddItem("Círculo — repartidas en un radio", 1);
+        _shapeOption.AddItem("Rectángulo — repartidas en un área", 2);
+        _shapeOption.AddItem("Línea — repartidas en horizontal", 3);
         _shapeOption.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _shapeOption.ItemSelected += _ => SyncShapeSizeVisibility();
         _step2Box.AddChild(_shapeOption);
@@ -154,13 +159,13 @@ public partial class ParticleWizardPopup : Window
         _step2Box.AddChild(sizeRow);
         SyncShapeSizeVisibility();
 
-        _step2Box.AddChild(EditorTheme.MakeLabel("Patrón de movimiento:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _step2Box.AddChild(EditorTheme.MakeLabel("Cómo se mueven:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
         _moveOption = new OptionButton();
-        _moveOption.AddItem("Explosión radial", 0);
-        _moveOption.AddItem("Chorro direccional", 1);
-        _moveOption.AddItem("Caída con gravedad", 2);
-        _moveOption.AddItem("Flotante con spin", 3);
-        _moveOption.AddItem("Estático / Jitter", 4);
+        _moveOption.AddItem("Explosión — salen hacia afuera", 0);
+        _moveOption.AddItem("Chorro — suben como fuego", 1);
+        _moveOption.AddItem("Caída — bajan con gravedad", 2);
+        _moveOption.AddItem("Flotante — suben girando (humo)", 3);
+        _moveOption.AddItem("Tembloroso — vibran en el lugar", 4);
         _moveOption.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _step2Box.AddChild(_moveOption);
 

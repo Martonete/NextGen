@@ -24,6 +24,8 @@ public partial class ParticleEditPopup : Window
     public GrhData[]? Grhs;
     public TextureManager? Textures;
     public int[]? NpcBodyGrhs;
+    /// <summary>INIT/ folder, so the sprite picker can read the curated Fxs.ind list.</summary>
+    public string InitPath = "";
     public Action? OnSaved;
     /// <summary>Clone the current (unsaved) draft as a new definition; host returns the new index.</summary>
     public Func<ParticleStreamDef, int>? OnDuplicateDraft;
@@ -327,15 +329,25 @@ public partial class ParticleEditPopup : Window
 
         AddSection(vbox, "Sprites", spr =>
         {
-            _grhPicker = new GrhMultiPicker { Grhs = Grhs, Textures = Textures };
+            _grhPicker = new GrhMultiPicker { Grhs = Grhs, Textures = Textures, InitPath = InitPath };
             spr.AddChild(_grhPicker);
             _grhPicker.SetChosen(_draft.GrhList);
-            _grhPicker.OnChanged += () => _draft.GrhList = _grhPicker.GetChosen();
+            _grhPicker.OnChanged += () =>
+            {
+                _draft.GrhList = _grhPicker.GetChosen();
+                _draft.GrhCount = _draft.GrhList.Length;
+                // Live particles keep the sprite they drew at birth, so without
+                // a restart a fresh pick would only appear as they slowly die.
+                _preview?.RestartBurst();
+                MarkDirty();
+            };
         }, onReset: () =>
         {
             if (Target == null) return;
             _draft.GrhList = (int[])Target.GrhList.Clone();
+            _draft.GrhCount = _draft.GrhList.Length;
             _grhPicker?.SetChosen(_draft.GrhList);
+            _preview?.RestartBurst();
         });
 
         AddSection(vbox, "Colores", col =>

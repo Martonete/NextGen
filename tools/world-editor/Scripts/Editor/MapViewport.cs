@@ -181,6 +181,9 @@ public partial class MapViewport : Control
     }
 
     private double _animTime; // ms, for tile animations
+    // Set while drawing the current view. Static maps can then remain idle
+    // instead of issuing every tile draw call at the monitor refresh rate.
+    private bool _visibleAnimatedGrh;
 
     // Particle cursor preview: a live-simulated stream shown at the hovered tile
     private EditorParticleStream? _particlePreviewStream;
@@ -188,8 +191,6 @@ public partial class MapViewport : Control
 
     public override void _Process(double delta)
     {
-        _animTime += delta * 1000.0;
-
         // Step the particle simulation so streams animate (rain falls, fire flickers, etc.)
         if (Particles != null && State != null && State.ShowParticles)
             Particles.Update((float)delta);
@@ -333,7 +334,27 @@ public partial class MapViewport : Control
             _marchingAntsOffset = (_marchingAntsOffset + (float)(MarchingAntsSpeed * delta))
                 % (MarchingAntsDash + MarchingAntsGap);
         }
-        QueueRedraw();
+        bool hasParticles = State?.ShowParticles == true
+            && ((Particles?.Streams.Count ?? 0) > 0 || _particlePreviewStream != null);
+        if (hasParticles)
+        {
+            _animTime += delta * 1000.0;
+            _particleOverlay?.QueueRedraw();
+        }
+
+        // Do not continuously redraw a static map. Keep full-rate redraws only
+        // for content whose pixels change without an input event.
+        bool needsContinuousRedraw = _visibleAnimatedGrh || _weather.Lluvia || _weather.Nieve
+            || (State != null && (State.HasSelection || _isSelecting))
+            || _isPainting || _isPanning || _isDragging || _isMovingSelection
+            || _isResizingSelection || _pendingDrag || _mosaicHandleDrag
+            || _keyUp || _keyDown || _keyLeft || _keyRight;
+        if (needsContinuousRedraw)
+        {
+            if (!hasParticles)
+                _animTime += delta * 1000.0;
+            QueueRedraw();
+        }
     }
 
     public override void _Draw()
@@ -341,6 +362,8 @@ public partial class MapViewport : Control
         DrawRect(new Rect2(Vector2.Zero, Size), EditorTheme.BG_DARK);
 
         if (Map == null || Grhs == null || Textures == null || State == null) return;
+
+        _visibleAnimatedGrh = false;
 
         // CPU per-tile lighting: recalculate when dirty
         if (State.ShowLights && _cpuLightsDirty)
@@ -550,24 +573,6 @@ public partial class MapViewport : Control
     }
 
     /// <summary>
-    /// GRH from the captured sheet rectangle for a map tile. Same modular
-    /// wrapping as GetMosaicGrh, so the pattern stays seamless and keeps its
-    /// phase regardless of where the stroke starts.
-    /// </summary>
-    private int GetSheetMosaicGrh(int tileX, int tileY)
-    {
-        if (State?.SheetMosaic == null) return 0;
-        int tw = State.SheetMosaicW;
-        int th = State.SheetMosaicH;
-        if (tw <= 0 || th <= 0) return 0;
-
-        int px = (((tileX - 1 - State.MosaicOffsetX) % tw) + tw) % tw;
-        int py = (((tileY - 1 - State.MosaicOffsetY) % th) + th) % th;
-        int idx = py * tw + px;
-        return idx >= 0 && idx < State.SheetMosaic.Length ? State.SheetMosaic[idx] : 0;
-    }
-
-    /// <summary>
     /// Get the top-left tile of the pattern instance nearest to the given tile.
     /// </summary>
     private (int baseX, int baseY) GetMosaicBase(int hoverX, int hoverY, TextureRef texRef)
@@ -711,20 +716,25 @@ public partial class MapViewport : Control
                     new Color(0, 0, 0, 0.6f));
             }
         }
-        else if (State.HasSheetMosaic)
+        else if (State.HasSheetMosaic && State.SheetMosaic != null)
         {
-            // Preview the mosaic over the tiles the brush will actually touch.
-            int r = State.PaintBrushRadius;
-            for (int dy = -r; dy <= r; dy++)
-                for (int dx = -r; dx <= r; dx++)
+            // Preview the whole captured block anchored at the cursor, matching
+            // exactly what StampSheetMosaic will lay down.
+            int tw = State.SheetMosaicW;
+            int th = State.SheetMosaicH;
+            for (int ry = 0; ry < th; ry++)
+                for (int rx = 0; rx < tw; rx++)
                 {
-                    if (r > 0 && dx * dx + dy * dy > r * r) continue;
-                    int tx = hx + dx, ty = hy + dy;
+                    int grhIdx = State.SheetMosaic[ry * tw + rx];
+                    if (grhIdx <= 0) continue;
+                    int tx = hx + rx, ty = hy + ry;
                     if (!Map.InBounds(tx, ty)) continue;
-                    int grhIdx = GetSheetMosaicGrh(tx, ty);
-                    if (grhIdx > 0)
-                        DrawTileGrh(grhIdx, tx, ty, center: centerOnTile, modulate: previewColor);
+                    DrawTileGrh(grhIdx, tx, ty, center: centerOnTile, modulate: previewColor);
                 }
+
+            // Outline the block so its extent is obvious before committing.
+            DrawRect(new Rect2(hx * TileSize, hy * TileSize, tw * TileSize, th * TileSize),
+                new Color(0.4f, 0.9f, 1f, 0.35f), false, 1.5f);
         }
         else if (State.EyedropGrh > 0)
         {
@@ -1658,6 +1668,8 @@ public partial class MapViewport : Control
         var grh = Grhs[grhIndex];
         if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
         {
+            if (animate && grh.Speed > 0)
+                _visibleAnimatedGrh = true;
             int frame = animate && grh.Speed > 0
                 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames
                 : 0;
@@ -1698,6 +1710,8 @@ public partial class MapViewport : Control
         var grh = Grhs[grhIndex];
         if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
         {
+            if (animate && grh.Speed > 0)
+                _visibleAnimatedGrh = true;
             int frame = animate && grh.Speed > 0
                 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames
                 : 0;
@@ -2572,8 +2586,12 @@ public partial class MapViewport : Control
 
         // (auto-align mosaic removed — it caused the offset to jump while painting)
 
-        // Redraw on hover for paint preview, trigger preview, and pending placement
-        if (State.ActiveTool == EditorTool.Paint || State.ActiveTool == EditorTool.Trigger || State.Pending.Active)
+        // Redraw on hover for every tool with a cursor preview. Static map
+        // rendering otherwise stays asleep until an input or data change.
+        if (State.ActiveTool == EditorTool.Paint || State.ActiveTool == EditorTool.Path
+            || State.ActiveTool == EditorTool.Trigger || State.ActiveTool == EditorTool.Npc
+            || State.ActiveTool == EditorTool.Object || State.ActiveTool == EditorTool.Light
+            || State.ActiveTool == EditorTool.Particle || State.Pending.Active)
             QueueRedraw();
     }
 
@@ -3215,15 +3233,11 @@ public partial class MapViewport : Control
         }
         else if (State.HasSheetMosaic)
         {
-            // Sheet mosaic: repeat the captured rectangle across the map, so a
-            // multi-tile terrain is painted in one stroke instead of tile by tile.
-            int grhIdx = GetSheetMosaicGrh(tx, ty);
-            if (grhIdx > 0)
-            {
-                var before = Map.Tiles[tx, ty];
-                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, grhIdx);
-                Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
-            }
+            // Sheet mosaic: stamp the captured rectangle as one piece, anchored
+            // at the clicked tile. The selection on the sheet is a specific
+            // arrangement of art, so it is laid down exactly as it was picked
+            // instead of being tiled tile-by-tile across the map.
+            StampSheetMosaic(tx, ty);
         }
         else if (State.EyedropGrh > 0)
         {
@@ -3237,6 +3251,40 @@ public partial class MapViewport : Control
             // next stroke paints straight over it and the map has no record that
             // the ground is taken. Blocking keeps the footprint intact.
             ReserveGrhFootprint(tx, ty, State.EyedropGrh);
+        }
+    }
+
+    /// <summary>
+    /// Lays the captured sheet rectangle down as a single block whose top-left
+    /// corner is the given tile, preserving the exact arrangement selected on
+    /// the sheet. Every covered tile is registered in the current stroke so
+    /// dragging moves the stamp around instead of repainting the same cells.
+    /// </summary>
+    private void StampSheetMosaic(int tx, int ty)
+    {
+        if (Map == null || State?.SheetMosaic == null) return;
+        int tw = State.SheetMosaicW;
+        int th = State.SheetMosaicH;
+        if (tw <= 0 || th <= 0) return;
+
+        for (int ry = 0; ry < th; ry++)
+        {
+            for (int rx = 0; rx < tw; rx++)
+            {
+                int grhIdx = State.SheetMosaic[ry * tw + rx];
+                if (grhIdx <= 0) continue; // gap in the captured rectangle
+
+                int x = tx + rx, y = ty + ry;
+                if (!Map.InBounds(x, y)) continue;
+
+                // The anchor tile is already in the stroke set from PaintTileAt.
+                long key = (long)x << 32 | (uint)y;
+                if (!(x == tx && y == ty) && !_paintedThisStroke.Add(key)) continue;
+
+                var before = Map.Tiles[x, y];
+                SetLayerGrh(ref Map.Tiles[x, y], State.ActiveLayer, grhIdx);
+                Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+            }
         }
     }
 
@@ -3622,6 +3670,7 @@ public partial class MapViewport : Control
             State.EyedropGrh = grh;
             State.SelectedTexture = null; // Clear catalog selection, use raw GRH
             State.ActiveTool = EditorTool.Paint;
+            State.PushRecentGrh(grh);
         }
     }
 

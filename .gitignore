@@ -47,3 +47,7 @@ tools/swap_water_textures.py
 # Editor/tooling backups
 *.old
 *.old.*
+
+# Working backups made before binary index edits (Graficos.ind, Personajes.ind…)
+.backups/
+*.bak

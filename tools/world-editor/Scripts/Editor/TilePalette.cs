@@ -31,6 +31,8 @@ public partial class TilePalette : VBoxContainer
     private LineEdit? _searchBox;
     private Button? _useSelectionButton;
     private Label? _zoomLabel;
+    private HBoxContainer? _recentRow;
+    private VBoxContainer? _recentSection;
 
     // Ctrl+Click multi-selection, in click order — combined into one stamp via BuildMultiStamp()
     private readonly List<TextureRef> _multiSelected = new();
@@ -111,6 +113,17 @@ public partial class TilePalette : VBoxContainer
             else EmitSignal(SignalName.SheetTabRequested);
         };
         AddChild(sheetButton);
+
+        // Recent raw GRHs — one-click reuse for big pieces that would otherwise
+        // mean reopening the browser and recalling their number every time.
+        _recentSection = new VBoxContainer();
+        _recentSection.AddThemeConstantOverride("separation", 2);
+        _recentSection.Visible = false;
+        _recentSection.AddChild(EditorTheme.SectionLabel("Recientes"));
+        _recentRow = new HBoxContainer();
+        _recentRow.AddThemeConstantOverride("separation", 3);
+        _recentSection.AddChild(_recentRow);
+        AddChild(_recentSection);
 
         // Brush size — circular radius applied to Paint/Erase/Block so large
         // terrain areas don't have to be painted one tile at a time. 0 = single
@@ -383,6 +396,10 @@ public partial class TilePalette : VBoxContainer
             SyncCategoryButtons();
             PopulateGrid();
         }
+
+        // Previews need the texture manager, which only exists once data is
+        // loaded — so the restored strip is drawn here rather than at build time.
+        RefreshRecentGrhs();
     }
 
     private void OnSearchChanged(string text)
@@ -435,8 +452,79 @@ public partial class TilePalette : VBoxContainer
         State.EyedropGrh = grhIndex;
         State.ClearSheetMosaic();
         State.ActiveTool = EditorTool.Paint;
+        State.PushRecentGrh(grhIndex);
         _infoLabel!.Text = $"GRH libre {grhIndex} — capa activa L{State.ActiveLayer}";
+        RefreshRecentGrhs();
         UpdateGridHighlights();
+    }
+
+    /// <summary>
+    /// Rebuilds the recent-GRH strip. Each button previews the sprite and
+    /// re-selects it, so a big piece is one click away instead of a trip
+    /// through the browser and its number.
+    /// </summary>
+    public void RefreshRecentGrhs()
+    {
+        if (_recentRow == null || _recentSection == null || State == null) return;
+
+        foreach (var child in _recentRow.GetChildren())
+            child.QueueFree();
+
+        _recentSection.Visible = State.RecentGrhs.Count > 0;
+        if (!_recentSection.Visible) return;
+
+        foreach (int grhIndex in State.RecentGrhs)
+        {
+            var button = new Button
+            {
+                CustomMinimumSize = new Vector2(30, 30),
+                TooltipText = $"GRH {grhIndex}",
+                ExpandIcon = true,
+                IconAlignment = HorizontalAlignment.Center,
+            };
+            button.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_XS);
+
+            var preview = GetRecentPreview(grhIndex);
+            if (preview != null) button.Icon = preview;
+            else button.Text = grhIndex.ToString();
+
+            bool active = State.EyedropGrh == grhIndex;
+            button.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(
+                active ? EditorTheme.BG_TOOL_ACTIVE : EditorTheme.BG_TOOL_NORMAL, 4, 1, 1,
+                active ? EditorTheme.ACCENT : EditorTheme.BORDER_SUBTLE, 1));
+            button.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(
+                EditorTheme.BG_TOOL_HOVER, 4, 1, 1, EditorTheme.ACCENT_DIM, 1));
+
+            int captured = grhIndex;
+            button.Pressed += () => SelectRawGrh(captured);
+            _recentRow.AddChild(button);
+        }
+    }
+
+    /// <summary>Atlas preview of a raw GRH, or null when it cannot be resolved.</summary>
+    private Texture2D? GetRecentPreview(int grhIndex)
+    {
+        if (Grhs == null || Textures == null) return null;
+        if (grhIndex <= 0 || grhIndex >= Grhs.Length) return null;
+
+        var grh = Grhs[grhIndex];
+        if (grh.NumFrames > 1 && grh.Frames is { Length: > 0 })
+        {
+            int first = grh.Frames[0];
+            if (first > 0 && first < Grhs.Length) grh = Grhs[first];
+        }
+        if (!grh.IsValid || grh.FileNum <= 0) return null;
+
+        var texture = Textures.GetTexture(grh.FileNum);
+        if (texture == null) return null;
+        if (grh.PixelWidth <= 0 || grh.PixelHeight <= 0) return texture;
+
+        return new AtlasTexture
+        {
+            Atlas = texture,
+            Region = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight),
+            FilterClip = true,
+        };
     }
 
     private void OnCategorySelected(string category)

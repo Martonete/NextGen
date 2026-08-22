@@ -57,6 +57,7 @@ public class InputRouter
 
     /// <summary>Callback to toggle minimap visibility (M key).</summary>
     public Action? OnMinimapToggle;
+    public Action? OnCharPanelToggle;
 
     public InputRouter(GameState state)
     {
@@ -166,6 +167,14 @@ public class InputRouter
             if (key.Keycode == Key.M && !_state.ChatActive)
             {
                 OnMinimapToggle?.Invoke();
+                viewport.SetInputAsHandled();
+                return true;
+            }
+
+            // P: toggle the character sheet. C is already combat mode.
+            if (key.Keycode == Key.P && !_state.ChatActive)
+            {
+                OnCharPanelToggle?.Invoke();
                 viewport.SetInputAsHandled();
                 return true;
             }

@@ -387,6 +387,7 @@ public partial class Main : Control
 
 	// Quest panel (frmQuest)
 	private QuestPanel? _questPanel;
+	private CharPanel? _charPanel;
 
 	// Trainer/Pet panel (frmEntrenador)
 	private TrainerPanel? _trainerPanel;
@@ -863,6 +864,17 @@ public partial class Main : Control
 		_expLabel.AddThemeColorOverride("font_shadow_color", new Color(0f, 0f, 0f, 0.8f));
 		_expLabel.AddThemeConstantOverride("shadow_offset_x", 1);
 		_expLabel.AddThemeConstantOverride("shadow_offset_y", 1);
+
+		// Name, level and experience moved to the character sheet (P). The nodes
+		// stay alive but hidden: GameUIUpdater writes to them unconditionally,
+		// and the sheet reads the same GameState values.
+		_nameLabel.Visible = false;
+		_levelLabel.Visible = false;
+		_expLabel.Visible = false;
+		nameFrame.Visible = false;
+		levelFrame.Visible = false;
+		levelBadge.Visible = false;
+		xpBarBg.Visible = false;
 
 		// Gold icon + label: positioned relative to BottomBarY
 		var goldIcon = new TextureRect();
@@ -1388,7 +1400,12 @@ public partial class Main : Control
 	/// <summary>
 	/// Update stats bars, labels, and inventory from GameState.
 	/// </summary>
-	private void UpdateGameUI() => _gameUIUpdater?.UpdateGameUI();
+	private void UpdateGameUI()
+	{
+		_gameUIUpdater?.UpdateGameUI();
+		// Cheap no-op while the sheet is hidden; keeps it live when it is open.
+		RefreshCharPanel();
+	}
 	private void UpdateArrowProjectiles(float delta) => _gameUIUpdater?.UpdateArrowProjectiles(delta);
 	private void UpdateSpellBeams(float delta) => _gameUIUpdater?.UpdateSpellBeams(delta);
 

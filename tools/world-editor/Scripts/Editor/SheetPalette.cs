@@ -66,6 +66,13 @@ public partial class SheetPalette : VBoxContainer
     private int _selectedGrh;
     private bool _dragging;
     private Vector2 _dragStart;
+    // Live rectangle drawn over the sheet while dragging, so the size of the
+    // capture is visible before releasing instead of only after the fact.
+    private SheetDragOverlay? _dragOverlay;
+    private Vector2 _dragStartLocal;
+    private bool _dragMoved;
+    /// <summary>Pixels the cursor must travel before a left press counts as a rectangle drag.</summary>
+    private const float DragThreshold = 5f;
     private VBoxContainer? _galleryView;
     private VBoxContainer? _detailView;
     private ScrollContainer? _regionScroll;
@@ -238,8 +245,14 @@ public partial class SheetPalette : VBoxContainer
         _sheetPreview.GuiInput += OnSheetPreviewInput;
         previewScroll.AddChild(_sheetPreview);
 
+        // Drawn on top of the art; must not eat the drag events it visualises.
+        _dragOverlay = new SheetDragOverlay();
+        _dragOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
+        _dragOverlay.MouseFilter = MouseFilterEnum.Ignore;
+        _sheetPreview.AddChild(_dragOverlay);
+
         var hint = EditorTheme.MakeLabel(
-            "Clic: una pieza · Arrastrá con botón derecho: capturar terreno y repetirlo",
+            "Clic: una pieza · Arrastrá para capturar un bloque de terreno y pintarlo repetido",
             EditorTheme.TEXT_MUTED, EditorTheme.FONT_XS);
         hint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _detailView.AddChild(hint);
@@ -740,10 +753,14 @@ public partial class SheetPalette : VBoxContainer
     }
 
     /// <summary>
-    /// Drag with the right button (or Shift+left) to lift a rectangle of 32×32
-    /// tiles out of the sheet and use it as a repeating brush. Terrain sheets
-    /// have no indices.ini pattern, so without this a multi-tile ground has to
-    /// be laid one piece at a time.
+    /// Drag over the sheet to lift a rectangle of 32×32 tiles and use it as a
+    /// repeating brush. Terrain sheets have no indices.ini pattern, so without
+    /// this a multi-tile ground has to be laid one piece at a time.
+    ///
+    /// Any mouse button starts a drag: left is the natural gesture, right is
+    /// kept for muscle memory. A left press that never travels past
+    /// <see cref="DragThreshold"/> falls through to the single-piece pick in
+    /// <see cref="OnSheetPreviewInput"/>, so clicking still grabs one tile.
     /// </summary>
     private void OnSheetDragInput(InputEvent @event)
     {
@@ -752,7 +769,7 @@ public partial class SheetPalette : VBoxContainer
         if (@event is InputEventMouseButton mb)
         {
             bool rectButton = mb.ButtonIndex == MouseButton.Right
-                || (mb.ButtonIndex == MouseButton.Left && Input.IsKeyPressed(Key.Shift));
+                || mb.ButtonIndex == MouseButton.Left;
             if (!rectButton) return;
 
             if (mb.Pressed)
@@ -760,16 +777,64 @@ public partial class SheetPalette : VBoxContainer
                 if (TryGetSheetPoint(mb.Position, out var start))
                 {
                     _dragStart = start;
+                    _dragStartLocal = mb.Position;
                     _dragging = true;
+                    // Right-drag and Shift+left are explicit rectangle gestures,
+                    // so they arm the overlay without waiting for the threshold.
+                    _dragMoved = mb.ButtonIndex == MouseButton.Right || Input.IsKeyPressed(Key.Shift);
+                    if (_dragMoved) UpdateDragOverlay(mb.Position);
                 }
             }
             else if (_dragging)
             {
+                bool captured = _dragMoved;
                 _dragging = false;
-                if (TryGetSheetPoint(mb.Position, out var end))
+                _dragMoved = false;
+                _dragOverlay?.Clear();
+                if (captured && TryGetSheetPoint(mb.Position, out var end))
                     CaptureSheetRect(_dragStart, end);
             }
         }
+        else if (@event is InputEventMouseMotion motion && _dragging)
+        {
+            if (!_dragMoved
+                && motion.Position.DistanceTo(_dragStartLocal) >= DragThreshold)
+                _dragMoved = true;
+            if (_dragMoved) UpdateDragOverlay(motion.Position);
+        }
+    }
+
+    /// <summary>
+    /// Feeds the overlay the current rectangle in control space, snapped to the
+    /// sheet's 32×32 grid so what is highlighted is exactly what gets captured.
+    /// </summary>
+    private void UpdateDragOverlay(Vector2 localPos)
+    {
+        if (_dragOverlay == null || _sheetPreview == null || Textures == null) return;
+        if (!TryGetSheetPoint(localPos, out var end)) return;
+        var texture = Textures.GetTexture(_selectedFileNumber);
+        if (texture == null) return;
+
+        Vector2 controlSize = _sheetPreview.Size;
+        float scale = Math.Min(controlSize.X / texture.GetWidth(), controlSize.Y / texture.GetHeight());
+        if (scale <= 0) return;
+        Vector2 renderedSize = new(texture.GetWidth() * scale, texture.GetHeight() * scale);
+        Vector2 renderedOrigin = (controlSize - renderedSize) * 0.5f;
+
+        // Must match CaptureSheetRect exactly, or the highlight would promise a
+        // different block than the one actually captured.
+        float x0 = MathF.Floor(Math.Min(_dragStart.X, end.X) / 32) * 32;
+        float y0 = MathF.Floor(Math.Min(_dragStart.Y, end.Y) / 32) * 32;
+        float x1 = MathF.Floor(Math.Max(_dragStart.X, end.X) / 32) * 32;
+        float y1 = MathF.Floor(Math.Max(_dragStart.Y, end.Y) / 32) * 32;
+
+        int cols = Math.Max(1, (int)(x1 - x0) / 32 + 1);
+        int rows = Math.Max(1, (int)(y1 - y0) / 32 + 1);
+
+        _dragOverlay.SetRect(
+            new Rect2(renderedOrigin + new Vector2(x0, y0) * scale,
+                      new Vector2(cols * 32, rows * 32) * scale),
+            cols, rows);
     }
 
     /// <summary>
@@ -780,13 +845,17 @@ public partial class SheetPalette : VBoxContainer
     {
         if (State == null || Grhs == null) return;
 
+        // Both edges resolve to the cell that physically contains the cursor.
+        // Rounding the far edge up instead pulled in a whole extra column/row
+        // whenever the drag ended even one pixel past a cell boundary, which is
+        // how a neighbouring graphic ended up inside the capture.
         int x0 = (int)Math.Floor(Math.Min(a.X, b.X) / 32) * 32;
         int y0 = (int)Math.Floor(Math.Min(a.Y, b.Y) / 32) * 32;
-        int x1 = (int)Math.Ceiling(Math.Max(a.X, b.X) / 32) * 32;
-        int y1 = (int)Math.Ceiling(Math.Max(a.Y, b.Y) / 32) * 32;
+        int x1 = (int)Math.Floor(Math.Max(a.X, b.X) / 32) * 32;
+        int y1 = (int)Math.Floor(Math.Max(a.Y, b.Y) / 32) * 32;
 
-        int cols = Math.Max(1, (x1 - x0) / 32);
-        int rows = Math.Max(1, (y1 - y0) / 32);
+        int cols = Math.Max(1, (x1 - x0) / 32 + 1);
+        int rows = Math.Max(1, (y1 - y0) / 32 + 1);
         if (cols * rows <= 1)
         {
             // A click-sized rectangle is just a single pick.
@@ -800,7 +869,7 @@ public partial class SheetPalette : VBoxContainer
         for (int ry = 0; ry < rows; ry++)
             for (int rx = 0; rx < cols; rx++)
             {
-                int grh = FindGrhAt(x0 + rx * 32 + 1, y0 + ry * 32 + 1);
+                int grh = FindCellGrhAt(x0 + rx * 32, y0 + ry * 32);
                 mosaic[ry * cols + rx] = grh;
                 if (grh > 0) found++;
             }
@@ -819,7 +888,7 @@ public partial class SheetPalette : VBoxContainer
             _selectionPreview.Texture = null;
             for (int i = 0; i < mosaic.Length && _selectionPreview.Texture == null; i++)
                 if (mosaic[i] > 0) _selectionPreview.Texture = GetRegionPreview(mosaic[i]);
-            _selectionLabel.Text = $"Mosaico {cols}x{rows} ({found} tiles)\nPintá y se repite automáticamente";
+            _selectionLabel.Text = $"Bloque {cols}x{rows} ({found} tiles)\nUn clic coloca el bloque completo";
             _selectionBar.Visible = true;
         }
 
@@ -850,18 +919,62 @@ public partial class SheetPalette : VBoxContainer
     }
 
     /// <summary>
+    /// GRH for one cell of a captured block: like <see cref="FindGrhAt"/>, but
+    /// restricted to pieces that fit inside the cell and start on it. A larger
+    /// overlapping piece would be drawn from this cell's corner and spill over
+    /// the neighbouring tiles, pulling artwork the selection never covered.
+    /// </summary>
+    private int FindCellGrhAt(int cellX, int cellY)
+    {
+        if (Grhs == null) return 0;
+        int best = 0;
+        int bestArea = 0;
+        int fallback = 0;
+        int fallbackArea = 0;
+
+        foreach (int id in _currentRegions)
+        {
+            var grh = Grhs[id];
+            if (grh.NumFrames > 1 || grh.FileNum != _selectedFileNumber) continue;
+            if (grh.PixelWidth > 32 || grh.PixelHeight > 32) continue;
+
+            int area = grh.PixelWidth * grh.PixelHeight;
+            if (grh.SX == cellX && grh.SY == cellY)
+            {
+                // Among pieces anchored here, the one filling the cell best wins.
+                if (area > bestArea) { bestArea = area; best = id; }
+            }
+            else if (best == 0
+                && grh.SX >= cellX && grh.SY >= cellY
+                && grh.SX + grh.PixelWidth <= cellX + 32
+                && grh.SY + grh.PixelHeight <= cellY + 32)
+            {
+                // Sheets whose GRHs are not aligned to the 32px grid still have
+                // a usable piece as long as it stays wholly inside the cell.
+                if (area > fallbackArea) { fallbackArea = area; fallback = id; }
+            }
+        }
+        return best != 0 ? best : fallback;
+    }
+
+    /// <summary>
     /// Picks the piece under the click, using its real position in the sheet.
     /// Road sets in particular are far easier to read this way, since adjacent
     /// 32×32 pieces differ only by a small edge detail.
     /// </summary>
     private void OnSheetPreviewInput(InputEvent @event)
     {
-        // Rectangle capture owns right-drag and Shift+left-drag.
+        // Rectangle capture inspects the event first and may consume the drag.
+        bool wasDrag = _dragMoved;
         OnSheetDragInput(@event);
         if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Right }) return;
         if (Input.IsKeyPressed(Key.Shift)) return;
 
-        if (@event is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }
+        // Single pick fires on release, and only when the press never became a
+        // rectangle drag — otherwise finishing a capture would also overwrite
+        // the freshly armed mosaic with whatever tile is under the cursor.
+        if (@event is not InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Left }
+            || wasDrag
             || _sheetPreview == null || Grhs == null || Textures == null || _selectedFileNumber <= 0)
             return;
 
@@ -904,5 +1017,77 @@ public partial class SheetPalette : VBoxContainer
         _regionCache.Clear();
         _currentRegions.Clear();
         _availableFiles.Clear();
+    }
+}
+
+/// <summary>
+/// Transparent overlay that draws the in-progress capture rectangle over the
+/// sheet preview, with a badge showing how many 32×32 tiles it spans.
+/// </summary>
+public partial class SheetDragOverlay : Control
+{
+    private Rect2 _rect;
+    private int _cols;
+    private int _rows;
+    private bool _active;
+
+    public void SetRect(Rect2 rect, int cols, int rows)
+    {
+        _rect = rect;
+        _cols = cols;
+        _rows = rows;
+        _active = true;
+        QueueRedraw();
+    }
+
+    public void Clear()
+    {
+        if (!_active) return;
+        _active = false;
+        QueueRedraw();
+    }
+
+    public override void _Draw()
+    {
+        if (!_active || _rect.Size.X <= 0 || _rect.Size.Y <= 0) return;
+
+        DrawRect(_rect, EditorTheme.ACCENT with { A = 0.20f }, filled: true);
+        DrawRect(_rect, EditorTheme.ACCENT, filled: false, width: 2f);
+
+        // Grid lines so the tile boundaries inside the capture are readable.
+        if (_cols > 1 || _rows > 1)
+        {
+            var grid = EditorTheme.ACCENT with { A = 0.35f };
+            float cw = _rect.Size.X / _cols;
+            float ch = _rect.Size.Y / _rows;
+            for (int c = 1; c < _cols; c++)
+            {
+                float x = _rect.Position.X + cw * c;
+                DrawLine(new Vector2(x, _rect.Position.Y),
+                         new Vector2(x, _rect.End.Y), grid, 1f);
+            }
+            for (int r = 1; r < _rows; r++)
+            {
+                float y = _rect.Position.Y + ch * r;
+                DrawLine(new Vector2(_rect.Position.X, y),
+                         new Vector2(_rect.End.X, y), grid, 1f);
+            }
+        }
+
+        var font = ThemeDB.FallbackFont;
+        if (font == null) return;
+        string text = $"{_cols}×{_rows}";
+        int fontSize = EditorTheme.FONT_SM;
+        var textSize = font.GetStringSize(text, HorizontalAlignment.Left, -1, fontSize);
+
+        // Badge sits just above the rectangle, flipping inside when at the top edge.
+        var badgePos = new Vector2(_rect.Position.X, _rect.Position.Y - textSize.Y - 6);
+        if (badgePos.Y < 0) badgePos.Y = _rect.Position.Y + 4;
+
+        var badgeRect = new Rect2(badgePos, textSize + new Vector2(10, 6));
+        DrawRect(badgeRect, EditorTheme.BG_DARK with { A = 0.85f }, filled: true);
+        DrawRect(badgeRect, EditorTheme.ACCENT with { A = 0.6f }, filled: false, width: 1f);
+        DrawString(font, badgePos + new Vector2(5, textSize.Y + 1),
+            text, HorizontalAlignment.Left, -1, fontSize, Colors.White);
     }
 }

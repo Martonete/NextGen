@@ -135,13 +135,20 @@ public partial class Main
 
 		// === Bottom bar labels (dynamic Y from ResolutionManager) ===
 		int bbY = ResolutionManager.BottomBarY + S(9);  // 565+9=574 at 800x600
+		// Equipment condition now lives in the character sheet (P). The labels
+		// stay alive but hidden so GameUIUpdater keeps writing to them without
+		// a null check, and the bottom bar is left clear.
 		_armorLabel = CreateStatLabel(S(55), bbY, S(100), S(17), Colors.White, S(7));
+		_armorLabel.Visible = false;
 		_gameUI.AddChild(_armorLabel);
 		_helmLabel = CreateStatLabel(S(170), bbY, S(90), S(17), Colors.White, S(7));
+		_helmLabel.Visible = false;
 		_gameUI.AddChild(_helmLabel);
 		_shieldLabel = CreateStatLabel(S(310), bbY, S(95), S(17), Colors.White, S(7));
+		_shieldLabel.Visible = false;
 		_gameUI.AddChild(_shieldLabel);
 		_weaponLabel = CreateStatLabel(S(435), bbY, S(90), S(17), Colors.White, S(7));
+		_weaponLabel.Visible = false;
 		_gameUI.AddChild(_weaponLabel);
 		// Agilidad | Fuerza — centered as a single row in the sidebar
 		int statRowW = S(190);
@@ -292,6 +299,27 @@ public partial class Main
 	/// Minimap visible: console/input shrink to leave room for minimap.
 	/// Minimap hidden: console/input expand to fill full width.
 	/// </summary>
+	/// <summary>
+	/// Pushes current character data into the sheet. Called when it is opened
+	/// and whenever stats change, so the panel never shows a stale snapshot.
+	/// </summary>
+	private void RefreshCharPanel()
+	{
+		if (_charPanel == null || !_charPanel.Visible) return;
+
+		string name = _state.Characters.TryGetValue(_state.UserCharIndex, out var self)
+			? self.Name : "";
+		_charPanel.SetCharInfo(name, _state.Level);
+		_charPanel.SetExp(_state.Exp, _state.ExpNext);
+
+		int thirst = _state.MaxAgua > 0 ? _state.MinAgua * 100 / _state.MaxAgua : 0;
+		int hunger = _state.MaxHam > 0 ? _state.MinHam * 100 / _state.MaxHam : 0;
+		_charPanel.SetVitals(thirst, hunger);
+
+		_charPanel.SetEquipment(_state.ArmourLabel, _state.HelmLabel,
+			_state.ShieldLabel, _state.WeaponLabel);
+	}
+
 	private void UpdateConsoleWidth()
 	{
 		if (_consoleLabel == null) return;
@@ -520,6 +548,41 @@ public partial class Main
 		_minimapBorder = minimapBorder;
 		UpdateConsoleWidth();
 
+		// Character sheet — toggled with P, so it overlays the world instead of
+		// taking permanent sidebar space.
+		// Built from CharPanel.tscn so the field positions stay editable in the
+		// Godot editor instead of being baked into code.
+		var charPanelScene = GD.Load<PackedScene>("res://Scenes/CharPanel.tscn");
+		_charPanel = charPanelScene?.Instantiate<CharPanel>();
+		if (_charPanel != null)
+		{
+			// The frame art is already detailed at 1:1; scaling it by the full UI
+			// factor made it dominate the screen, so it grows at a gentler rate.
+			float charPanelScale = Mathf.Clamp(ResolutionManager.UIScale * 0.6f, 1f, 1.4f);
+			_charPanel.Scale = new Vector2(charPanelScale, charPanelScale);
+			int charPanelW = (int)(CharPanel.FrameW * charPanelScale);
+			_charPanel.Position = new Vector2(
+				ResolutionManager.LeftMargin + (ResolutionManager.ViewportW - charPanelW) / 2,
+				ResolutionManager.TopMargin + S(40));
+			_charPanel.Visible = false;
+			_charPanel.ZIndex = RpgBaseForm.ZPanel;
+			_gameUI.AddChild(_charPanel);
+
+			// Restore where the player last parked it, then keep config in sync.
+			var cfg = _state.Config;
+			if (cfg.CharPanelX >= 0 && cfg.CharPanelY >= 0)
+				_charPanel.ApplyLayout(new Vector2(cfg.CharPanelX, cfg.CharPanelY), cfg.CharPanelLocked);
+			else
+				_charPanel.ApplyLayout(Vector2.Zero, cfg.CharPanelLocked);
+
+			_charPanel.Moved += pos =>
+			{
+				cfg.CharPanelX = (int)pos.X;
+				cfg.CharPanelY = (int)pos.Y;
+			};
+			_charPanel.LockedChanged += locked => cfg.CharPanelLocked = locked;
+		}
+
 		// Quest panel
 		_questPanel = new QuestPanel();
 		_questPanel.Position = new Vector2(ResolutionManager.LeftMargin + (ResolutionManager.ViewportW - 560) / 2, S(50));
@@ -610,6 +673,12 @@ public partial class Main
 			_minimapPanel.Visible = newVisible;
 			_state.Config.ShowMinimap = newVisible;
 			UpdateConsoleWidth();
+		};
+		_inputRouter.OnCharPanelToggle = () =>
+		{
+			if (_charPanel == null) return;
+			_charPanel.Visible = !_charPanel.Visible;
+			if (_charPanel.Visible) RefreshCharPanel();
 		};
 	}
 }

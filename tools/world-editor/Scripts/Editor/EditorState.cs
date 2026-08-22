@@ -21,6 +21,34 @@ public class EditorState
     // Raw GRH for painting (set by eyedrop when no TextureRef match)
     public int EyedropGrh;
 
+    // Recently used raw GRHs, most recent first. Big one-off pieces (altars,
+    // buildings) are painful to find by number in the browser every time, so
+    // the palette keeps a short reuse list that survives across sessions.
+    public readonly List<int> RecentGrhs = new();
+    public const int MaxRecentGrhs = 12;
+    public event Action? RecentGrhsChanged;
+
+    public void PushRecentGrh(int grhIndex)
+    {
+        if (grhIndex <= 0) return;
+        RecentGrhs.Remove(grhIndex);
+        RecentGrhs.Insert(0, grhIndex);
+        while (RecentGrhs.Count > MaxRecentGrhs)
+            RecentGrhs.RemoveAt(RecentGrhs.Count - 1);
+        RecentGrhsChanged?.Invoke();
+    }
+
+    public void LoadRecentGrhs(IEnumerable<int> saved)
+    {
+        RecentGrhs.Clear();
+        foreach (int g in saved)
+        {
+            if (g > 0 && !RecentGrhs.Contains(g) && RecentGrhs.Count < MaxRecentGrhs)
+                RecentGrhs.Add(g);
+        }
+        RecentGrhsChanged?.Invoke();
+    }
+
     // When a raw GRH covers several tiles, block the tiles it visually occupies
     // so later strokes don't paint into ground the piece already claims.
     // Off for terrain work, where big seamless textures are meant to be walkable.

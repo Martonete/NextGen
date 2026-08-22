@@ -51,6 +51,12 @@ public class GameConfig
 	public bool ShowDeathDialog = true;     // VB6: General_Mostrar_Cartel_Muerte
 	public int ScreenshotFormat;            // VB6: 0=JPG, 1=BMP
 
+	// Character sheet (P): remembered placement. -1 means "not placed yet", so
+	// the panel falls back to its centred default.
+	public int CharPanelX = -1;
+	public int CharPanelY = -1;
+	public bool CharPanelLocked;
+
 	// ── Console/Chat ──────────────────────────────────────
 	public bool ShowGlobalChat = true;      // VB6: !Consola_Globales_DeActivate
 	public bool ShowPrivateChat = true;     // VB6: !Consola_Privados_DeActivate
@@ -122,6 +128,9 @@ public class GameConfig
 		ShowMinimapPosition = other.ShowMinimapPosition;
 		ShowDeathDialog = other.ShowDeathDialog;
 		ScreenshotFormat = other.ScreenshotFormat;
+		CharPanelX = other.CharPanelX;
+		CharPanelY = other.CharPanelY;
+		CharPanelLocked = other.CharPanelLocked;
 
 		ShowGlobalChat = other.ShowGlobalChat;
 		ShowPrivateChat = other.ShowPrivateChat;
@@ -225,6 +234,9 @@ public class GameConfig
 					case "ShowMinimapPosition": cfg.ShowMinimapPosition = val == "1"; break;
 					case "ShowDeathDialog": cfg.ShowDeathDialog = val == "1"; break;
 					case "ScreenshotFormat": if (int.TryParse(val, out int ssf)) cfg.ScreenshotFormat = ssf; break;
+					case "CharPanelX": if (int.TryParse(val, out int cpx)) cfg.CharPanelX = cpx; break;
+					case "CharPanelY": if (int.TryParse(val, out int cpy)) cfg.CharPanelY = cpy; break;
+					case "CharPanelLocked": cfg.CharPanelLocked = val == "1"; break;
 
 					// Console/Chat
 					case "ShowGlobalChat": cfg.ShowGlobalChat = val == "1"; break;
@@ -312,6 +324,9 @@ public class GameConfig
 			// Interface
 			sb.AppendLine($"ShowMinimap={(ShowMinimap ? "1" : "0")}");
 			sb.AppendLine($"ScreenshotFormat={ScreenshotFormat}");
+			sb.AppendLine($"CharPanelX={CharPanelX}");
+			sb.AppendLine($"CharPanelY={CharPanelY}");
+			sb.AppendLine($"CharPanelLocked={(CharPanelLocked ? "1" : "0")}");
 
 			// Console/Chat
 			sb.AppendLine($"ShowGlobalChat={(ShowGlobalChat ? "1" : "0")}");

@@ -558,6 +558,80 @@ public static class EditorTheme
     }
 
     // ══════════════════════════════════════════════════════════════════
+    // Dialog windows — consistent styled modal, replaces bare OS-chrome Window
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Turns a bare <see cref="Window"/> into a borderless modal styled like the
+    /// rest of the editor: dark panel, accent-colored header with a close "×"
+    /// button, and a dimmed backdrop behind it so it reads as modal instead of
+    /// a stray OS window that can get lost behind the main editor.
+    /// Returns the VBoxContainer callers should fill with the dialog's fields.
+    /// </summary>
+    public static VBoxContainer StyleDialogWindow(Window window, string title, Vector2I size, bool modal = true)
+    {
+        window.Title = title; // kept for alt-tab / accessibility even though chrome is hidden
+        window.Borderless = true;
+        window.Size = size;
+        window.Visible = false; // caller opts in via PopupStyledDialog / Show / Visible = true
+        window.Transient = true;
+        window.Exclusive = modal;
+        window.Unresizable = true;
+        if (!modal) window.AlwaysOnTop = true;
+
+        Node host = window;
+        if (modal)
+        {
+            // Dimmed backdrop: makes the dialog read as modal against the editor behind it.
+            var backdrop = new ColorRect { Color = new Color(0, 0, 0, 0.45f) };
+            backdrop.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            backdrop.MouseFilter = Control.MouseFilterEnum.Stop;
+            window.AddChild(backdrop);
+            host = backdrop;
+        }
+
+        var root = new PanelContainer();
+        root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        root.AddThemeStyleboxOverride("panel", FlatBox(BG_PANEL, 8, 0, 0, BORDER, 1));
+        host.AddChild(root);
+
+        var outer = new VBoxContainer();
+        outer.AddThemeConstantOverride("separation", 0);
+        root.AddChild(outer);
+
+        // Header bar: title + close button, styled like the rest of the toolbar.
+        var header = new PanelContainer();
+        header.AddThemeStyleboxOverride("panel", FlatBox(BG_HEADER, 0, 14, 8));
+        var headerRow = new HBoxContainer();
+        headerRow.AddThemeConstantOverride("separation", 8);
+        headerRow.AddChild(Heading(title));
+        headerRow.AddChild(Spacer());
+        var closeBtn = MakeButton("✕", () => window.Hide(), TEXT_SECONDARY);
+        closeBtn.TooltipText = "Cerrar";
+        headerRow.AddChild(closeBtn);
+        header.AddChild(headerRow);
+        outer.AddChild(header);
+
+        var margin = new MarginContainer();
+        margin.AddThemeConstantOverride("margin_left", 20);
+        margin.AddThemeConstantOverride("margin_right", 20);
+        margin.AddThemeConstantOverride("margin_top", 16);
+        margin.AddThemeConstantOverride("margin_bottom", 16);
+        margin.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        outer.AddChild(margin);
+
+        var content = new VBoxContainer();
+        content.AddThemeConstantOverride("separation", 10);
+        margin.AddChild(content);
+
+        window.CloseRequested += window.Hide;
+        return content;
+    }
+
+    /// <summary>Centers and shows a dialog previously styled with <see cref="StyleDialogWindow"/>.</summary>
+    public static void PopupStyledDialog(Window window) => window.PopupCentered();
+
+    // ══════════════════════════════════════════════════════════════════
     // Programmatic Vector Icon Drawing
     // ══════════════════════════════════════════════════════════════════
 

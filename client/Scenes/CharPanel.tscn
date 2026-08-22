@@ -1,0 +1,124 @@
+[gd_scene load_steps=6 format=3 uid="uid://da6ry8kfxw1wc"]
+
+[ext_resource type="Script" path="res://Scripts/UI/CharPanel.cs" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://1hhixqrr0m8" path="res://Assets/UI/char_panel_frame.png" id="2_frame"]
+[ext_resource type="Texture2D" uid="uid://bc3ecbxhvmll3" path="res://Assets/UI/char_bar_gold.png" id="3_gold"]
+[ext_resource type="Texture2D" uid="uid://dipgykqmwlubq" path="res://Assets/UI/char_bar_blue.png" id="4_blue"]
+[ext_resource type="Texture2D" uid="uid://ct0yt773purk1" path="res://Assets/UI/char_bar_green.png" id="5_green"]
+
+[node name="CharPanel" type="Control"]
+custom_minimum_size = Vector2(304, 184)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 304.0
+offset_bottom = 184.0
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Frame" type="TextureRect" parent="."]
+layout_mode = 0
+offset_right = 304.0
+offset_bottom = 184.0
+mouse_filter = 2
+texture = ExtResource("2_frame")
+
+[node name="ExpBar" type="TextureProgressBar" parent="."]
+layout_mode = 0
+offset_left = 18.0
+offset_top = 66.0
+offset_right = 306.0
+offset_bottom = 79.0
+mouse_filter = 2
+value = 65.0
+nine_patch_stretch = true
+texture_progress = ExtResource("3_gold")
+
+[node name="NameLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 34.0
+offset_top = 12.0
+offset_right = 224.0
+offset_bottom = 28.0
+theme_override_colors/font_color = Color(0.94, 0.88, 0.66, 1)
+theme_override_font_sizes/font_size = 11
+text = "Nombre"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="LevelLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 29.0
+offset_top = 44.0
+offset_right = 219.0
+offset_bottom = 58.0
+theme_override_colors/font_color = Color(0.97, 0.95, 0.88, 1)
+theme_override_font_sizes/font_size = 10
+text = "Nivel 1"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ArmorLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 126.0
+offset_right = 162.0
+offset_bottom = 139.0
+theme_override_colors/font_color = Color(0.82, 0.84, 0.88, 1)
+theme_override_font_sizes/font_size = 9
+text = "Armadura: 0/0"
+vertical_alignment = 1
+
+[node name="HelmLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 143.0
+offset_top = 124.0
+offset_right = 257.0
+offset_bottom = 137.0
+theme_override_colors/font_color = Color(0.82, 0.84, 0.88, 1)
+theme_override_font_sizes/font_size = 9
+text = "Casco: 0/0"
+vertical_alignment = 1
+
+[node name="ShieldLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 100.0
+offset_right = 162.0
+offset_bottom = 113.0
+theme_override_colors/font_color = Color(0.82, 0.84, 0.88, 1)
+theme_override_font_sizes/font_size = 9
+text = "Escudo: 0/0"
+vertical_alignment = 1
+
+[node name="WeaponLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 143.0
+offset_top = 99.0
+offset_right = 257.0
+offset_bottom = 112.0
+theme_override_colors/font_color = Color(0.82, 0.84, 0.88, 1)
+theme_override_font_sizes/font_size = 9
+text = "Arma: 0/0"
+vertical_alignment = 1
+
+[node name="ThirstBar" type="TextureProgressBar" parent="."]
+layout_mode = 0
+offset_left = 51.0
+offset_top = 157.0
+offset_right = 121.0
+offset_bottom = 165.0
+mouse_filter = 2
+value = 100.0
+nine_patch_stretch = true
+texture_progress = ExtResource("4_blue")
+
+[node name="HungerBar" type="TextureProgressBar" parent="."]
+layout_mode = 0
+offset_left = 184.0
+offset_top = 157.0
+offset_right = 254.0
+offset_bottom = 165.0
+mouse_filter = 2
+value = 100.0
+nine_patch_stretch = true
+texture_progress = ExtResource("5_green")

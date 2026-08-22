@@ -132,7 +132,8 @@ public partial class StatBarOverlay : Control
         DrawBar(StaRect, _staTex, StaColor, _minSta, _maxSta);
         DrawBar(AguaRect, _aguaTex, AguaColor, _minAgua, _maxAgua);
         DrawBar(HamRect, _hamTex, HamColor, _minHam, _maxHam);
-        DrawBar(ExpRect, _expTex, ExpColor, _exp, _expNext);
+        // Experience is shown by the character sheet (P) now; drawing it here
+        // too would leave a fill floating over the hidden sidebar frame.
 
         if (_font == null) return;
 

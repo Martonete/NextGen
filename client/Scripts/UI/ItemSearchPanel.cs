@@ -21,6 +21,13 @@ public partial class ItemSearchPanel : RpgBaseForm
     private Label? _detailLabel;
     private readonly List<int> _filtered = new();
 
+    /// <summary>
+    /// Cap on rows built per search. High enough to hold any single item type
+    /// whole (armours, the largest, number 391) while still bounding the work
+    /// when the query is empty.
+    /// </summary>
+    private const int MaxResults = 1000;
+
     public ItemSearchPanel() : base("Buscar Items", new Vector2(620, 460), "v2") { }
 
     public void Init(GameData data, AoTcpClient? tcp)
@@ -160,10 +167,10 @@ public partial class ItemSearchPanel : RpgBaseForm
         EnsureCatalogLoaded();
 
         int catalogCount = CountCatalogItems();
-        if (_statusLabel != null)
-            _statusLabel.Text = catalogCount > 0
-                ? $"Catalogo cargado: {catalogCount} items ({System.IO.Path.GetFileName(ObjectLoader.LastSourcePath)})"
-                : "Catalogo vacio: no se encontro obj.dat o no se pudo leer.";
+        // Only report the catalog here; the result count below overwrites this
+        // once the search actually runs.
+        if (_statusLabel != null && catalogCount == 0)
+            _statusLabel.Text = "Catalogo vacio: no se encontro obj.dat o no se pudo leer.";
 
         if (catalogCount == 0)
         {
@@ -182,6 +189,7 @@ public partial class ItemSearchPanel : RpgBaseForm
 
         _filtered.Clear();
         _results.Clear();
+        int matches = 0;
 
         for (int i = 1; i < _objects.Length; i++)
         {
@@ -194,9 +202,19 @@ public partial class ItemSearchPanel : RpgBaseForm
                 && !Normalize(TypeName(obj.ObjType)).Contains(queryNorm))
                 continue;
 
+            matches++;
+            if (_filtered.Count >= MaxResults) continue;   // keep counting to report the true total
             _filtered.Add(obj.Index);
             _results.AddItem($"[{obj.Index}] {obj.Name}  ({TypeName(obj.ObjType)})");
-            if (_filtered.Count >= 250) break;
+        }
+
+        // Silently truncating hid whole item ranges (there are 391 armours, for
+        // one), so the count is always reported and a cut is called out.
+        if (_statusLabel != null)
+        {
+            _statusLabel.Text = matches > _filtered.Count
+                ? $"Mostrando {_filtered.Count} de {matches} — refiná la búsqueda para ver el resto"
+                : $"{matches} resultado{(matches == 1 ? "" : "s")}";
         }
 
         if (_filtered.Count > 0)

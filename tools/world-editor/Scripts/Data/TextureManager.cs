@@ -142,8 +142,10 @@ public class TextureManager
             {
                 _lruSkipCounter = 0;
                 _lruOrder.Remove(node);
-                var newNode = _lruOrder.AddFirst(fileNum);
-                _lruNodes[fileNum] = newNode;
+                // Reinsert the same node. Creating a replacement here used to
+                // allocate one LinkedListNode every 64 texture lookups, which
+                // becomes noticeable while panning a dense map.
+                _lruOrder.AddFirst(node);
             }
             return cached;
         }
@@ -195,8 +197,10 @@ public class TextureManager
             int evict = _lruOrder.Last!.Value;
             _lruOrder.RemoveLast();
             _lruNodes.Remove(evict);
-            _cache.Remove(evict);
-            _imageCache.Remove(evict);
+            if (_cache.Remove(evict, out var oldTexture))
+                SafeDispose(oldTexture);
+            if (_imageCache.Remove(evict, out var oldImage))
+                SafeDispose(oldImage);
         }
 
         _cache[fileNum] = texture;

@@ -331,6 +331,10 @@ public partial class ParticlePalette : VBoxContainer
             Grhs = Grhs,
             Textures = Textures,
             NpcBodyGrhs = NpcBodyGrhs,
+            // Particles.ini lives in INIT/, which is also where Fxs.ind is.
+            InitPath = ParticlesIniPath.Length > 0
+                ? System.IO.Path.GetDirectoryName(ParticlesIniPath) ?? ""
+                : "",
         };
         popup.OnSaved += () => SelectDefinitionProgrammatically(index);
         // "Duplicar" inside the popup: commit the clone as a new def and select it

@@ -464,6 +464,9 @@ public partial class EditorMain : Control
         _palette.CommerceStampRequested += PlaceCommerceTemplate;
         _palette.SheetTabRequested += ShowSheetTab;
         _sidebarTabs.AddChild(_palette);
+        // Eyedropper and the sheet pickers also feed the recent strip, so the
+        // palette has to redraw it no matter where the GRH came from.
+        _state.RecentGrhsChanged += () => _palette?.RefreshRecentGrhs();
 
         // Docked sheet browser: same job as the modal popup, but the map stays
         // visible so large pieces can be judged against their surroundings.
@@ -860,17 +863,9 @@ public partial class EditorMain : Control
         statusOuter.AddChild(_statusBar);
         AddChild(statusOuter);
 
-        // --- Tile Properties floating Window ---
-        _propsWindow = new Window
-        {
-            Title = "Propiedades de Tile",
-            Size = new Vector2I(280, 500),
-            Visible = false,
-            Exclusive = false,
-            AlwaysOnTop = true,
-            Unresizable = false,
-        };
-        _propsWindow.CloseRequested += () => _propsWindow.Visible = false;
+        // --- Tile Properties dialog ---
+        _propsWindow = new Window();
+        var propsContent = EditorTheme.StyleDialogWindow(_propsWindow, "Propiedades de Tile", new Vector2I(300, 520), modal: false);
         AddChild(_propsWindow);
 
         _propsPanel = new TilePropertiesPanel
@@ -880,7 +875,7 @@ public partial class EditorMain : Control
             Undo = _undo,
             OnTileChanged = () => { _viewport?.MarkLightmapDirty(); _viewport?.QueueRedraw(); },
         };
-        _propsWindow.AddChild(_propsPanel);
+        propsContent.AddChild(_propsPanel);
 
         // --- File dialogs ---
         _openDialog = new FileDialog
@@ -927,29 +922,11 @@ public partial class EditorMain : Control
         _serverPathDialog.DirSelected += OnServerPathSelected;
         AddChild(_serverPathDialog);
 
-        // Insert Map: compact centered format selector window
+        // Insert Map: compact centered format selector dialog
         _insertFormatWindow = new Window();
-        _insertFormatWindow.Title = "Insertar Mapa";
-        _insertFormatWindow.Size = new Vector2I(320, 180);
-        _insertFormatWindow.Exclusive = true;
-        _insertFormatWindow.Unresizable = true;
-        _insertFormatWindow.Visible = false;
-        _insertFormatWindow.WrapControls = true;
-        _insertFormatWindow.Transient = true;
-        _insertFormatWindow.CloseRequested += () => _insertFormatWindow.Hide();
+        var insertVbox = EditorTheme.StyleDialogWindow(_insertFormatWindow, "Insertar Mapa", new Vector2I(320, 220));
 
-        var insertMargin = new MarginContainer();
-        insertMargin.AddThemeConstantOverride("margin_left", 20);
-        insertMargin.AddThemeConstantOverride("margin_right", 20);
-        insertMargin.AddThemeConstantOverride("margin_top", 16);
-        insertMargin.AddThemeConstantOverride("margin_bottom", 16);
-        insertMargin.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-
-        var insertVbox = new VBoxContainer();
-        insertVbox.AddThemeConstantOverride("separation", 12);
-
-        var insertLabel = new Label { Text = "Formato del mapa:" };
-        insertLabel.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        var insertLabel = EditorTheme.MakeLabel("Formato del mapa:");
         insertVbox.AddChild(insertLabel);
 
         _insertFormatSelect = new OptionButton();
@@ -960,14 +937,10 @@ public partial class EditorMain : Control
         _insertFormatSelect.Selected = 0;
         insertVbox.AddChild(_insertFormatSelect);
 
-        var insertBtn = new Button { Text = "Seleccionar Mapa..." };
-        insertBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        var insertBtn = EditorTheme.PrimaryButton("Seleccionar Mapa...", OnInsertSelectMapPressed);
         insertBtn.CustomMinimumSize = new Vector2(0, 36);
-        insertBtn.Pressed += OnInsertSelectMapPressed;
         insertVbox.AddChild(insertBtn);
 
-        insertMargin.AddChild(insertVbox);
-        _insertFormatWindow.AddChild(insertMargin);
         AddChild(_insertFormatWindow);
 
         // Insert Map: file selector dialog (only .map files)
@@ -1405,7 +1378,8 @@ public partial class EditorMain : Control
                 $"client_data={_dataPath}",
                 $"server_maps={_serverMapDir}",
                 $"server_dat={_serverDatDir}",
-                $"export_client_data={_exportClientDataPath}"
+                $"export_client_data={_exportClientDataPath}",
+                $"recent_grhs={string.Join(",", _state.RecentGrhs)}"
             };
             File.WriteAllLines(GetConfigPath(), lines);
             GD.Print($"[Editor] Config saved: {GetConfigPath()}");
@@ -1432,9 +1406,30 @@ public partial class EditorMain : Control
 
     private bool _dataLoaded;
 
+    /// <summary>
+    /// Restores the recent raw-GRH strip from config. Entries are validated
+    /// lazily by the palette, so a stale id from an older Graficos.ind simply
+    /// renders as its number instead of breaking the row.
+    /// </summary>
+    private void LoadRecentGrhsFromConfig()
+    {
+        string? saved = LoadConfigValue("recent_grhs");
+        if (string.IsNullOrWhiteSpace(saved)) return;
+
+        var ids = new List<int>();
+        foreach (string part in saved.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (int.TryParse(part.Trim(), out int id) && id > 0)
+                ids.Add(id);
+        }
+        if (ids.Count > 0) _state.LoadRecentGrhs(ids);
+    }
+
     private void TryAutoDetectDataPath()
     {
         if (_dataLoaded) return;
+
+        LoadRecentGrhsFromConfig();
 
         // 1. Try saved config first
         string? savedPath = LoadConfigValue("client_data");
@@ -1541,29 +1536,7 @@ public partial class EditorMain : Control
         if (_setupWindow != null) { _setupWindow.Show(); return; }
 
         _setupWindow = new Window();
-        _setupWindow.Title = "Configuración Inicial";
-        _setupWindow.Size = new Vector2I(500, 340);
-        _setupWindow.Exclusive = false;
-        _setupWindow.Unresizable = true;
-        _setupWindow.CloseRequested += () => _setupWindow.Hide();
-
-        var panel = new PanelContainer();
-        panel.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        panel.AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(EditorTheme.BG_PANEL));
-        _setupWindow.AddChild(panel);
-
-        var margin = new MarginContainer();
-        margin.AddThemeConstantOverride("margin_top", 16);
-        margin.AddThemeConstantOverride("margin_left", 20);
-        margin.AddThemeConstantOverride("margin_right", 20);
-        margin.AddThemeConstantOverride("margin_bottom", 16);
-        panel.AddChild(margin);
-
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 10);
-        margin.AddChild(vbox);
-
-        vbox.AddChild(EditorTheme.Heading("Configurar Rutas"));
+        var vbox = EditorTheme.StyleDialogWindow(_setupWindow, "Configuración Inicial", new Vector2I(500, 360));
 
         // Client path
         vbox.AddChild(EditorTheme.MakeLabel("Carpeta de Recursos"));
@@ -2629,8 +2602,21 @@ public partial class EditorMain : Control
         if (_propsWindow == null) return;
         _propsWindow.Visible = !_propsWindow.Visible;
         if (_propsWindow.Visible)
-            _propsWindow.Position = new Vector2I(
-                (int)GetViewportRect().Size.X - 300, 60);
+            PositionPropsWindow();
+    }
+
+    /// <summary>
+    /// Docks the tile-properties panel against the right edge of the editor's
+    /// own window, clear of the left-side palette. Uses the editor window's
+    /// real size (not GetViewportRect, which can be screen-relative once the
+    /// panel is embedded) so it lands correctly regardless of monitor offset.
+    /// </summary>
+    private void PositionPropsWindow()
+    {
+        if (_propsWindow == null) return;
+        var editorSize = GetWindow().Size;
+        int x = Math.Max(8, editorSize.X - _propsWindow.Size.X - 12);
+        _propsWindow.Position = new Vector2I(x, 60);
     }
 
     private void OpenWalkMode()
@@ -3126,39 +3112,17 @@ public partial class EditorMain : Control
     private void BuildTrimBordersDialog()
     {
         _trimBordersWindow = new Window();
-        _trimBordersWindow.Title = "Cortar Bordes";
-        _trimBordersWindow.Size = new Vector2I(300, 160);
-        _trimBordersWindow.Exclusive = true;
-        _trimBordersWindow.Unresizable = true;
-        _trimBordersWindow.Visible = false;
-        _trimBordersWindow.Transient = true;
-        _trimBordersWindow.WrapControls = true;
-        _trimBordersWindow.CloseRequested += () => _trimBordersWindow.Hide();
+        var vbox = EditorTheme.StyleDialogWindow(_trimBordersWindow, "Cortar Bordes", new Vector2I(300, 220));
 
-        var margin = new MarginContainer();
-        margin.AddThemeConstantOverride("margin_left", 20);
-        margin.AddThemeConstantOverride("margin_right", 20);
-        margin.AddThemeConstantOverride("margin_top", 16);
-        margin.AddThemeConstantOverride("margin_bottom", 16);
-        margin.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 12);
-
-        var label = new Label { Text = "Tiles a cortar de cada borde:" };
-        label.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
-        vbox.AddChild(label);
+        vbox.AddChild(EditorTheme.MakeLabel("Tiles a cortar de cada borde:"));
 
         _trimBordersSpin = EditorTheme.MakeSpinBox(1, 50, 1);
         _trimBordersSpin.Value = 6;
         vbox.AddChild(_trimBordersSpin);
 
-        var applyBtn = EditorTheme.PrimaryButton("Aplicar recorte");
-        applyBtn.Pressed += OnTrimBordersApply;
+        var applyBtn = EditorTheme.PrimaryButton("Aplicar recorte", OnTrimBordersApply);
         vbox.AddChild(applyBtn);
 
-        margin.AddChild(vbox);
-        _trimBordersWindow.AddChild(margin);
         AddChild(_trimBordersWindow);
     }
 
@@ -3711,6 +3675,7 @@ public partial class EditorMain : Control
         _state.SelectedTexture = null;
         _state.EyedropGrh = grhIndex;
         _state.ClearSheetMosaic();
+        _state.PushRecentGrh(grhIndex);
         SetActiveTool(EditorTool.Paint);
         SetStatus($"GRH {grhIndex} listo — clic en el mapa para pintarlo en L{_state.ActiveLayer}");
     }
@@ -3773,6 +3738,7 @@ public partial class EditorMain : Control
         _state.SelectedTexture = null;
         _state.EyedropGrh = grhIndex;
         _state.ClearSheetMosaic();
+        _state.PushRecentGrh(grhIndex);
         SetActiveTool(EditorTool.Paint);
         SetStatus($"GRH {grhIndex} completo — elegí capa (L1-L4) y clic en el mapa");
     }
@@ -4001,8 +3967,7 @@ public partial class EditorMain : Control
             if (_propsWindow != null && !_propsWindow.Visible)
             {
                 _propsWindow.Visible = true;
-                _propsWindow.Position = new Vector2I(
-                    (int)GetViewportRect().Size.X - 300, 60);
+                PositionPropsWindow();
             }
         }
 
@@ -4364,6 +4329,10 @@ public partial class EditorMain : Control
         // Intercept window close to check for unsaved changes
         if (what == NotificationWMCloseRequest)
         {
+            // Session preferences (recent GRHs, paths) are only in memory until
+            // now, and closing is the common exit — persist before quitting.
+            SaveConfig();
+
             if (_state.IsDirty)
             {
                 CheckDirtyThen(() => GetTree().Quit());
