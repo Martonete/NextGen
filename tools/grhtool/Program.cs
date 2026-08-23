@@ -24,6 +24,12 @@ internal static class Program
     /// </summary>
     private const int MaxRegionsPerSheet = 200;
 
+    /// <summary>
+    /// Palette entries taken from a single non-terrain sheet. Keeps big scenery
+    /// atlases from burying the editor's palette in 32px fragments.
+    /// </summary>
+    private const int MaxPaletteEntriesPerSheet = 24;
+
     // GrhEntry exposes plain fields, so IncludeFields is required or the dump
     // silently writes zeros. Defaults are written too: an SX of 0 is real data.
     private static readonly JsonSerializerOptions Json = new()
@@ -54,6 +60,8 @@ internal static class Program
                 "npcs" => NpcsCmd(args),
                 "fxs" => FxsCmd(args),
                 "special" => SpecialCmd(args),
+                "maps" => MapsCmd(args),
+                "palette" => PaletteCmd(args),
                 _ => Usage(),
             };
         }
@@ -402,6 +410,201 @@ internal static class Program
         idx.Count = idx.Entries.Max(e => e.Index);
         idx.Save(indPath);
         Console.WriteLine($"\nescrito {indPath} (respaldo en {indPath}.bak)");
+        return 0;
+    }
+
+    // ---- palette ------------------------------------------------------------
+
+    /// <summary>
+    /// Generates indices.ini, the World Editor's texture palette.
+    ///
+    /// The editor groups references by a Type= field and draws each on a fixed
+    /// layer, so the catalogue's classes map onto both: terrain paints on layer
+    /// 1, scenery on layer 2, roofs on layer 3.
+    /// </summary>
+    private static int PaletteCmd(string[] args)
+    {
+        if (args.Length < 4) return Usage();
+        string indPath = args[1], catPath = args[2], outPath = args[3];
+        bool apply = args.Contains("--apply");
+
+        var idx = GrhIndex.Load(indPath);
+        var cat = Catalog.Load(catPath);
+        var statics = idx.Entries.Where(e => !e.IsAnimated).ToDictionary(e => e.Index);
+        var animated = idx.Entries.Where(e => e.IsAnimated)
+                                  .ToDictionary(e => e.Index, e => e.Frames.FirstOrDefault());
+
+        // Category and layer per class. Layer 1 is the ground, 2 holds objects
+        // and scenery the player walks behind, 3 is roofs.
+        (string type, int layer) Bucket(GrhClass c) => c switch
+        {
+            GrhClass.Tile => ("Terreno", 1),
+            GrhClass.TileBlock => ("Terreno", 1),
+            GrhClass.Prop => ("Estructuras", 2),
+            GrhClass.Item => ("Objetos", 2),
+            GrhClass.Npc => ("Objetos", 2),
+            _ => ("Otros", 2),
+        };
+
+        var refs = new List<(string name, int grh, int w, int h, int layer, string type)>();
+        var waterGrhs = cat.WaterRanges.SelectMany(r => Enumerable.Range(r[0], r[1] - r[0] + 1)).ToHashSet();
+        var treeGrhs = cat.Trees.ToHashSet();
+
+        foreach (var sheet in cat.Sheets.OrderBy(s => s.Sheet))
+        {
+            // Bodies, heads, helmets, weapons and shields are worn by characters,
+            // not painted onto maps - they would only clutter the palette.
+            if (sheet.Class is GrhClass.Body or GrhClass.Head or GrhClass.Helmet
+                             or GrhClass.Weapon or GrhClass.Shield) continue;
+
+            var (type, layer) = Bucket(sheet.Class);
+
+            // A palette entry should be a thing the mapper places, not a cell of
+            // a texture. Terrain sheets are meant to be browsed cell by cell, but
+            // a 1024px scenery atlas cut into 32px cells would flood the palette
+            // with hundreds of meaningless fragments, so those are sampled.
+            var grhs = sheet.Grhs;
+            bool isTerrain = sheet.Class is GrhClass.Tile or GrhClass.TileBlock;
+            if (!isTerrain && grhs.Count > MaxPaletteEntriesPerSheet)
+            {
+                double step = (double)grhs.Count / MaxPaletteEntriesPerSheet;
+                grhs = Enumerable.Range(0, MaxPaletteEntriesPerSheet)
+                                 .Select(i => grhs[(int)(i * step)]).ToList();
+            }
+
+            foreach (int grh in grhs)
+            {
+                if (!statics.TryGetValue(grh, out var e)) continue;
+                // Per-GRH, not per-sheet: assigning to `type` here would leak the
+                // tree category onto the rest of the sheet's entries.
+                string entryType = treeGrhs.Contains(grh) ? "Naturaleza" : type;
+                refs.Add(($"{sheet.Sheet}_{grh}", grh,
+                          Math.Max(1, e.Width / 32), Math.Max(1, e.Height / 32), layer, entryType));
+            }
+        }
+
+        // Water is animated, so its entries point at the animation rather than a
+        // single frame; painting a still frame would give a frozen lake.
+        foreach (int grh in waterGrhs)
+        {
+            if (!animated.TryGetValue(grh, out int frame0)) continue;
+            if (!statics.TryGetValue(frame0, out var e)) continue;
+            refs.Add(($"agua_{grh}", grh, Math.Max(1, e.Width / 32), Math.Max(1, e.Height / 32), 1, "Terreno"));
+        }
+
+        Console.WriteLine($"referencias: {refs.Count}");
+        foreach (var g in refs.GroupBy(r => r.type).OrderByDescending(g => g.Count()))
+            Console.WriteLine($"  {g.Key,-14} {g.Count(),6}");
+
+        if (!apply) { Console.WriteLine("\n(dry-run - pasar --apply para escribir)"); return 0; }
+
+        var sb = new StringBuilder();
+        sb.Append("[INIT]\r\nReferencias=").Append(refs.Count).Append("\r\n\r\n");
+        for (int i = 0; i < refs.Count; i++)
+        {
+            var r = refs[i];
+            sb.Append("[REFERENCIA").Append(i + 1).Append("]\r\n");
+            sb.Append("Nombre=").Append(r.name).Append("\r\n");
+            sb.Append("Type=").Append(r.type).Append("\r\n");
+            sb.Append("GrhIndice=").Append(r.grh).Append("\r\n");
+            sb.Append("Ancho=").Append(r.w).Append("\r\n");
+            sb.Append("Alto=").Append(r.h).Append("\r\n");
+            sb.Append("Capa=").Append(r.layer).Append("\r\n\r\n");
+        }
+
+        if (File.Exists(outPath)) File.Copy(outPath, outPath + ".bak", overwrite: true);
+        File.WriteAllText(outPath, sb.ToString(), Encoding.ASCII);
+        Console.WriteLine($"\nescrito {outPath}");
+        return 0;
+    }
+
+    // ---- maps ---------------------------------------------------------------
+
+    /// <summary>
+    /// Translates the GRH layers of .aomap files through remap.json.
+    ///
+    /// Only .aomap is handled: its layers are Int32, so the whole catalogue is
+    /// addressable. The legacy .map format stores them as Int16 and cannot
+    /// reach past 32767, which is why those maps are archived rather than
+    /// converted.
+    ///
+    /// Layout per tile: byFlags(1) then the layers the flags select, all Int32.
+    /// Layer1 is always present; bits 2/4/8 add layers 2-4.
+    /// </summary>
+    private static int MapsCmd(string[] args)
+    {
+        if (args.Length < 3) return Usage();
+        string mapDir = args[1], remapPath = args[2];
+        bool apply = args.Contains("--apply");
+
+        var raw = JsonSerializer.Deserialize<Dictionary<string, int>>(File.ReadAllText(remapPath))!;
+        var map = raw.ToDictionary(k => int.Parse(k.Key), k => k.Value);
+
+        const int HeaderSize = 16;
+        int filesTouched = 0, totalRemapped = 0, totalLost = 0;
+
+        foreach (var file in Directory.EnumerateFiles(mapDir, "*.aomap").OrderBy(f => f))
+        {
+            byte[] data = File.ReadAllBytes(file);
+            if (data.Length < HeaderSize) continue;
+
+            short width = BitConverter.ToInt16(data, 8);
+            short height = BitConverter.ToInt16(data, 10);
+            if (width <= 0 || height <= 0) { Console.WriteLine($"  {Path.GetFileName(file)}: cabecera invalida"); continue; }
+
+            int pos = HeaderSize;
+            int remapped = 0, lost = 0;
+            bool truncated = false;
+
+            for (int i = 0; i < width * height && !truncated; i++)
+            {
+                if (pos >= data.Length) { truncated = true; break; }
+                byte flags = data[pos++];
+
+                // Layer 1 always, then one per set bit among 2/4/8.
+                int layers = 1 + ((flags & 2) != 0 ? 1 : 0) + ((flags & 4) != 0 ? 1 : 0) + ((flags & 8) != 0 ? 1 : 0);
+                for (int l = 0; l < layers; l++)
+                {
+                    if (pos + 4 > data.Length) { truncated = true; break; }
+                    int grh = BitConverter.ToInt32(data, pos);
+                    if (grh > 0)
+                    {
+                        if (map.TryGetValue(grh, out int mapped))
+                        {
+                            BitConverter.GetBytes(mapped).CopyTo(data, pos);
+                            remapped++;
+                        }
+                        else
+                        {
+                            // Pointed at art that was dropped: clear it rather
+                            // than leave it addressing an unrelated new sprite.
+                            BitConverter.GetBytes(0).CopyTo(data, pos);
+                            lost++;
+                        }
+                    }
+                    pos += 4;
+                }
+
+                // Trigger(2) + particle/light/sound words the remaining flags select.
+                if ((flags & 16) != 0) pos += 2;
+                if ((flags & 32) != 0) pos += 2;
+                if ((flags & 64) != 0) pos += 2;
+            }
+
+            Console.WriteLine($"  {Path.GetFileName(file),-18} {width}x{height}  remapeados {remapped,6}  perdidos {lost,6}"
+                            + (truncated ? "  (truncado)" : ""));
+            totalRemapped += remapped; totalLost += lost; filesTouched++;
+
+            if (apply)
+            {
+                File.Copy(file, file + ".bak", overwrite: true);
+                File.WriteAllBytes(file, data);
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"mapas: {filesTouched}   remapeados: {totalRemapped}   perdidos: {totalLost}");
+        if (!apply) Console.WriteLine("\n(dry-run - pasar --apply para escribir)");
         return 0;
     }
 

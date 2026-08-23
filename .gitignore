@@ -57,3 +57,6 @@ tools/grhtool/bin/
 tools/grhtool/obj/
 docs/catalog/baseline.json
 *.ind.tmp
+
+# Respaldos locales grandes (mapas y .bak previos al reinicio)
+.archive/

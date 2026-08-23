@@ -13,8 +13,10 @@ Source: `client/Scripts/Data/GrhLoader.cs`, `client/Scripts/Data/TextureManager.
 
 ## 1. Graficos.ind Binary Format
 
-The GRH database is a single binary file (~537 KB) containing 33,112 sprite entries.
-Three header formats exist; `GrhLoader.Load()` auto-detects which one is present.
+The GRH database is a single binary file containing 53,526 sprite entries, all of
+them from the pixel-art catalogue (sheets 100000+). Legacy art was dropped and the
+numbering compacted to 1..53526 — see `docs/catalog/remap.json` for the old-to-new
+map. Three header formats exist; `GrhLoader.Load()` auto-detects which one is present.
 
 ### Header Detection (3 formats)
 
@@ -24,11 +26,13 @@ Three header formats exist; `GrhLoader.Load()` auto-detects which one is present
 | **With MiCabecera** | 263 | `MiCabecera(263 bytes) + Version(i32) + Count(i32) + entries` |
 | **Flag byte** | 1 | `FlagByte(1) + Version(i32) + Count(i32) + entries` |
 
-**Auto-detect logic** (from `GrhLoader.Load()`):
-1. Read 8 bytes at offset 0 as `Version(i32) + Count(i32)`.
-2. If `Count <= 0` or `Count > 100000` -> try offset 263 (MiCabecera skip).
-3. Still bad -> try offset 1 (flag byte skip).
-4. Expected values: `Version=447`, `Count=32824`.
+**Auto-detect logic** (from `GrhLoader.Load()`): each candidate offset (0, 263, 1)
+is tried in turn, and the one whose following bytes parse as a valid GRH record
+wins. Note it does **not** judge by how large `Count` is: an earlier version
+rejected `Count > 100000` and fell through to a wrong offset once the catalogue
+grew, so `Count` is treated purely as a hint for the initial array size.
+
+Current values: `Version=447`, `Count=53526`.
 
 **MiCabeceraSize** = 263 bytes (255 desc + 4 CRC + 4 magic).
 
@@ -209,16 +213,24 @@ return isWater && tile.Layer2 <= 0;  // water only if no L2 overlay
 | Constant | Value | Source |
 |----------|-------|--------|
 | TileSize | 32 | WorldRenderer.cs, CharRenderer.cs |
-| WaterGrhMin | 1505 | WorldRenderer.cs |
-| WaterGrhMax | 1520 | WorldRenderer.cs |
-| WaterGrhRange2 | 5665-5680 | WorldRenderer.cs |
-| WaterGrhRange3 | 13547-13562 | WorldRenderer.cs |
-| MaxGRHs | 33,112 | Graficos.ind header |
+| Water / tree GRHs | (data) | `INIT/GrhCatalog.json` — no longer hardcoded |
+| MaxGRHs | 53,526 | Graficos.ind header |
 | Version | 447 | Graficos.ind header |
 | MiCabeceraSize | 263 | GrhLoader.cs |
 | MaxCacheSize | 4,096 | TextureManager.cs |
 | BlackThreshold | 3 | TextureManager.cs |
-| SanityMaxCount | 100,000 | GrhLoader.cs |
+
+### Hard ceilings
+
+These truncate silently rather than failing, so anything that grows the catalogue
+has to check them:
+
+| Limit | Where | Why |
+|-------|-------|-----|
+| 65,535 | Personajes/Cabezas/Cascos.ind | GRH stored as UInt16 |
+| 32,767 | Fxs.ind `Animacion` | signed Int16 — animations are numbered 1..3103 to stay under it |
+| 32,767 | legacy `.map` layers | signed Int16 (the reason those maps were archived) |
+| 32,767 | every `.ind` Count field | signed Int16 |
 
 ---
 
