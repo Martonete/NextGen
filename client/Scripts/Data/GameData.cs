@@ -22,6 +22,9 @@ public class GameData
     public TextMessage[] TextMessages = Array.Empty<TextMessage>();
     public TextureManager? Textures;
 
+    /// <summary>Water/tree/UI GRH groups that used to be hardcoded in the renderer.</summary>
+    public GrhCatalog Catalog = new();
+
     // VB6 bitmap fonts (font1=chat/names, font2=titles, font3=medium)
     public AoFont?[] Fonts = new AoFont?[4]; // index 1-3, 0 unused
 
@@ -33,6 +36,10 @@ public class GameData
     public void LoadAll(IResourceProvider resources)
     {
         GD.Print("[DATA] Loading game data...");
+
+        Catalog = GrhCatalog.Load(resources);
+        // The renderer's water and tree checks are static; hand them the catalogue.
+        ArgentumNextgen.Rendering.WorldRenderer.UseCatalog(Catalog);
 
         try
         {

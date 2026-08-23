@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -34,6 +35,8 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Length < 1) { Usage(); return 1; }
+        // The .dat files are Latin-1; .NET Core ships only Unicode by default.
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         try
         {
             return args[0] switch
@@ -47,6 +50,10 @@ internal static class Program
                 "remap" => RemapCmd(args),
                 "thin" => ThinCmd(args),
                 "entities" => EntitiesCmd(args),
+                "objdat" => ObjDatCmd(args),
+                "npcs" => NpcsCmd(args),
+                "fxs" => FxsCmd(args),
+                "special" => SpecialCmd(args),
                 _ => Usage(),
             };
         }
@@ -397,6 +404,336 @@ internal static class Program
         Console.WriteLine($"\nescrito {indPath} (respaldo en {indPath}.bak)");
         return 0;
     }
+
+    // ---- special ------------------------------------------------------------
+
+    /// <summary>
+    /// Fills in the GRH groups that used to be hardcoded in the renderer:
+    /// water ranges, tree canopies and named UI graphics.
+    ///
+    /// Water matters beyond looks - InputHandler consults it to decide whether a
+    /// tile can be walked on - so it is identified by two independent signals
+    /// rather than colour alone: the tile must be animated and blue. Trees are
+    /// tall, green, single-region props.
+    /// </summary>
+    private static int SpecialCmd(string[] args)
+    {
+        if (args.Length < 4) return Usage();
+        string indPath = args[1], catPath = args[2], gfxDir = args[3];
+        bool apply = args.Contains("--apply");
+
+        var idx = GrhIndex.Load(indPath);
+        var cat = Catalog.Load(catPath);
+        var statics = idx.Entries.Where(e => !e.IsAnimated).ToDictionary(e => e.Index);
+        var sheetColour = new Dictionary<int, (int r, int g, int b)?>();
+
+        (int r, int g, int b)? Colour(int sheet)
+        {
+            if (sheetColour.TryGetValue(sheet, out var cached)) return cached;
+            string png = Path.Combine(gfxDir, $"{sheet}.png");
+            (int, int, int)? result = null;
+            if (File.Exists(png))
+            {
+                using var bmp = new System.Drawing.Bitmap(png);
+                long r = 0, g = 0, b = 0; int n = 0;
+                for (int y = 0; y < Math.Min(bmp.Height, 96); y += 3)
+                    for (int x = 0; x < Math.Min(bmp.Width, 96); x += 3)
+                    {
+                        var c = bmp.GetPixel(x, y);
+                        if (c.R <= 8 && c.G <= 8 && c.B <= 8) continue; // black is transparent
+                        r += c.R; g += c.G; b += c.B; n++;
+                    }
+                if (n > 20) result = ((int)(r / n), (int)(g / n), (int)(b / n));
+            }
+            sheetColour[sheet] = result;
+            return result;
+        }
+
+        // -- water: animated 32x32 tiles whose sheet reads blue ---------------
+        var water = new List<int>();
+        foreach (var anim in idx.Entries.Where(e => e.IsAnimated && e.Frames.Length > 0))
+        {
+            if (!statics.TryGetValue(anim.Frames[0], out var f0)) continue;
+            if (f0.Width != 32 || f0.Height != 32) continue;
+            var c = Colour(f0.FileNum);
+            if (c is null) continue;
+            if (c.Value.b > c.Value.r * 1.4 && c.Value.b > 70) water.Add(anim.Index);
+        }
+
+        // -- trees: tall green props ------------------------------------------
+        var trees = new List<int>();
+        foreach (var sheet in cat.Sheets.Where(s => s.Class == GrhClass.Prop && s.Grhs.Count == 1))
+        {
+            if (!statics.TryGetValue(sheet.Grhs[0], out var e)) continue;
+            if (e.Height < e.Width * 1.1 || e.Height < 64) continue;
+            var c = Colour(sheet.Sheet);
+            if (c is null) continue;
+            if (c.Value.g > c.Value.r * 1.15 && c.Value.g > c.Value.b * 1.15) trees.Add(sheet.Grhs[0]);
+        }
+
+        // -- UI: the inventory backdrop and selection highlight ---------------
+        // Both were fixed 32x32-ish icons; pick stable ones from the item pool
+        // so they at least resolve rather than pointing at nothing.
+        var uiPool = cat.Sheets.Where(s => s.Class == GrhClass.Item && s.Grhs.Count == 1)
+                               .OrderBy(s => s.Sheet).Select(s => s.Grhs[0]).ToList();
+
+        cat.WaterRanges = Compress(water);
+        cat.Trees = trees;
+        cat.Ui = new Dictionary<string, int>();
+        if (uiPool.Count > 1)
+        {
+            cat.Ui["inventoryBackground"] = uiPool[0];
+            cat.Ui["selectionHighlight"] = uiPool[1];
+        }
+        // The beam mote is a small spark; reuse the first animation for it.
+        var firstAnim = idx.Entries.FirstOrDefault(e => e.IsAnimated);
+        if (firstAnim is not null) cat.Ui["beamMote"] = firstAnim.Index;
+
+        Console.WriteLine($"agua   : {water.Count} GRH en {cat.WaterRanges.Count} rangos");
+        foreach (var r in cat.WaterRanges.Take(8)) Console.WriteLine($"    {r[0]}..{r[1]}");
+        Console.WriteLine($"arboles: {trees.Count} GRH");
+        Console.WriteLine($"ui     : {string.Join(", ", cat.Ui.Select(k => $"{k.Key}={k.Value}"))}");
+
+        if (!apply) { Console.WriteLine("\n(dry-run - pasar --apply para escribir)"); return 0; }
+
+        cat.Save(catPath);
+        Console.WriteLine($"\nescrito {catPath}");
+        return 0;
+    }
+
+    /// <summary>Collapses a sorted index list into inclusive ranges.</summary>
+    private static List<int[]> Compress(List<int> values)
+    {
+        var ranges = new List<int[]>();
+        foreach (int v in values.Distinct().OrderBy(v => v))
+        {
+            if (ranges.Count > 0 && ranges[^1][1] + 1 == v) ranges[^1][1] = v;
+            else ranges.Add(new[] { v, v });
+        }
+        return ranges;
+    }
+
+    // ---- fxs ----------------------------------------------------------------
+
+    /// <summary>
+    /// Repoints Fxs.ind at animations that exist in the new catalogue, keeping
+    /// each effect's offsets. Animacion is a signed Int16, so it cannot address
+    /// past 32767 - the remap places all animations in 1..3103 precisely so this
+    /// table stays addressable.
+    /// </summary>
+    private static int FxsCmd(string[] args)
+    {
+        if (args.Length < 3) return Usage();
+        string fxPath = args[1], indPath = args[2];
+        bool apply = args.Contains("--apply");
+
+        var idx = GrhIndex.Load(indPath);
+        // Only multi-frame entries: a static GRH would show as a frozen effect.
+        // Animacion is a signed Int16, so anything above 32767 is unreachable -
+        // that excludes the walk animations appended after the remap, which is
+        // correct anyway: those belong to bodies, not to spell effects.
+        var anims = idx.Entries
+            .Where(e => e.IsAnimated && e.NumFrames > 1 && e.Index <= short.MaxValue)
+            .Select(e => e.Index).OrderBy(i => i).ToList();
+        if (anims.Count == 0) { Console.Error.WriteLine("El indice no tiene animaciones direccionables."); return 1; }
+        var animSet = anims.ToHashSet();
+
+        byte[] data = File.ReadAllBytes(fxPath);
+        const int MiCabecera = 263, RecordSize = 6;
+        short count = BitConverter.ToInt16(data, MiCabecera);
+
+        int repointed = 0;
+        for (int i = 0; i < count; i++)
+        {
+            int off = MiCabecera + 2 + i * RecordSize;
+            short anim = BitConverter.ToInt16(data, off);
+            if (anim > 0 && animSet.Contains(anim)) continue;
+
+            // Spread the effects across the animation pool rather than piling
+            // them onto the first few, so distinct spells stay distinguishable.
+            short replacement = (short)anims[(i * anims.Count / Math.Max((int)count, 1)) % anims.Count];
+            BitConverter.GetBytes(replacement).CopyTo(data, off);
+            repointed++;
+        }
+
+        Console.WriteLine($"efectos          : {count}");
+        Console.WriteLine($"animaciones libres: {anims.Count}  (rango {anims[0]}..{anims[^1]})");
+        Console.WriteLine($"repuntados       : {repointed}");
+
+        if (!apply) { Console.WriteLine("\n(dry-run - pasar --apply para escribir)"); return 0; }
+
+        File.Copy(fxPath, fxPath + ".bak", overwrite: true);
+        File.WriteAllBytes(fxPath, data);
+        Console.WriteLine($"\nescrito {fxPath} (respaldo en {fxPath}.bak)");
+        return 0;
+    }
+
+    // ---- npcs ---------------------------------------------------------------
+
+    /// <summary>
+    /// Clamps NPCs.dat Body and Head into the regenerated tables. These are
+    /// indices into Personajes.ind and Cabezas.ind, not GRHs, so most already
+    /// land inside the new tables and only the overflow needs moving - which is
+    /// why they are wrapped rather than reassigned wholesale.
+    /// </summary>
+    private static int NpcsCmd(string[] args)
+    {
+        if (args.Length < 3) return Usage();
+        string npcPath = args[1], initDir = args[2];
+        bool apply = args.Contains("--apply");
+
+        int numBodies = CountInd(Path.Combine(initDir, "Personajes.ind"));
+        int numHeads = CountInd(Path.Combine(initDir, "Cabezas.ind"));
+        if (numBodies == 0 || numHeads == 0)
+        {
+            Console.Error.WriteLine("No se pudieron leer Personajes.ind / Cabezas.ind");
+            return 1;
+        }
+
+        // The file is Latin-1, not UTF-16 like obj.dat.
+        var enc = Encoding.GetEncoding(1252);
+        string text = File.ReadAllText(npcPath, enc);
+
+        int bodyFixed = 0, headFixed = 0;
+        string Fix(string src, string key, int limit, ref int fixedCount)
+        {
+            int count = 0;
+            // \r before the line end: the file is CRLF, so anchoring with $
+            // directly after \d+ would never match.
+            string result = System.Text.RegularExpressions.Regex.Replace(src,
+                $@"^({key}=)(\d+)\s*$",
+                m =>
+                {
+                    int v = int.Parse(m.Groups[2].Value);
+                    if (v <= limit) return m.Value;
+                    count++;
+                    return m.Groups[1].Value + Wrap(v, limit);
+                },
+                System.Text.RegularExpressions.RegexOptions.Multiline
+                | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            fixedCount = count;
+            return result;
+        }
+
+        text = Fix(text, "Body", numBodies, ref bodyFixed);
+        text = Fix(text, "Head", numHeads, ref headFixed);
+
+        Console.WriteLine($"Personajes.ind: {numBodies} cuerpos -> Body corregidos: {bodyFixed}");
+        Console.WriteLine($"Cabezas.ind   : {numHeads} cabezas -> Head corregidos: {headFixed}");
+
+        if (!apply) { Console.WriteLine("\n(dry-run - pasar --apply para escribir)"); return 0; }
+
+        File.Copy(npcPath, npcPath + ".bak", overwrite: true);
+        File.WriteAllText(npcPath, text, enc);
+        Console.WriteLine($"\nescrito {npcPath} (respaldo en {npcPath}.bak)");
+        return 0;
+    }
+
+    // ---- objdat -------------------------------------------------------------
+
+    /// <summary>
+    /// Repoints obj.dat's art fields at the new catalogue. The old values cannot
+    /// be translated, since they addressed art that was dropped rather than
+    /// renumbered, so each item is reassigned from the pool matching its type.
+    ///
+    /// Cycling through the pool means items of a type share icons once the pool
+    /// is exhausted - wrong in detail, but every item is visible and correctly
+    /// categorised, which is the state the manual pass starts from.
+    /// </summary>
+    private static int ObjDatCmd(string[] args)
+    {
+        if (args.Length < 4) return Usage();
+        string objPath = args[1], catPath = args[2], initDir = args[3];
+        bool apply = args.Contains("--apply");
+
+        var cat = Catalog.Load(catPath);
+        string text = File.ReadAllText(objPath, Encoding.Unicode);
+        var items = ObjDat.Parse(text);
+
+        // Icon pools: single-region sheets of the right class. Weapons and
+        // shields keep their 32x32 inventory icons, which is what the 1-region
+        // sheets in those blocks are.
+        List<int> Pool(params GrhClass[] classes) => cat.Sheets
+            .Where(s => classes.Contains(s.Class) && s.Grhs.Count == 1)
+            .OrderBy(s => s.Sheet).Select(s => s.Grhs[0]).ToList();
+
+        var iconItem = Pool(GrhClass.Item);
+        var iconWeapon = Pool(GrhClass.Weapon);
+        var iconShield = Pool(GrhClass.Shield);
+        var iconHelmet = Pool(GrhClass.Helmet);
+
+        // Table sizes bound the Anim and NumRopaje indices.
+        int numArmas = CountIni(Path.Combine(initDir, "Armas.dat"), "NumArmas");
+        int numEscudos = CountIni(Path.Combine(initDir, "Escudos.dat"), "NumEscudos");
+        int numBodies = CountInd(Path.Combine(initDir, "Personajes.ind"));
+
+        Console.WriteLine($"items en obj.dat : {items.Count}");
+        Console.WriteLine($"iconos disponibles: item={iconItem.Count} arma={iconWeapon.Count} escudo={iconShield.Count} casco={iconHelmet.Count}");
+        Console.WriteLine($"tablas           : armas={numArmas} escudos={numEscudos} cuerpos={numBodies}");
+        Console.WriteLine();
+
+        var assign = new Dictionary<int, (int grh, int anim, int ropaje)>();
+        var counters = new Dictionary<string, int>();
+        int Next(List<int> pool, string key)
+        {
+            if (pool.Count == 0) return 0;
+            int i = counters.GetValueOrDefault(key);
+            counters[key] = i + 1;
+            return pool[i % pool.Count];
+        }
+
+        var perType = new Dictionary<int, int>();
+        foreach (var item in items)
+        {
+            var pool = item.ObjType switch
+            {
+                ObjDat.TypeWeapon => iconWeapon,
+                ObjDat.TypeShield => iconShield,
+                ObjDat.TypeHelmet => iconHelmet,
+                _ => iconItem,
+            };
+            int grh = Next(pool, item.ObjType.ToString());
+
+            // Anim indexes Armas.dat for weapons and Escudos.dat for shields.
+            int anim = 0;
+            if (item.HasAnim && item.Anim > 0)
+                anim = item.ObjType == ObjDat.TypeShield
+                    ? Wrap(item.Anim, numEscudos)
+                    : Wrap(item.Anim, numArmas);
+
+            int ropaje = item.HasRopaje && item.NumRopaje > 0 ? Wrap(item.NumRopaje, numBodies) : 0;
+
+            assign[item.Number] = (grh, anim, ropaje);
+            perType[item.ObjType] = perType.GetValueOrDefault(item.ObjType) + 1;
+        }
+
+        foreach (var (type, count) in perType.OrderByDescending(k => k.Value).Take(8))
+            Console.WriteLine($"  ObjType {type,3} : {count,5} items");
+
+        if (!apply) { Console.WriteLine("\n(dry-run - pasar --apply para escribir)"); return 0; }
+
+        string updated = ObjDat.Rewrite(text, assign);
+        File.Copy(objPath, objPath + ".bak", overwrite: true);
+        File.WriteAllText(objPath, updated, Encoding.Unicode);
+        Console.WriteLine($"\nescrito {objPath} (respaldo en {objPath}.bak)");
+        return 0;
+    }
+
+    /// <summary>Keeps an index inside a table, preserving it when already valid.</summary>
+    private static int Wrap(int value, int count)
+        => count <= 0 ? 0 : (value <= count ? value : (value - 1) % count + 1);
+
+    private static int CountIni(string path, string key)
+    {
+        if (!File.Exists(path)) return 0;
+        foreach (string line in File.ReadLines(path))
+            if (line.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase))
+                return int.TryParse(line[(key.Length + 1)..].Trim(), out int v) ? v : 0;
+        return 0;
+    }
+
+    private static int CountInd(string path)
+        => File.Exists(path) ? BitConverter.ToInt16(File.ReadAllBytes(path), 263) : 0;
 
     // ---- entities -----------------------------------------------------------
 

@@ -299,7 +299,12 @@ public partial class WorldRenderer
     }
 
     private const int BeamMoteCount = 3;
-    private const int BeamMoteGrh = 27452; // same spark sprite as Particles.ini def [1] "Fountain"
+
+    /// <summary>
+    /// Spark sprite for beam motes, resolved through the catalogue rather than a
+    /// literal so it survives renumbering.
+    /// </summary>
+    private int BeamMoteGrh => _data?.Catalog.Ui("beamMote") ?? 0;
 
     /// <summary>
     /// Scatter a handful of glowing motes along the caster→target segment, each

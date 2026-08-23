@@ -21,9 +21,10 @@ public partial class InventoryPanel : Control
 
     private int EffectiveRows => (_totalSlots + Cols - 1) / Cols;
 
-    // GRH IDs from VB6 client
-    private const int GrhInvBackground = 31570;
-    private const int GrhSelectionHighlight = 32758;
+    // GRH IDs come from INIT/GrhCatalog.json: hardcoding them meant they broke
+    // whenever the catalogue was renumbered. 0 disables the draw.
+    private int GrhInvBackground => _data?.Catalog.Ui("inventoryBackground") ?? 0;
+    private int GrhSelectionHighlight => _data?.Catalog.Ui("selectionHighlight") ?? 0;
 
     private GameState? _state;
     private GameData? _data;

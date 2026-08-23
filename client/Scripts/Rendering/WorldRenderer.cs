@@ -1365,19 +1365,19 @@ void fragment() {
 	}
 
 	/// <summary>
-	/// Check if a GRH index is a water graphic (any of the known water tile ranges).
+	/// Water and tree lookups come from INIT/GrhCatalog.json rather than literals,
+	/// so renumbering the catalogue no longer silently breaks them. Held statically
+	/// because both checks are static and sit on the tile-drawing path.
 	/// </summary>
-	public static bool IsWaterGrh(int g)
-	{
-		return (g >= 1505  && g <= 1520)   // (Animación)(AGUA) — 4×4
-			|| (g >= 5665  && g <= 5680)   // Agua Clarita — 4×4
-			|| (g >= 13547 && g <= 13562)  // classic variant — 4×4
-			|| (g >= 28268 && g <= 28283)  // Agua verde — 4×4
-			|| (g >= 30762 && g <= 30777)  // Agua azul — 4×4
-			|| (g >= 32498 && g <= 32513)  // Agua celeste — 4×4
-			|| (g >= 44520 && g <= 44711)  // Agua v2 — 16×12
-			|| (g >= 53678 && g <= 53869); // Agua v3 — 16×12
-	}
+	private static ArgentumNextgen.Data.GrhCatalog? _catalog;
+
+	public static void UseCatalog(ArgentumNextgen.Data.GrhCatalog catalog) => _catalog = catalog;
+
+	/// <summary>
+	/// Check if a GRH index is a water graphic. Also governs navigation:
+	/// InputHandler consults this to decide whether a tile can be walked on.
+	/// </summary>
+	public static bool IsWaterGrh(int g) => _catalog?.IsWater(g) ?? false;
 
 	/// <summary>
 	/// VB6 HayAgua(): checks if a tile is water (known water GRH ranges and Layer2 == 0).
@@ -1392,17 +1392,7 @@ void fragment() {
 	/// <summary>
 	/// VB6 EsArbol(): checks if a GRH index is a tree graphic.
 	/// </summary>
-	private static bool IsTree(int grhIndex)
-	{
-		return grhIndex == 7222 || grhIndex == 7223 || grhIndex == 7224 ||
-			   grhIndex == 7225 || grhIndex == 7226 ||
-			   grhIndex == 7000 || grhIndex == 7001 || grhIndex == 7002 ||
-			   grhIndex == 22077 || grhIndex == 22078 || grhIndex == 22079 ||
-			   grhIndex == 22080 || grhIndex == 22081 || grhIndex == 22082 ||
-			   grhIndex == 22083 || grhIndex == 22084 || grhIndex == 22085 ||
-			   grhIndex == 22086 ||
-			   grhIndex == 8489 || grhIndex == 8483;
-	}
+	private static bool IsTree(int grhIndex) => _catalog?.IsTree(grhIndex) ?? false;
 
 }
 
