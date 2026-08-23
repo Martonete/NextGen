@@ -51,3 +51,9 @@ tools/swap_water_textures.py
 # Working backups made before binary index edits (Graficos.ind, Personajes.ind…)
 .backups/
 *.bak
+
+# grhtool: artefactos de compilacion y volcados grandes del indice
+tools/grhtool/bin/
+tools/grhtool/obj/
+docs/catalog/baseline.json
+*.ind.tmp

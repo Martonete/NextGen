@@ -25,20 +25,26 @@ static func load_ind(path: String) -> Dictionary:
 		push_error("GrhIO: no se pudo abrir " + path)
 		return result
 
-	# Auto-detectar cabecera
-	var version := _read_int32(f)
-	var grh_count := _read_int32(f)
-
-	if grh_count <= 0 or grh_count > 100000:
-		f.seek(MI_CABECERA_SIZE)
+	# Auto-detectar cabecera probando si la primera entrada parsea en cada offset
+	# candidato. Nunca decidir por la magnitud de Count: es solo un hint de tamanio,
+	# y un catalogo grande pero valido no debe confundirse con una cabecera mala.
+	var version := 0
+	var grh_count := 0
+	var header_found := false
+	for header_offset in [0, MI_CABECERA_SIZE, 1]:
+		if header_offset + 8 > f.get_length():
+			continue
+		f.seek(header_offset)
 		version = _read_int32(f)
 		grh_count = _read_int32(f)
+		if grh_count > 0 and _looks_like_entry(f):
+			f.seek(header_offset + 8)
+			header_found = true
+			break
 
-	if grh_count <= 0 or grh_count > 100000:
-		f.seek(0)
-		f.get_8()  # saltar 1 byte de flag
-		version = _read_int32(f)
-		grh_count = _read_int32(f)
+	if not header_found:
+		push_error("GrhIO: cabecera irreconocible en " + path)
+		return result
 
 	result["version"] = version
 
@@ -188,6 +194,22 @@ static func from_text(text: String) -> Dictionary:
 
 
 # ── Helpers de lectura/escritura con signo ──────────────────────────────────
+
+## True si en la posicion actual empieza plausiblemente una entrada GRH.
+## Sirve para ubicar la cabecera sin juzgar Count por su magnitud, que es lo que
+## se rompia cuando el catalogo paso de 100000 entradas. No consume: restaura pos.
+static func _looks_like_entry(f: FileAccess) -> bool:
+	var pos := f.get_position()
+	if pos + 6 > f.get_length():
+		return false
+	var grh_index := _read_int32(f)
+	var num_frames := _read_int16(f)
+	f.seek(pos)
+	if grh_index <= 0 or num_frames < 1:
+		return false
+	# Estatica: 18 bytes. Animada: 10 + 4*frames.
+	var record_size := (10 + 4 * num_frames) if num_frames > 1 else 18
+	return pos + record_size <= f.get_length()
 
 static func _read_int32(f: FileAccess) -> int:
 	var val := f.get_32()

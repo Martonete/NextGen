@@ -16,30 +16,50 @@ public static class GrhLoader
 {
 	private const int MiCabeceraSize = 263; // 255 desc + 4 crc + 4 magic
 
+	/// <summary>
+	/// True when <paramref name="offset"/> plausibly starts a GRH record. Used to
+	/// locate the header instead of judging Count by size, which broke once the
+	/// catalogue grew past the old 100000 limit.
+	/// </summary>
+	private static bool LooksLikeEntry(byte[] data, int offset)
+	{
+		if (offset + 6 > data.Length) return false;
+		int grhIndex = BitConverter.ToInt32(data, offset);
+		short numFrames = BitConverter.ToInt16(data, offset + 4);
+		if (grhIndex <= 0 || numFrames < 1) return false;
+		// A record is 18 bytes when static, 10 + 4*frames when animated.
+		int recordSize = numFrames > 1 ? 10 + 4 * numFrames : 18;
+		return offset + recordSize <= data.Length;
+	}
+
 	public static GrhData[] Load(IResourceProvider resources)
 	{
 		byte[] fileData = resources.ReadBytes("INIT/Graficos.ind");
 		using var reader = new BinaryReader(new MemoryStream(fileData));
 
-		// Auto-detect header: try without MiCabecera first
-		int version = reader.ReadInt32();
-		int grhCount = reader.ReadInt32();
-
-		// Sanity check: if count is unreasonable, try with MiCabecera
-		if (grhCount <= 0 || grhCount > 100000)
+		// Auto-detect header by checking whether the first entry parses at each
+		// candidate offset. Never gate on how large Count is: it is only a hint
+		// for the initial array size (the loop below grows the array as needed),
+		// so a big-but-valid catalogue must not be mistaken for a bad header.
+		int version = 0, grhCount = 0;
+		bool headerFound = false;
+		foreach (int headerOffset in new[] { 0, MiCabeceraSize, 1 })
 		{
-			reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
+			if (headerOffset + 8 > fileData.Length) continue;
+			reader.BaseStream.Seek(headerOffset, SeekOrigin.Begin);
 			version = reader.ReadInt32();
 			grhCount = reader.ReadInt32();
+			if (grhCount > 0 && LooksLikeEntry(fileData, headerOffset + 8))
+			{
+				headerFound = true;
+				break;
+			}
 		}
 
-		// Still bad? Try alternate: first 4 bytes might be a flag byte
-		if (grhCount <= 0 || grhCount > 100000)
+		if (!headerFound)
 		{
-			reader.BaseStream.Seek(0, SeekOrigin.Begin);
-			reader.ReadByte(); // skip 1 flag byte
-			version = reader.ReadInt32();
-			grhCount = reader.ReadInt32();
+			GD.PushError("[GRH] Cabecera de Graficos.ind irreconocible");
+			return new GrhData[1];
 		}
 
 		GD.Print($"[GRH] Loading {grhCount} graphics (version {version}, offset {reader.BaseStream.Position})");
