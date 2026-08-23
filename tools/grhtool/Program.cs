@@ -25,10 +25,11 @@ internal static class Program
     private const int MaxRegionsPerSheet = 200;
 
     /// <summary>
-    /// Palette entries taken from a single non-terrain sheet. Keeps big scenery
-    /// atlases from burying the editor's palette in 32px fragments.
+    /// Cells kept from one continuous terrain texture. These tile, so a sample
+    /// paints the same ground; indexing every cell of the large sheets would
+    /// cost ~78000 GRHs against a 65535 ceiling.
     /// </summary>
-    private const int MaxPaletteEntriesPerSheet = 24;
+    private const int MaxTerrainCellsPerSheet = 64;
 
     // GrhEntry exposes plain fields, so IncludeFields is required or the dump
     // silently writes zeros. Defaults are written too: an SX of 0 is real data.
@@ -207,10 +208,34 @@ internal static class Program
             if (block is 102 or 118 && probe.Width % 4 == 0)
                 return (SheetScanner.UniformGrid(png, 1, 4), "grilla1x4");
 
+            // Big sheets are grids of creatures, spell icons or effects whose
+            // cell size is rarely 32px. Infer the real pitch before falling back
+            // to a fixed one: a 2048px atlas cut at 32px yields 4096 fragments
+            // and would blow past the 65535 ceiling, while its true grid gives
+            // dozens of usable sprites.
+            if (probe.Width >= 512 || probe.Height >= 512)
+            {
+                var auto = SheetScanner.AutoGrid(png);
+                if (auto is not null) return (auto, "grilla-auto");
+            }
+
             // Terrain: cut on the 32px grid, keeping only cells with pixels.
             if (probe.Width % 32 == 0 && probe.Height % 32 == 0)
             {
                 var grid = SheetScanner.Grid(png, 32);
+
+                // A continuous texture has no gaps for AutoGrid to read a pitch
+                // from, so it lands here and can yield thousands of near-identical
+                // cells. Those tile, so an evenly spaced sample paints the same
+                // ground at a fraction of the index cost - the alternative is
+                // 78000 GRHs against a 65535 ceiling.
+                if (grid.Count > MaxTerrainCellsPerSheet)
+                {
+                    double step = (double)grid.Count / MaxTerrainCellsPerSheet;
+                    var sampled = Enumerable.Range(0, MaxTerrainCellsPerSheet)
+                                            .Select(i => grid[(int)(i * step)]).ToList();
+                    return (sampled, "grilla32/muestra");
+                }
                 if (grid.Count > 1) return (grid, "grilla32");
             }
         }
@@ -224,10 +249,6 @@ internal static class Program
         // to the 32px grid when the band result is clearly shrapnel.
         if (bands.Count > MaxRegionsPerSheet)
         {
-            // Only when the grid stays within a sane size. Cutting a 1024px
-            // scenery atlas into 32px cells yields thousands of mostly-empty
-            // GRHs, which would push the catalogue past the 65535 ceiling that
-            // Personajes/Cabezas/Cascos impose - for art that is decoration.
             var grid = SheetScanner.Grid(png, 32);
             if (grid.Count > 0 && grid.Count <= MaxRegionsPerSheet)
                 return (grid, "grilla32/atlas");
@@ -436,11 +457,17 @@ internal static class Program
 
         // Category and layer per class. Layer 1 is the ground, 2 holds objects
         // and scenery the player walks behind, 3 is roofs.
-        (string type, int layer) Bucket(GrhClass c) => c switch
+        //
+        // Props are split by sheet block rather than lumped together: there are
+        // ~38000 of them, and one flat list that long is not navigable. The
+        // editor shows any category name, ordering unknown ones alphabetically.
+        (string type, int layer) Bucket(GrhClass c, int sheet) => c switch
         {
             GrhClass.Tile => ("Terreno", 1),
             GrhClass.TileBlock => ("Terreno", 1),
-            GrhClass.Prop => ("Estructuras", 2),
+            // 130xxx alone holds ~38000 props, so it is split per sheet; the
+            // sparser blocks stay grouped.
+            GrhClass.Prop => (sheet / 1000 == 130 ? $"Escenario {sheet}" : $"Estructuras {sheet / 1000}", 2),
             GrhClass.Item => ("Objetos", 2),
             GrhClass.Npc => ("Objetos", 2),
             _ => ("Otros", 2),
@@ -457,22 +484,13 @@ internal static class Program
             if (sheet.Class is GrhClass.Body or GrhClass.Head or GrhClass.Helmet
                              or GrhClass.Weapon or GrhClass.Shield) continue;
 
-            var (type, layer) = Bucket(sheet.Class);
+            var (type, layer) = Bucket(sheet.Class, sheet.Sheet);
 
-            // A palette entry should be a thing the mapper places, not a cell of
-            // a texture. Terrain sheets are meant to be browsed cell by cell, but
-            // a 1024px scenery atlas cut into 32px cells would flood the palette
-            // with hundreds of meaningless fragments, so those are sampled.
-            var grhs = sheet.Grhs;
-            bool isTerrain = sheet.Class is GrhClass.Tile or GrhClass.TileBlock;
-            if (!isTerrain && grhs.Count > MaxPaletteEntriesPerSheet)
-            {
-                double step = (double)grhs.Count / MaxPaletteEntriesPerSheet;
-                grhs = Enumerable.Range(0, MaxPaletteEntriesPerSheet)
-                                 .Select(i => grhs[(int)(i * step)]).ToList();
-            }
-
-            foreach (int grh in grhs)
+            // Every GRH gets an entry. Sampling large sheets kept the palette
+            // small but hid most of the catalogue from the mapper, which is
+            // worse: the editor groups by category and scrolls, so a long list
+            // costs nothing while missing art cannot be placed at all.
+            foreach (int grh in sheet.Grhs)
             {
                 if (!statics.TryGetValue(grh, out var e)) continue;
                 // Per-GRH, not per-sheet: assigning to `type` here would leak the

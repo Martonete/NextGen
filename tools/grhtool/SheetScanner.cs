@@ -75,6 +75,66 @@ public static class SheetScanner
         return regions;
     }
 
+    /// <summary>
+    /// Infers a sheet's natural cell size from where its empty rows and columns
+    /// fall, then returns the non-empty cells.
+    ///
+    /// Large sheets in this catalogue are grids of creatures, spell icons or
+    /// effects — not continuous terrain — but their cell size is rarely 32px.
+    /// Forcing a 32px grid on a 2048px sheet yields 4096 fragments; finding the
+    /// real pitch yields a few dozen usable sprites.
+    /// </summary>
+    public static List<Region>? AutoGrid(string pngPath, int minCell = 24, int maxCells = 256)
+    {
+        using var bmp = new Bitmap(pngPath);
+        var mask = BuildMask(bmp);
+
+        int pitchX = InferPitch(i => ColHasPixels(mask, bmp.Width, i, 0, bmp.Height - 1), bmp.Width, minCell);
+        int pitchY = InferPitch(i => RowHasPixels(mask, bmp.Width, i), bmp.Height, minCell);
+        if (pitchX <= 0 || pitchY <= 0) return null;
+
+        int cols = bmp.Width / pitchX, rows = bmp.Height / pitchY;
+        if (cols * rows > maxCells || cols * rows <= 1) return null;
+
+        var regions = new List<Region>();
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+                if (CellHasContent(mask, bmp.Width, c * pitchX, r * pitchY, pitchX, pitchY))
+                    regions.Add(new Region(c * pitchX, r * pitchY, pitchX, pitchY));
+
+        return regions.Count > 0 ? regions : null;
+    }
+
+    /// <summary>
+    /// Spacing between the starts of occupied bands. A regular grid repeats at a
+    /// constant pitch, so the most common gap between band starts is it.
+    /// </summary>
+    private static int InferPitch(Func<int, bool> occupied, int length, int minCell)
+    {
+        var bands = Bands(occupied, length);
+        if (bands.Count < 2) return 0;
+
+        var gaps = new Dictionary<int, int>();
+        for (int i = 1; i < bands.Count; i++)
+        {
+            int gap = bands[i].Item1 - bands[i - 1].Item1;
+            if (gap >= minCell) gaps[gap] = gaps.GetValueOrDefault(gap) + 1;
+        }
+        if (gaps.Count == 0) return 0;
+
+        int pitch = gaps.OrderByDescending(kv => kv.Value).First().Key;
+        // Only trust a pitch that divides the sheet close to evenly.
+        return length % pitch <= pitch / 4 ? pitch : 0;
+    }
+
+    private static bool CellHasContent(bool[] mask, int width, int x0, int y0, int w, int h)
+    {
+        for (int y = y0; y < y0 + h; y++)
+            for (int x = x0; x < x0 + w; x++)
+                if (mask[y * width + x]) return true;
+        return false;
+    }
+
     private static bool CellHasPixels(bool[] mask, int width, int x0, int y0, int cell)
     {
         for (int y = y0; y < y0 + cell; y++)
