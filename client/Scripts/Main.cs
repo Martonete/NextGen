@@ -599,6 +599,10 @@ public partial class Main : Control
 		// Setup renderer inside the SubViewport
 		_worldRenderer = new WorldRenderer();
 		_worldRenderer.Init(_state, _gameData, _animator, _resources);
+		// The movement state itself remains a fixed-speed, tile-by-tile transition.
+		// Keeping the fractional camera offset here only avoids rounding that visual
+		// transition to whole pixels before it reaches the renderer.
+		_worldRenderer.SetSubpixelCamera(true);
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 

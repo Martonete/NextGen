@@ -311,7 +311,7 @@ public static partial class CharRenderer
         }
 
         var srcRect = new Rect2(sx, sy, pw, ph);
-        var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), pw, ph);
+        var destRect = new Rect2(drawX, drawY, pw, ph);
 
         Color color = modulate ?? Colors.White;
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
@@ -357,7 +357,7 @@ public static partial class CharRenderer
             return;
         }
 
-        var destRect = new Rect2((float)Math.Round(pos.X), (float)Math.Round(pos.Y), pw, ph);
+        var destRect = new Rect2(pos.X, pos.Y, pw, ph);
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
     }
 }

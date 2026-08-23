@@ -651,7 +651,11 @@ public partial class Main
 					if (grh.NumFrames > 1)
 					{
 						float speed = grh.Speed > 0 ? grh.Speed : 100f;
-						ch.WalkFrame += (deltaMs * grh.NumFrames / speed) * 0.7f;
+						// Graficos.ind defines the complete cycle duration for each body.
+						// Keep that cadence intact: bodies such as the Nigromante have
+						// 16 frames (instead of the usual 4-6), so a global slowdown
+						// makes their walk look unnaturally sluggish.
+						ch.WalkFrame += deltaMs * grh.NumFrames / speed;
 						if (ch.WalkFrame >= grh.NumFrames)
 							ch.WalkFrame %= grh.NumFrames;
 

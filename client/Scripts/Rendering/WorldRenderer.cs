@@ -66,11 +66,9 @@ public partial class WorldRenderer : Node2D
 	/// </summary>
 	public void SetRenderWindow(Vector2I sizePx) => _renderWindowOverride = sizePx;
 
-	// Gameplay snaps the camera pixel offset to whole pixels every frame (matches
-	// the VB6 original's tile-step movement and keeps sprites crisp). A slow,
-	// continuous camera — the login backdrop — needs the fractional part kept
-	// instead, or the sub-pixel/frame drift gets swallowed by rounding until it
-	// piles up into a visible 1px jump, reading as stutter instead of a smooth pan.
+	// Both gameplay and the login backdrop can retain the fractional camera offset.
+	// This is visual only: movement duration, tile positions, and server authority
+	// remain unchanged.
 	private bool _subpixelCamera;
 	public void SetSubpixelCamera(bool enabled) => _subpixelCamera = enabled;
 
@@ -854,8 +852,7 @@ void fragment() {
 
 		// Camera pixel offset — NEGATED because ScreenOffset grows in the movement
 		// direction, but tiles must shift in the OPPOSITE direction on screen.
-		// Gameplay rounds to whole pixels (crisp, VB6-accurate); the login backdrop
-		// keeps the fraction for a smooth continuous pan (see _subpixelCamera).
+		// Subpixel mode preserves the linear camera progress instead of quantizing it.
 		float rawPixelOffsetX = _subpixelCamera ? -_state.ScreenOffsetX : (float)Math.Round(-_state.ScreenOffsetX);
 		float rawPixelOffsetY = _subpixelCamera ? -_state.ScreenOffsetY : (float)Math.Round(-_state.ScreenOffsetY);
 		ApplyCamera(rawUserX, rawUserY, rawPixelOffsetX, rawPixelOffsetY, mapW, mapH);
@@ -1022,8 +1019,8 @@ void fragment() {
 
 				var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
 											_framePixelOffsetX, _framePixelOffsetY);
-				float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
-				float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
+				float charPx = tilePos.X + ch.MoveOffsetX;
+				float charPy = tilePos.Y + ch.MoveOffsetY;
 
 				int heading = ch.Heading;
 				if (heading < 1 || heading > 4) heading = 3;
@@ -1066,8 +1063,8 @@ void fragment() {
 
 			var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
 										_framePixelOffsetX, _framePixelOffsetY);
-			float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
-			float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
+			float charPx = tilePos.X + ch.MoveOffsetX;
+			float charPy = tilePos.Y + ch.MoveOffsetY;
 
 			Vector2 headOffset = new Vector2(0, -30);
 			if (ch.Body > 0 && ch.Body < _data.Bodies.Length)

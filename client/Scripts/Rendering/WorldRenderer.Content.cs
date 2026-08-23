@@ -87,8 +87,8 @@ public partial class WorldRenderer
                         if (!_state.Characters.TryGetValue(cid, out var ch)) continue;
                         if (ch.Invisible && cid != _state.UserCharIndex) continue;
 
-                        float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
-                        float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
+                        float charPx = tilePos.X + ch.MoveOffsetX;
+                        float charPy = tilePos.Y + ch.MoveOffsetY;
 
                         CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
                                                    _data, _animator, _deltaMs, _state, this,
@@ -203,11 +203,11 @@ public partial class WorldRenderer
             if (!_state.Characters.TryGetValue(beam.TargetCharIndex, out var target)) continue;
 
             Vector2 from = new Vector2(
-                caster.PosX * TileSize + 16f + (float)Math.Round(caster.MoveOffsetX) - originX,
-                caster.PosY * TileSize + 16f + (float)Math.Round(caster.MoveOffsetY) - originY + anchorY);
+                caster.PosX * TileSize + 16f + caster.MoveOffsetX - originX,
+                caster.PosY * TileSize + 16f + caster.MoveOffsetY - originY + anchorY);
             Vector2 to = new Vector2(
-                target.PosX * TileSize + 16f + (float)Math.Round(target.MoveOffsetX) - originX,
-                target.PosY * TileSize + 16f + (float)Math.Round(target.MoveOffsetY) - originY + anchorY);
+                target.PosX * TileSize + 16f + target.MoveOffsetX - originX,
+                target.PosY * TileSize + 16f + target.MoveOffsetY - originY + anchorY);
 
             float life = Math.Clamp(beam.ElapsedMs / beam.DurationMs, 0f, 1f);
             float appear = Smooth01(life / BeamAppearTime);

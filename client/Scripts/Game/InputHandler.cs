@@ -420,8 +420,8 @@ public class InputHandler
 	{
 		int cameraUserX = _state.UserPosX - _state.AddToUserPosX;
 		int cameraUserY = _state.UserPosY - _state.AddToUserPosY;
-		float pixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
-		float pixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
+		float pixelOffsetX = -_state.ScreenOffsetX;
+		float pixelOffsetY = -_state.ScreenOffsetY;
 
 		int tileX = (int)Math.Floor((viewportPos.X - pixelOffsetX) / 32f + cameraUserX - ResolutionManager.HalfTilesX);
 		int tileY = (int)Math.Floor((viewportPos.Y - pixelOffsetY) / 32f + cameraUserY - ResolutionManager.HalfTilesY);
