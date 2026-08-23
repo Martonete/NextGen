@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using AOWorldEditor.Data;
 
@@ -847,15 +848,21 @@ public partial class TilePalette : VBoxContainer
     }
 
     /// <summary>
-    /// Pre-generate all preview textures. Call after texture preload finishes.
+    /// Pre-generate preview textures for the categories the user opens first.
     /// Returns an enumerator for time-budgeted incremental processing.
+    ///
+    /// Only a bounded slice is prepared, not the whole catalogue: with ~48000
+    /// references, generating every thumbnail up front cost minutes of startup
+    /// and held them all in memory, for categories that mostly never get opened.
+    /// GetOrCreatePreview caches, so the rest are built the first time a
+    /// category is shown.
     /// </summary>
     public IEnumerator<int> PreloadAllPreviews()
     {
         if (Catalog == null || Grhs == null || Textures == null) yield break;
 
         int done = 0;
-        foreach (var texRef in Catalog.AllRefs)
+        foreach (var texRef in PreloadSlice())
         {
             GetOrCreatePreview(texRef);
             done++;
@@ -863,7 +870,38 @@ public partial class TilePalette : VBoxContainer
         }
     }
 
-    public int PreviewPreloadTotal => Catalog?.AllRefs.Count ?? 0;
+    /// <summary>
+    /// Thumbnails generated at startup per category — roughly the first screenful.
+    /// There are ~630 categories, so this multiplies: the rest are built lazily
+    /// when a category is actually opened.
+    /// </summary>
+    private const int PreloadPerCategory = 24;
+
+    private IEnumerable<TextureRef> PreloadSlice()
+    {
+        if (Catalog == null) yield break;
+        foreach (var category in Catalog.CategoryOrder)
+        {
+            if (!Catalog.Categories.TryGetValue(category, out var refs)) continue;
+            for (int i = 0; i < refs.Count && i < PreloadPerCategory; i++)
+                yield return refs[i];
+        }
+    }
+
+    private int _previewPreloadTotal = -1;
+
+    /// <summary>
+    /// Size of the startup slice. Cached because the loading bar polls this
+    /// every frame and the slice is a lazy walk over every category.
+    /// </summary>
+    public int PreviewPreloadTotal
+    {
+        get
+        {
+            if (_previewPreloadTotal < 0) _previewPreloadTotal = PreloadSlice().Count();
+            return _previewPreloadTotal;
+        }
+    }
 
     public void Cleanup()
     {
