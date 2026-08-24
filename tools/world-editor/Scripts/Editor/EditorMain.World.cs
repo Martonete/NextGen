@@ -158,22 +158,118 @@ public partial class EditorMain
         _worldPanel.Rebuild();
     }
 
-    /// <summary>Creates a map and places it in the cell in one step.</summary>
+    /// <summary>
+    /// Fills an empty cell: either with a new map or with one that already
+    /// exists. The number is always shown and editable — assuming the next free
+    /// one meant there was no way to say "put map 57 here", and a stale
+    /// AvailableMaps could suggest a number that was already taken.
+    /// </summary>
     private void CreateMapInCell(int col, int row)
     {
+        var cell = new WorldCell(col, row);
+
+        var dialog = new AcceptDialog
+        {
+            Title = $"Mapa para la celda {cell}",
+            OkButtonText = "Aceptar",
+        };
+
+        var box = new VBoxContainer();
+        box.AddThemeConstantOverride("separation", 8);
+
+        var numberRow = new HBoxContainer();
+        numberRow.AddThemeConstantOverride("separation", 8);
+        numberRow.AddChild(EditorTheme.MakeLabel("Número de mapa",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        var numberSpin = EditorTheme.MakeSpinBox(1, 9999, 1, FirstFreeMapNumber());
+        numberRow.AddChild(numberSpin);
+        box.AddChild(numberRow);
+
+        var hint = EditorTheme.MakeLabel("", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+        hint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        box.AddChild(hint);
+
+        // Says up front whether Accept will create a map or place an existing
+        // one, so nothing is overwritten by surprise.
+        void UpdateHint()
+        {
+            int candidate = (int)numberSpin.Value;
+            hint.Text = MapExistsOnDisk(candidate)
+                ? $"El mapa {candidate} ya existe: se coloca en la celda, sin tocar su contenido."
+                : $"El mapa {candidate} no existe: se crea vacío y se guarda.";
+        }
+        numberSpin.ValueChanged += _ => UpdateHint();
+        UpdateHint();
+
+        dialog.AddChild(box);
+        dialog.AddCancelButton("Cancelar");
+
+        dialog.Confirmed += () =>
+        {
+            int mapNumber = (int)numberSpin.Value;
+            dialog.QueueFree();
+            PlaceMapInCell(cell, mapNumber);
+        };
+        dialog.Canceled += () => dialog.QueueFree();
+
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    private void PlaceMapInCell(WorldCell cell, int mapNumber)
+    {
+        if (MapExistsOnDisk(mapNumber))
+        {
+            World().Assign(cell, mapNumber);
+            SaveWorldGrid();
+            RefreshWorldPanel();
+            SetStatus($"Mapa {mapNumber} ubicado en la celda {cell}");
+            return;
+        }
+
         CheckDirtyThen(() =>
         {
-            int mapNumber = NextFreeMapNumber();
             CreateNewMap(mapNumber);
-            World().Assign(new WorldCell(col, row), mapNumber);
+            World().Assign(cell, mapNumber);
             SaveWorldGrid();
-            // Written straight away so the grid does not point at a map that
-            // only exists in memory.
+            // Saved right away so the grid never points at a map that exists
+            // only in memory.
             OnSaveMap();
-            _state.ScanAvailableMaps(_serverMapDir.Length > 0 ? _serverMapDir : _clientMapDir);
+            RescanMaps();
             RefreshWorldPanel();
-            SetStatus($"Mapa {mapNumber} creado en la celda {col},{row}");
+            SetStatus($"Mapa {mapNumber} creado en la celda {cell}");
         });
+    }
+
+    /// <summary>
+    /// Lowest map number free both on disk and on the grid. Checks the same
+    /// directories the editor actually saves to — the editor's own
+    /// NextFreeMapNumber only looks at EditorState.MapDir, which is not
+    /// necessarily where maps end up.
+    /// </summary>
+    private int FirstFreeMapNumber()
+    {
+        int n = 1;
+        while (MapExistsOnDisk(n) || World().CellOf(n) is not null) n++;
+        return n;
+    }
+
+    private bool MapExistsOnDisk(int mapNumber)
+    {
+        foreach (string dir in new[] { _serverMapDir, _clientMapDir })
+        {
+            if (dir.Length == 0) continue;
+            if (File.Exists(Path.Combine(dir, $"Mapa{mapNumber}.aomap"))
+                || File.Exists(Path.Combine(dir, $"Mapa{mapNumber}.map")))
+                return true;
+        }
+        return _state.AvailableMaps.Contains(mapNumber);
+    }
+
+    private void RescanMaps()
+    {
+        string dir = _serverMapDir.Length > 0 ? _serverMapDir : _clientMapDir;
+        if (dir.Length > 0) _state.ScanAvailableMaps(dir);
     }
 
     private void PromptPlaceCurrentMap()

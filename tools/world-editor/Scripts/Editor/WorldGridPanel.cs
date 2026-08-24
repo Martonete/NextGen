@@ -42,7 +42,6 @@ public partial class WorldGridPanel : Window
 
     private GridContainer? _grid;
     private Label? _info;
-    private WorldCell? _pendingAssign;
 
     public override void _Ready()
     {
@@ -144,7 +143,7 @@ public partial class WorldGridPanel : Window
         else
         {
             button.Text = $"+\n({cell})";
-            button.TooltipText = $"Celda {cell} vacía\nClic para crear un mapa acá · clic derecho para asignar uno existente";
+            button.TooltipText = $"Celda {cell} vacía\nClic para elegir qué mapa va acá (nuevo o existente)";
             EditorTheme.StyleNavButtonCompact(button, false, false);
         }
 
@@ -161,53 +160,19 @@ public partial class WorldGridPanel : Window
             EmitSignal(SignalName.MapCreateRequested, cell.Col, cell.Row);
     }
 
+    /// <summary>
+    /// Right click takes a map off the grid. Empty cells ignore it: the create
+    /// dialog already covers both placing an existing map and making a new one.
+    /// </summary>
     private void OnCellInput(InputEvent @event, WorldCell cell, int? mapNumber)
     {
         if (@event is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right })
             return;
+        if (mapNumber is null) return;
 
-        if (mapNumber is not null)
-        {
-            Grid!.Clear(cell);
-            EmitSignal(SignalName.GridChanged);
-            Rebuild();
-        }
-        else
-        {
-            PromptAssign(cell);
-        }
-    }
-
-    /// <summary>Asks which existing map to drop into an empty cell.</summary>
-    private void PromptAssign(WorldCell cell)
-    {
-        _pendingAssign = cell;
-
-        var dialog = new AcceptDialog
-        {
-            Title = $"Asignar mapa a la celda {cell}",
-            OkButtonText = "Asignar",
-        };
-        var spin = new SpinBox { MinValue = 1, MaxValue = 9999, Step = 1, Value = 1 };
-        spin.CustomMinimumSize = new Vector2(140, 0);
-        dialog.AddChild(spin);
-        dialog.AddCancelButton("Cancelar");
-
-        dialog.Confirmed += () =>
-        {
-            if (_pendingAssign is WorldCell target)
-            {
-                Grid!.Assign(target, (int)spin.Value);
-                EmitSignal(SignalName.GridChanged);
-                Rebuild();
-            }
-            _pendingAssign = null;
-            dialog.QueueFree();
-        };
-        dialog.Canceled += () => { _pendingAssign = null; dialog.QueueFree(); };
-
-        AddChild(dialog);
-        dialog.PopupCentered();
+        Grid!.Clear(cell);
+        EmitSignal(SignalName.GridChanged);
+        Rebuild();
     }
 
     private void UpdateInfo()
