@@ -31,6 +31,13 @@ internal static class Program
     /// </summary>
     private const int MaxTerrainCellsPerSheet = 64;
 
+    /// <summary>
+    /// Palette entries contributed by one sheet. Every cell of every sheet is
+    /// indexed and reachable through the Láminas panel; this only bounds the
+    /// browsable list so indices.ini stays a size the editor can parse.
+    /// </summary>
+    private const int MaxPaletteEntriesPerSheet = 64;
+
     // GrhEntry exposes plain fields, so IncludeFields is required or the dump
     // silently writes zeros. Defaults are written too: an SX of 0 is real data.
     private static readonly JsonSerializerOptions Json = new()
@@ -576,11 +583,24 @@ internal static class Program
 
             var (type, layer) = Bucket(sheet.Class, sheet.Sheet);
 
-            // Every GRH gets an entry. Sampling large sheets kept the palette
-            // small but hid most of the catalogue from the mapper, which is
-            // worse: the editor groups by category and scrolls, so a long list
-            // costs nothing while missing art cannot be placed at all.
-            foreach (int grh in sheet.Grhs)
+            // Terrain sheets carry up to 4096 cells each. Listing every one of
+            // them gave a 190000-entry palette and a 20 MB indices.ini, which
+            // the editor parses into a dictionary per entry — enough to hang it
+            // on startup.
+            //
+            // The palette is a browsing aid, not the only way in: the Láminas
+            // panel opens any sheet and drag-captures any block straight off the
+            // image, including cells not listed here. So each sheet contributes
+            // a sample and the whole catalogue stays reachable.
+            var grhs = sheet.Grhs;
+            if (grhs.Count > MaxPaletteEntriesPerSheet)
+            {
+                double step = (double)grhs.Count / MaxPaletteEntriesPerSheet;
+                grhs = Enumerable.Range(0, MaxPaletteEntriesPerSheet)
+                                 .Select(i => grhs[(int)(i * step)]).ToList();
+            }
+
+            foreach (int grh in grhs)
             {
                 if (!statics.TryGetValue(grh, out var e)) continue;
                 // Per-GRH, not per-sheet: assigning to `type` here would leak the

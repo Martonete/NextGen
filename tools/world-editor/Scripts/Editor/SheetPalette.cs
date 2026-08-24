@@ -44,6 +44,12 @@ public partial class SheetPalette : VBoxContainer
     // count left most of a tall sidebar empty and inflated the page count.
     private int _sheetsPerPage = 12;
 
+    /// <summary>
+    /// Region buttons built for one sheet. Terrain sheets reach 4096 regions
+    /// after full indexing, and a textured node each freezes the editor.
+    /// </summary>
+    private const int MaxRegionButtons = 400;
+
     private readonly Dictionary<int, Texture2D?> _regionCache = new();
     private readonly List<int> _availableFiles = new();
     private readonly List<int> _currentRegions = new();
@@ -493,6 +499,11 @@ public partial class SheetPalette : VBoxContainer
             var grh = Grhs[id];
             if (onlySingleTile && (grh.NumFrames > 1 || grh.PixelWidth != 32 || grh.PixelHeight != 32))
                 continue;
+            // Terrain sheets now carry up to 4096 regions each; building a
+            // textured node for every one freezes the editor when the sheet is
+            // opened. The block-capture drag works off the sheet image itself,
+            // not this list, so a capped list loses nothing.
+            if (shown >= MaxRegionButtons) break;
             _regions.AddChild(CreateRegionButton(id));
             shown++;
         }
@@ -500,6 +511,14 @@ public partial class SheetPalette : VBoxContainer
         {
             var notice = EditorTheme.MakeLabel("Sin tiles 32×32. Desmarcá el filtro.",
                 EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+            notice.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            _regions.AddChild(notice);
+        }
+        else if (shown >= MaxRegionButtons)
+        {
+            var notice = EditorTheme.MakeLabel(
+                $"Mostrando {shown} de {_currentRegions.Count} piezas. Usá el arrastre sobre la lámina para el resto.",
+                EditorTheme.TEXT_MUTED, EditorTheme.FONT_XS);
             notice.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             _regions.AddChild(notice);
         }

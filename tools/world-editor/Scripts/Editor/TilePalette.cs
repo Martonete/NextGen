@@ -48,6 +48,18 @@ public partial class TilePalette : VBoxContainer
     private string _searchFilter = "";
     private readonly List<Button> _categoryButtons = new();
 
+    // Grid paging. Categories reach into the thousands ("Terreno" has 8123),
+    // and building a textured node per entry in one frame hangs the editor.
+    private const int PageSize = 300;
+
+    /// <summary>Search stops here; the grid only shows one page at a time anyway.</summary>
+    private const int SearchResultLimit = 3000;
+
+    private int _page;
+    private int _pageCount = 1;
+    private HBoxContainer? _pagerRow;
+    private Label? _pageLabel;
+
     // Preview cell size is user-adjustable: big art (trees, houses) is unreadable
     // at thumbnail size, while terrain tiles are easier to scan when many fit.
     private const int PreviewSizeMin = 48;
@@ -292,6 +304,52 @@ public partial class TilePalette : VBoxContainer
         _grid.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _grid.MouseFilter = MouseFilterEnum.Stop;
         _scrollContainer.AddChild(_grid);
+
+        BuildPager();
+    }
+
+    /// <summary>
+    /// Page navigation under the grid. Hidden while a category fits on one page,
+    /// so small categories look exactly as they did before.
+    /// </summary>
+    private void BuildPager()
+    {
+        _pagerRow = new HBoxContainer();
+        _pagerRow.AddThemeConstantOverride("separation", 4);
+        _pagerRow.Visible = false;
+
+        var prev = EditorTheme.MakeButton("<", () => GoToPage(_page - 1));
+        prev.CustomMinimumSize = new Vector2(28, 24);
+        _pagerRow.AddChild(prev);
+
+        _pageLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_MUTED, EditorTheme.FONT_XS);
+        _pageLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _pageLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _pagerRow.AddChild(_pageLabel);
+
+        var next = EditorTheme.MakeButton(">", () => GoToPage(_page + 1));
+        next.CustomMinimumSize = new Vector2(28, 24);
+        _pagerRow.AddChild(next);
+
+        AddChild(_pagerRow);
+    }
+
+    private void GoToPage(int page)
+    {
+        int clamped = Math.Clamp(page, 0, _pageCount - 1);
+        if (clamped == _page) return;
+        _page = clamped;
+        PopulateGrid();
+        // A new page starts at the top rather than wherever the last one was left.
+        if (_scrollContainer != null) _scrollContainer.ScrollVertical = 0;
+    }
+
+    private void UpdatePager(int total)
+    {
+        if (_pagerRow == null || _pageLabel == null) return;
+        _pagerRow.Visible = _pageCount > 1;
+        if (_pageCount > 1)
+            _pageLabel.Text = $"{_page + 1}/{_pageCount}  ·  {total} items";
     }
 
     /// <summary>
@@ -394,6 +452,7 @@ public partial class TilePalette : VBoxContainer
         if (Catalog.CategoryOrder.Count > 0)
         {
             _activeCategory = Catalog.CategoryOrder[0];
+            _page = 0;
             SyncCategoryButtons();
             PopulateGrid();
         }
@@ -406,6 +465,7 @@ public partial class TilePalette : VBoxContainer
     private void OnSearchChanged(string text)
     {
         _searchFilter = text.Trim().ToLowerInvariant();
+        _page = 0;
         PopulateGrid();
     }
 
@@ -532,6 +592,7 @@ public partial class TilePalette : VBoxContainer
     {
         _activeCategory = category;
         _searchFilter = "";
+        _page = 0; // a different list: page 2 of the old one means nothing here
         if (_searchBox != null) _searchBox.Text = "";
         SyncCategoryButtons();
         PopulateGrid();
@@ -557,14 +618,25 @@ public partial class TilePalette : VBoxContainer
         List<TextureRef> refs;
         if (_searchFilter.Length > 0)
         {
+            // Case-insensitive comparison instead of lowercasing each field:
+            // the catalogue holds ~190000 refs, so allocating two strings per
+            // entry on every keystroke was enough to stall the editor.
             refs = new List<TextureRef>();
             foreach (var texRef in Catalog.AllRefs)
             {
-                if (texRef.Name.ToLowerInvariant().Contains(_searchFilter) ||
-                    texRef.Category.ToLowerInvariant().Contains(_searchFilter))
+                if (texRef.Name.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) ||
+                    texRef.Category.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase))
+                {
                     refs.Add(texRef);
+                    // Stop once there is far more than one page: the pager only
+                    // ever shows PageSize at a time, and the count is reported
+                    // as a minimum rather than scanning the whole catalogue.
+                    if (refs.Count >= SearchResultLimit) break;
+                }
             }
-            _infoLabel!.Text = $"Búsqueda: {refs.Count} resultados";
+            _infoLabel!.Text = refs.Count >= SearchResultLimit
+                ? $"Búsqueda: {SearchResultLimit}+ resultados (refiná el filtro)"
+                : $"Búsqueda: {refs.Count} resultados";
         }
         else
         {
@@ -572,10 +644,20 @@ public partial class TilePalette : VBoxContainer
             refs = catRefs;
         }
 
+        // Only one page is built at a time. Categories run to thousands of
+        // entries — "Terreno" alone has 8123 — and materialising a textured
+        // Godot node for each in a single frame locks the editor on startup.
+        _pageCount = Math.Max(1, (refs.Count + PageSize - 1) / PageSize);
+        _page = Math.Clamp(_page, 0, _pageCount - 1);
+        int pageStart = _page * PageSize;
+        int pageEnd = Math.Min(pageStart + PageSize, refs.Count);
+        UpdatePager(refs.Count);
+
         bool isSearch = _searchFilter.Length > 0;
         int gridIdx = 0;
-        foreach (var texRef in refs)
+        for (int refIndex = pageStart; refIndex < pageEnd; refIndex++)
         {
+            var texRef = refs[refIndex];
             var btn = new DraggableTextureButton();
             btn.CustomMinimumSize = new Vector2(_previewSize, _previewSize);
             // KeepAspectCentered preserves the piece's real proportions, so a 2x4
