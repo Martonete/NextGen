@@ -248,7 +248,17 @@ public partial class EditorMain
             OnSaveMap();
             RescanMaps();
             RefreshWorldPanel();
-            SetStatus($"Mapa {mapNumber} creado en la celda {cell}");
+
+            string message = $"Mapa {mapNumber} creado en la celda {cell}";
+            if (ServerMapLimit() is int limit && mapNumber > limit)
+            {
+                // The server iterates 1..NumMaps, so a map past that is simply
+                // never loaded: walking into it does nothing, with no error to
+                // explain why.
+                message += $"  ⚠ NumMaps={limit} en server/dat/Map.dat: subilo o el "
+                         + "servidor no va a cargar este mapa";
+            }
+            SetStatus(message);
         });
     }
 
@@ -281,6 +291,30 @@ public partial class EditorMain
     {
         string dir = _serverMapDir.Length > 0 ? _serverMapDir : _clientMapDir;
         if (dir.Length > 0) _state.ScanAvailableMaps(dir);
+    }
+
+    /// <summary>
+    /// NumMaps from server/dat/Map.dat, the highest map the server will load.
+    /// Null when it cannot be read, in which case no warning is shown rather
+    /// than a wrong one.
+    /// </summary>
+    private int? ServerMapLimit()
+    {
+        if (_serverDatDir.Length == 0) return null;
+        string path = Path.Combine(_serverDatDir, "Map.dat");
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            foreach (string line in File.ReadAllLines(path))
+            {
+                string trimmed = line.Trim();
+                if (!trimmed.StartsWith("NumMaps=", StringComparison.OrdinalIgnoreCase)) continue;
+                if (int.TryParse(trimmed[8..].Trim(), out int value)) return value;
+            }
+        }
+        catch { /* unreadable: treat as unknown */ }
+        return null;
     }
 
     private void PromptPlaceCurrentMap()
