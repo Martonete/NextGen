@@ -20,26 +20,50 @@ public static class GrhLoader
         return ParseGrhData(fileData);
     }
 
+    /// <summary>
+    /// True when <paramref name="offset"/> plausibly starts a GRH record. Used
+    /// to find the header instead of judging Count by magnitude.
+    /// </summary>
+    private static bool LooksLikeEntry(byte[] data, int offset)
+    {
+        if (offset + 6 > data.Length) return false;
+        int grhIndex = BitConverter.ToInt32(data, offset);
+        short numFrames = BitConverter.ToInt16(data, offset + 4);
+        if (grhIndex <= 0 || numFrames < 1) return false;
+        // 18 bytes when static, 10 + 4*frames when animated.
+        int recordSize = numFrames > 1 ? 10 + 4 * numFrames : 18;
+        return offset + recordSize <= data.Length;
+    }
+
     private static GrhData[] ParseGrhData(byte[] fileData)
     {
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
-        int version = reader.ReadInt32();
-        int grhCount = reader.ReadInt32();
-
-        if (grhCount <= 0 || grhCount > 100000)
+        // Locate the header by checking whether a GRH record parses after each
+        // candidate offset. Never gate on how large Count is: it is only a hint
+        // for the initial array size. The old `Count > 100000` guard rejected
+        // the real header once the catalogue passed that many entries, fell
+        // through to offset 263, and read garbage — 2371 graphics at version
+        // 1580786176 instead of 207145 at version 447.
+        int version = 0, grhCount = 0;
+        bool headerFound = false;
+        foreach (int headerOffset in new[] { 0, MiCabeceraSize, 1 })
         {
-            reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
+            if (headerOffset + 8 > fileData.Length) continue;
+            reader.BaseStream.Seek(headerOffset, SeekOrigin.Begin);
             version = reader.ReadInt32();
             grhCount = reader.ReadInt32();
+            if (grhCount > 0 && LooksLikeEntry(fileData, headerOffset + 8))
+            {
+                headerFound = true;
+                break;
+            }
         }
 
-        if (grhCount <= 0 || grhCount > 100000)
+        if (!headerFound)
         {
-            reader.BaseStream.Seek(0, SeekOrigin.Begin);
-            reader.ReadByte();
-            version = reader.ReadInt32();
-            grhCount = reader.ReadInt32();
+            GD.PushError("[GRH] Cabecera de Graficos.ind irreconocible");
+            return new GrhData[1];
         }
 
         GD.Print($"[GRH] Loading {grhCount} graphics (version {version})");

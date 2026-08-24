@@ -20,25 +20,19 @@ public static class GrhLoader
         byte[] fileData = File.ReadAllBytes(path);
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
-        // Auto-detect header: try without MiCabecera first
-        int version = reader.ReadInt32();
-        int grhCount = reader.ReadInt32();
-
-        // Sanity check: if count is unreasonable, try with MiCabecera
-        if (grhCount <= 0 || grhCount > 100000)
+        // Find the header by testing whether a record parses after each candidate
+        // offset, rather than judging Count by magnitude: the catalogue is well
+        // past 100000 entries and the old guard rejected the real header.
+        int version = 0, grhCount = 0;
+        foreach (int headerOffset in new[] { 0, MiCabeceraSize, 1 })
         {
-            reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
+            if (headerOffset + 14 > fileData.Length) continue;
+            reader.BaseStream.Seek(headerOffset, SeekOrigin.Begin);
             version = reader.ReadInt32();
             grhCount = reader.ReadInt32();
-        }
-
-        // Still bad? Try alternate: first 4 bytes might be a flag byte
-        if (grhCount <= 0 || grhCount > 100000)
-        {
-            reader.BaseStream.Seek(0, SeekOrigin.Begin);
-            reader.ReadByte(); // skip 1 flag byte
-            version = reader.ReadInt32();
-            grhCount = reader.ReadInt32();
+            int firstIndex = BitConverter.ToInt32(fileData, headerOffset + 8);
+            short firstFrames = BitConverter.ToInt16(fileData, headerOffset + 12);
+            if (grhCount > 0 && firstIndex > 0 && firstFrames >= 1) break;
         }
 
         GD.Print($"[GRH] Loading {grhCount} graphics (version {version}, offset {reader.BaseStream.Position})");
