@@ -1,0 +1,26 @@
+<!--
+  Round-trip tests for the obj.dat editing path. obj.dat is hand-authored and
+  irreplaceable, so the writer must be provably non-destructive before the
+  tool edits it. Run with: dotnet run, from this directory.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>objdat-test</AssemblyName>
+    <RootNamespace>AODateador.Test</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../Scripts/Data/ObjDatWriter.cs" />
+    <Compile Include="../Scripts/Data/ObjData.cs" />
+    <Compile Include="ObjDatWriterTests.cs" />
+    <Compile Include="ObjDatabaseTests.cs" />
+    <Compile Include="Runner.cs" />
+  </ItemGroup>
+
+</Project>

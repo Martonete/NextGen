@@ -8,4 +8,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>12</LangVersion>
   </PropertyGroup>
+
+  <!--
+    Godot points the intermediate output at .godot/mono/temp/obj, which sits
+    inside the project directory. The default source glob then also picks up
+    the AssemblyInfo generated there, so every assembly attribute is declared
+    twice. Narrowing the glob to Scripts/ is what the other Godot tools in this
+    repo effectively get by keeping all their code there.
+  -->
+  <PropertyGroup>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Scripts/**/*.cs" />
+  </ItemGroup>
+
 </Project>

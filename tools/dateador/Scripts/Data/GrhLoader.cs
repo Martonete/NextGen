@@ -1,0 +1,152 @@
+#nullable enable
+using System;
+using System.IO;
+using Godot;
+
+namespace AODateador.Data;
+
+/// <summary>
+/// Parses Graficos.ind binary file (same format as client).
+/// Auto-detects header variants (with/without MiCabecera).
+/// Loads from a loose file on disk.
+/// </summary>
+public static class GrhLoader
+{
+    private const int MiCabeceraSize = 263;
+
+    public static GrhData[] Load(string path)
+    {
+        byte[] fileData = File.ReadAllBytes(path);
+        return ParseGrhData(fileData);
+    }
+
+    /// <summary>
+    /// True when <paramref name="offset"/> plausibly starts a GRH record. Used
+    /// to find the header instead of judging Count by magnitude.
+    /// </summary>
+    private static bool LooksLikeEntry(byte[] data, int offset)
+    {
+        if (offset + 6 > data.Length) return false;
+        int grhIndex = BitConverter.ToInt32(data, offset);
+        short numFrames = BitConverter.ToInt16(data, offset + 4);
+        if (grhIndex <= 0 || numFrames < 1) return false;
+        // 18 bytes when static, 10 + 4*frames when animated.
+        int recordSize = numFrames > 1 ? 10 + 4 * numFrames : 18;
+        return offset + recordSize <= data.Length;
+    }
+
+    private static GrhData[] ParseGrhData(byte[] fileData)
+    {
+        using var reader = new BinaryReader(new MemoryStream(fileData));
+
+        // Locate the header by checking whether a GRH record parses after each
+        // candidate offset. Never gate on how large Count is: it is only a hint
+        // for the initial array size. The old `Count > 100000` guard rejected
+        // the real header once the catalogue passed that many entries, fell
+        // through to offset 263, and read garbage — 2371 graphics at version
+        // 1580786176 instead of 207145 at version 447.
+        int version = 0, grhCount = 0;
+        bool headerFound = false;
+        foreach (int headerOffset in new[] { 0, MiCabeceraSize, 1 })
+        {
+            if (headerOffset + 8 > fileData.Length) continue;
+            reader.BaseStream.Seek(headerOffset, SeekOrigin.Begin);
+            version = reader.ReadInt32();
+            grhCount = reader.ReadInt32();
+            if (grhCount > 0 && LooksLikeEntry(fileData, headerOffset + 8))
+            {
+                headerFound = true;
+                break;
+            }
+        }
+
+        if (!headerFound)
+        {
+            GD.PushError("[GRH] Cabecera de Graficos.ind irreconocible");
+            return new GrhData[1];
+        }
+
+        GD.Print($"[GRH] Loading {grhCount} graphics (version {version})");
+
+        var grhs = new GrhData[grhCount + 1];
+        for (int i = 0; i < grhs.Length; i++)
+            grhs[i] = new GrhData();
+
+        int loaded = 0;
+        while (reader.BaseStream.Position < reader.BaseStream.Length - 4)
+        {
+            int grhIndex;
+            try { grhIndex = reader.ReadInt32(); }
+            catch (EndOfStreamException) { break; }
+
+            if (grhIndex <= 0) break;
+            if (grhIndex >= grhs.Length)
+            {
+                var newGrhs = new GrhData[grhIndex + 100];
+                Array.Copy(grhs, newGrhs, grhs.Length);
+                for (int i = grhs.Length; i < newGrhs.Length; i++)
+                    newGrhs[i] = new GrhData();
+                grhs = newGrhs;
+            }
+
+            short numFrames = reader.ReadInt16();
+            grhs[grhIndex].NumFrames = numFrames;
+
+            if (numFrames > 1)
+            {
+                var frames = new int[numFrames];
+                for (int f = 0; f < numFrames; f++)
+                    frames[f] = reader.ReadInt32();
+                grhs[grhIndex].Frames = frames;
+                grhs[grhIndex].Speed = reader.ReadSingle();
+
+                if (frames[0] > 0 && frames[0] < grhs.Length)
+                {
+                    var first = grhs[frames[0]];
+                    grhs[grhIndex].PixelWidth = first.PixelWidth;
+                    grhs[grhIndex].PixelHeight = first.PixelHeight;
+                    grhs[grhIndex].FileNum = first.FileNum;
+                    grhs[grhIndex].SX = first.SX;
+                    grhs[grhIndex].SY = first.SY;
+                    grhs[grhIndex].TileWidth = first.TileWidth;
+                    grhs[grhIndex].TileHeight = first.TileHeight;
+                }
+            }
+            else
+            {
+                grhs[grhIndex].FileNum = reader.ReadInt32();
+                grhs[grhIndex].SX = reader.ReadInt16();
+                grhs[grhIndex].SY = reader.ReadInt16();
+                grhs[grhIndex].PixelWidth = reader.ReadInt16();
+                grhs[grhIndex].PixelHeight = reader.ReadInt16();
+                grhs[grhIndex].TileWidth = grhs[grhIndex].PixelWidth / 32f;
+                grhs[grhIndex].TileHeight = grhs[grhIndex].PixelHeight / 32f;
+                grhs[grhIndex].Frames = new int[] { grhIndex };
+            }
+            loaded++;
+        }
+
+        // Second pass: resolve animation dimensions
+        for (int i = 1; i < grhs.Length; i++)
+        {
+            var frames = grhs[i].Frames;
+            if (grhs[i].NumFrames > 1 && grhs[i].PixelWidth == 0 && frames is { Length: > 0 })
+            {
+                int firstIdx = frames[0];
+                if (firstIdx > 0 && firstIdx < grhs.Length)
+                {
+                    grhs[i].PixelWidth = grhs[firstIdx].PixelWidth;
+                    grhs[i].PixelHeight = grhs[firstIdx].PixelHeight;
+                    grhs[i].FileNum = grhs[firstIdx].FileNum;
+                    grhs[i].SX = grhs[firstIdx].SX;
+                    grhs[i].SY = grhs[firstIdx].SY;
+                    grhs[i].TileWidth = grhs[firstIdx].TileWidth;
+                    grhs[i].TileHeight = grhs[firstIdx].TileHeight;
+                }
+            }
+        }
+
+        GD.Print($"[GRH] Loaded {loaded} graphics");
+        return grhs;
+    }
+}

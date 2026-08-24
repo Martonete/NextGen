@@ -60,3 +60,7 @@ docs/catalog/baseline.json
 
 # Respaldos locales grandes (mapas y .bak previos al reinicio)
 .archive/
+
+# Dateador: config local con rutas de la maquina
+tools/dateador/dateador_config.ini
+tools/dateador/.godot/

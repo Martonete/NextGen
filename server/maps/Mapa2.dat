@@ -1,13 +1,12 @@
-[Mapa2]
-Name=Bosque
-MusicNum=1
-StartPos=0-0-0
-MagiaSinEfecto=0
-InviSinEfecto=0
-ResuSinEfecto=0
-NoEncriptarMP=0
-Pk=0
-Terreno=BOSQUE
+[MAPA2]
+Name=Mapa 2
+MusicNum=0
+Pk=1
+BackUp=1
+Terreno=TIERRA
 Zona=CAMPO
-Restringir=NO
-BACKUP=1
+RestringirNavegar=0
+NoEncriptarMP=0
+R=180
+G=180
+B=180

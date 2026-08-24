@@ -2,280 +2,240 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text;
 
 namespace AODateador.Data;
 
-public class ObjData
+/// <summary>
+/// One object of obj.dat, held as its raw section text plus the values read
+/// from it.
+///
+/// Keeping the section text is what makes editing safe: fields the tool does
+/// not model — roughly forty keys inherited from VB6 that no parser reads —
+/// stay in the text and are written back untouched.
+/// </summary>
+public sealed class ObjData
 {
-    public int Index { get; set; }
-    public string Name { get; set; } = "";
-    public int ObjType { get; set; }
-    public int GrhIndex { get; set; }
-    public int Valor { get; set; }
+    public int Index;
 
-    // true = FIXED (cannot pick up)
-    public bool Agarrable { get; set; }
+    /// <summary>Verbatim `[OBJn]` section, including its header line.</summary>
+    public string RawSection = "";
 
-    // Weapon
-    public int MinHIT { get; set; }
-    public int MaxHIT { get; set; }
-    public int WeaponAnim { get; set; }
-    public bool DosManos { get; set; }
-    public bool Proyectil { get; set; }
-    public int Municion { get; set; }
+    /// <summary>Edits not yet written to disk, by key.</summary>
+    private readonly Dictionary<string, string?> _pending = new(StringComparer.OrdinalIgnoreCase);
 
-    // Armor
-    public int MinDef { get; set; }
-    public int MaxDef { get; set; }
-    public int ShieldAnim { get; set; }
-    public int CascoAnim { get; set; }
-    public int NumRopaje { get; set; }
+    public bool IsDirty => _pending.Count > 0;
 
-    // Potion
-    public int TipoPocion { get; set; }
-    public int MinModificador { get; set; }
-    public int MaxModificador { get; set; }
-    public int DuracionEfecto { get; set; }
-    public int MinHam { get; set; }
-    public int MinAgua { get; set; }
+    public string Name => Get("Name") ?? "";
+    public int ObjType => GetInt("ObjType");
+    public int GrhIndex => GetInt("GrhIndex");
 
-    // Door
-    public int Llave { get; set; }
-    public int Cerrada { get; set; }
-    public int IndexAbierta { get; set; }
-    public int IndexCerrada { get; set; }
+    /// <summary>Current value: a pending edit if any, otherwise the file's.</summary>
+    public string? Get(string key)
+    {
+        if (_pending.TryGetValue(key, out var pending)) return pending;
+        return ObjDatWriter.ReadField(RawSection, key);
+    }
 
-    // Crafting
-    public int SkHerreria { get; set; }
-    public int SkCarpinteria { get; set; }
-    public int LingH { get; set; }
-    public int LingO { get; set; }
-    public int LingP { get; set; }
-    public int Madera { get; set; }
+    public int GetInt(string key)
+        => int.TryParse(Get(key), out int value) ? value : 0;
 
-    // Restrictions
-    public bool Real { get; set; }
-    public bool Caos { get; set; }
-    public int Lvl { get; set; }
-    public List<string> ClaseProhibida { get; set; } = new();
+    public bool GetBool(string key) => GetInt(key) == 1;
 
-    // Spell
-    public int HechIndex { get; set; }
+    /// <summary>
+    /// Stages an edit. Writing a value equal to what the file already holds
+    /// clears the edit instead of recording a no-op, so an accidental focus
+    /// change does not mark the object dirty.
+    /// </summary>
+    public void Set(string key, string? value)
+    {
+        string? onDisk = ObjDatWriter.ReadField(RawSection, key);
+        if (value == onDisk) { _pending.Remove(key); return; }
+        _pending[key] = value;
+    }
 
-    // Sound
-    public int SND1 { get; set; }
+    public void SetInt(string key, int value) => Set(key, value.ToString());
+    public void SetBool(string key, bool value) => Set(key, value ? "1" : "0");
 
-    // Flags
-    public bool CuraVeneno { get; set; }
-    public bool Envenena { get; set; }
-    public int Refuerzo { get; set; }
-    public bool Newbie { get; set; }
-    public bool Paraliza { get; set; }
+    /// <summary>Removes the key from the file on the next save.</summary>
+    public void Clear(string key) => Set(key, null);
 
-    public int StaffPower { get; set; }
-    public int StaffDamageBonus { get; set; }
-    public int DefensaMagicaMin { get; set; }
-    public int DefensaMagicaMax { get; set; }
-    public int MinSkill { get; set; }
-    public int CreaAura { get; set; }
-    public int Upgrade { get; set; }
-    public string ForoId { get; set; } = "";
-    public int MochilaType { get; set; }
+    public IReadOnlyList<ObjDatWriter.FieldEdit> PendingEdits()
+        => _pending.Select(kv => new ObjDatWriter.FieldEdit(kv.Key, kv.Value)).ToList();
+
+    public void MarkSaved(string newRawSection)
+    {
+        RawSection = newRawSection;
+        _pending.Clear();
+    }
+
+    /// <summary>Class restrictions, read from CP1..CP16.</summary>
+    public List<string> ProhibitedClasses()
+    {
+        var result = new List<string>();
+        for (int i = 1; i <= 16; i++)
+        {
+            string? value = Get($"CP{i}");
+            if (!string.IsNullOrWhiteSpace(value)) result.Add(value.Trim());
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Rewrites CP1..CP16 to hold exactly <paramref name="classes"/>, packed
+    /// from CP1 with no gaps; the server stops reading at CP8.
+    /// </summary>
+    public void SetProhibitedClasses(IReadOnlyList<string> classes)
+    {
+        for (int i = 1; i <= 16; i++)
+        {
+            string key = $"CP{i}";
+            if (i <= classes.Count) Set(key, classes[i - 1]);
+            else if (ObjDatWriter.ReadField(RawSection, key) != null) Clear(key);
+        }
+    }
 }
 
-public class ObjDatabase
+/// <summary>
+/// All objects of obj.dat, with a save path that never regenerates the file.
+/// </summary>
+public sealed class ObjDatabase
 {
-    public List<ObjData> Objects { get; set; } = new();
+    /// <summary>Objects by their `[OBJn]` number.</summary>
+    public readonly Dictionary<int, ObjData> Objects = new();
 
-    public static ObjDatabase Load(string datDir)
+    public string SourcePath { get; private set; } = "";
+
+    /// <summary>Full file text, the base every edit is applied to.</summary>
+    private string _text = "";
+
+    /// <summary>
+    /// Encoding detected on load and reused on save. obj.dat ships as UTF-16LE;
+    /// writing it back as anything else corrupts every accented name.
+    /// </summary>
+    private Encoding _encoding = Encoding.Unicode;
+
+    /// <summary>
+    /// Whether the file began with a BOM. Recorded so it is written back:
+    /// dropping it still parses, because every reader has a fallback
+    /// heuristic, but it is a silent change to a file we promise not to alter
+    /// beyond the fields being edited.
+    /// </summary>
+    private bool _hadBom;
+
+    public IEnumerable<ObjData> All => Objects.Values.OrderBy(o => o.Index);
+
+    public bool IsDirty => Objects.Values.Any(o => o.IsDirty);
+
+    /// <summary>
+    /// Loads obj.dat. Accepts either the file itself or the directory holding
+    /// it, since the rest of the tool passes a dat directory around. The name
+    /// is lower case on disk in server/dat but capitalised under resources/.
+    /// </summary>
+    public static ObjDatabase Load(string pathOrDir)
     {
-        var db = new ObjDatabase();
-        string path = Path.Combine(datDir, "Obj.dat");
-        if (!File.Exists(path)) return db;
-
-        var ini = IniFile.Load(path);
-        int count = ini.GetInt("INIT", "NumOBJs", 0);
-
-        for (int i = 1; i <= count; i++)
+        string path = pathOrDir;
+        if (Directory.Exists(pathOrDir))
         {
-            string section = $"OBJ{i}";
-            if (!ini.HasSection(section)) continue;
-
-            var obj = new ObjData
-            {
-                Index = i,
-                Name = ini.GetString(section, "Name"),
-                ObjType = ini.GetInt(section, "ObjType"),
-                GrhIndex = ini.GetInt(section, "GrhIndex"),
-                Valor = ini.GetInt(section, "Valor"),
-                Agarrable = ini.GetInt(section, "Agarrable") == 1,
-
-                // Weapon
-                MinHIT = ini.GetInt(section, "MinHIT"),
-                MaxHIT = ini.GetInt(section, "MaxHIT"),
-                WeaponAnim = ini.GetInt(section, "Anim"),
-                DosManos = ini.GetInt(section, "DosManos") == 1,
-                Proyectil = ini.GetBool(section, "Proyectil"),
-                Municion = ini.GetInt(section, "Municion"),
-
-                // Armor
-                MinDef = ini.GetInt(section, "MinDef"),
-                MaxDef = ini.GetInt(section, "MaxDef"),
-                ShieldAnim = ini.GetInt(section, "ShieldAnim"),
-                CascoAnim = ini.GetInt(section, "CascoAnim"),
-                NumRopaje = ini.GetInt(section, "NumRopaje"),
-
-                // Potion
-                TipoPocion = ini.GetInt(section, "TipoPocion"),
-                MinModificador = ini.GetInt(section, "MinModificador"),
-                MaxModificador = ini.GetInt(section, "MaxModificador"),
-                DuracionEfecto = ini.GetInt(section, "DuracionEfecto"),
-                MinHam = ini.GetInt(section, "MinHam"),
-                MinAgua = ini.GetInt(section, "MinAgua"),
-
-                // Door
-                Llave = ini.GetInt(section, "Llave"),
-                Cerrada = ini.GetInt(section, "Cerrada"),
-                IndexAbierta = ini.GetInt(section, "IndexAbierta"),
-                IndexCerrada = ini.GetInt(section, "IndexCerrada"),
-
-                // Crafting
-                SkHerreria = ini.GetInt(section, "SkHerreria"),
-                SkCarpinteria = ini.GetInt(section, "SkCarpinteria"),
-                LingH = ini.GetInt(section, "LingH"),
-                LingO = ini.GetInt(section, "LingO"),
-                LingP = ini.GetInt(section, "LingP"),
-                Madera = ini.GetInt(section, "Madera"),
-
-                // Restrictions
-                Real = ini.GetInt(section, "Real") == 1,
-                Caos = ini.GetInt(section, "Caos") == 1,
-                Lvl = ini.GetInt(section, "Lvl"),
-
-                // Spell
-                HechIndex = ini.GetInt(section, "HechIndex"),
-
-                // Sound
-                SND1 = ini.GetInt(section, "SND1"),
-
-                // Flags
-                CuraVeneno = ini.GetBool(section, "CuraVeneno"),
-                Envenena = ini.GetBool(section, "Envenena"),
-                Refuerzo = ini.GetInt(section, "Refuerzo"),
-                Newbie = ini.GetBool(section, "Newbie"),
-                Paraliza = ini.GetBool(section, "Paraliza"),
-
-                StaffPower = ini.GetInt(section, "StaffPower"),
-                StaffDamageBonus = ini.GetInt(section, "StaffDamageBonus"),
-                DefensaMagicaMin = ini.GetInt(section, "DefensaMagicaMin"),
-                DefensaMagicaMax = ini.GetInt(section, "DefensaMagicaMax"),
-                MinSkill = ini.GetInt(section, "MinSkill"),
-                CreaAura = ini.GetInt(section, "CreaAura"),
-                Upgrade = ini.GetInt(section, "Upgrade"),
-                ForoId = ini.GetString(section, "ForoId"),
-                MochilaType = ini.GetInt(section, "MochilaType"),
-            };
-
-            // Restricted classes (CP1..CP8)
-            for (int c = 1; c <= 8; c++)
-            {
-                string className = ini.GetString(section, $"CP{c}");
-                if (!string.IsNullOrEmpty(className))
-                    obj.ClaseProhibida.Add(className);
-            }
-
-            db.Objects.Add(obj);
+            path = new[] { "obj.dat", "Obj.dat" }
+                .Select(name => Path.Combine(pathOrDir, name))
+                .FirstOrDefault(File.Exists)
+                ?? Path.Combine(pathOrDir, "obj.dat");
         }
+
+        var db = new ObjDatabase { SourcePath = path };
+        byte[] bytes = File.ReadAllBytes(path);
+        db._encoding = DetectEncoding(bytes);
+        db._text = db._encoding.GetString(bytes);
+        // A BOM decodes to U+FEFF. Strip it from the working text so offsets
+        // line up, and remember to put it back on save.
+        if (db._text.Length > 0 && db._text[0] == '﻿')
+        {
+            db._hadBom = true;
+            db._text = db._text[1..];
+        }
+
+        foreach (var (number, body) in ObjDatWriter.SplitSections(db._text))
+            db.Objects[number] = new ObjData { Index = number, RawSection = body };
 
         return db;
     }
 
-    public void Save(string datDir)
+    /// <summary>
+    /// Applies every pending edit and writes the file, keeping a .bak.
+    /// Returns how many objects changed.
+    /// </summary>
+    public int Save(IEnumerable<string>? alsoWriteTo = null)
     {
-        var ini = new IniFile();
-        ini.Set("INIT", "NumOBJs", Objects.Count);
+        var edits = new Dictionary<int, List<ObjDatWriter.FieldEdit>>();
+        foreach (var obj in Objects.Values.Where(o => o.IsDirty))
+            edits[obj.Index] = obj.PendingEdits().ToList();
 
-        for (int i = 0; i < Objects.Count; i++)
-        {
-            var obj = Objects[i];
-            int sectionNum = i + 1;
-            string section = $"OBJ{sectionNum}";
+        if (edits.Count == 0) return 0;
 
-            ini.Set(section, "Name", obj.Name);
-            ini.Set(section, "ObjType", obj.ObjType);
-            ini.Set(section, "GrhIndex", obj.GrhIndex);
-            ini.Set(section, "Valor", obj.Valor);
-            ini.Set(section, "Agarrable", obj.Agarrable ? 1 : 0);
+        _text = ObjDatWriter.Apply(_text, edits);
 
-            // Weapon
-            ini.Set(section, "MinHIT", obj.MinHIT);
-            ini.Set(section, "MaxHIT", obj.MaxHIT);
-            ini.Set(section, "Anim", obj.WeaponAnim);
-            ini.Set(section, "DosManos", obj.DosManos ? 1 : 0);
-            ini.Set(section, "Proyectil", obj.Proyectil);
-            ini.Set(section, "Municion", obj.Municion);
+        WriteFile(SourcePath, _text, backup: true);
+        foreach (string extra in alsoWriteTo ?? Enumerable.Empty<string>())
+            WriteFile(extra, _text, backup: true);
 
-            // Armor
-            ini.Set(section, "MinDef", obj.MinDef);
-            ini.Set(section, "MaxDef", obj.MaxDef);
-            ini.Set(section, "ShieldAnim", obj.ShieldAnim);
-            ini.Set(section, "CascoAnim", obj.CascoAnim);
-            ini.Set(section, "NumRopaje", obj.NumRopaje);
+        // Re-split so each object's raw text matches what is now on disk.
+        var sections = ObjDatWriter.SplitSections(_text);
+        foreach (var obj in Objects.Values)
+            if (sections.TryGetValue(obj.Index, out var body)) obj.MarkSaved(body);
 
-            // Potion
-            ini.Set(section, "TipoPocion", obj.TipoPocion);
-            ini.Set(section, "MinModificador", obj.MinModificador);
-            ini.Set(section, "MaxModificador", obj.MaxModificador);
-            ini.Set(section, "DuracionEfecto", obj.DuracionEfecto);
-            ini.Set(section, "MinHam", obj.MinHam);
-            ini.Set(section, "MinAgua", obj.MinAgua);
+        return edits.Count;
+    }
 
-            // Door
-            ini.Set(section, "Llave", obj.Llave);
-            ini.Set(section, "Cerrada", obj.Cerrada);
-            ini.Set(section, "IndexAbierta", obj.IndexAbierta);
-            ini.Set(section, "IndexCerrada", obj.IndexCerrada);
+    private void WriteFile(string path, string text, bool backup)
+    {
+        if (backup && File.Exists(path))
+            File.Copy(path, path + ".bak", overwrite: true);
 
-            // Crafting
-            ini.Set(section, "SkHerreria", obj.SkHerreria);
-            ini.Set(section, "SkCarpinteria", obj.SkCarpinteria);
-            ini.Set(section, "LingH", obj.LingH);
-            ini.Set(section, "LingO", obj.LingO);
-            ini.Set(section, "LingP", obj.LingP);
-            ini.Set(section, "Madera", obj.Madera);
+        // Write through a temp file so an interrupted save cannot truncate the
+        // original.
+        //
+        // The BOM comes from an encoder configured to emit one, never from
+        // prepending U+FEFF to the text: the text is re-read after each save,
+        // so a manual prefix would stack up one BOM per save.
+        string tmp = path + ".tmp";
+        File.WriteAllText(tmp, text, BomEncoding());
+        File.Move(tmp, path, overwrite: true);
+    }
 
-            // Restrictions
-            ini.Set(section, "Real", obj.Real ? 1 : 0);
-            ini.Set(section, "Caos", obj.Caos ? 1 : 0);
-            ini.Set(section, "Lvl", obj.Lvl);
+    /// <summary>
+    /// The load encoding, set to emit a BOM only if the file had one.
+    /// <c>Encoding.Unicode</c> writes one by default, so the no-BOM case needs
+    /// an explicitly configured instance.
+    /// </summary>
+    private Encoding BomEncoding()
+    {
+        if (_encoding is UnicodeEncoding)
+            return new UnicodeEncoding(bigEndian: _encoding.CodePage == 1201,
+                                       byteOrderMark: _hadBom);
+        if (_encoding is UTF8Encoding)
+            return new UTF8Encoding(encoderShouldEmitUTF8Identifier: _hadBom);
+        return _encoding;
+    }
 
-            for (int c = 0; c < obj.ClaseProhibida.Count && c < 8; c++)
-                ini.Set(section, $"CP{c + 1}", obj.ClaseProhibida[c]);
+    /// <summary>
+    /// Detects the encoding from the BOM, falling back to a zero-byte
+    /// heuristic. Mirrors <c>ObjectLoader.DecodeObjDat</c> in the client.
+    /// </summary>
+    private static Encoding DetectEncoding(byte[] bytes)
+    {
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) return Encoding.Unicode;
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) return Encoding.BigEndianUnicode;
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) return Encoding.UTF8;
 
-            // Spell
-            ini.Set(section, "HechIndex", obj.HechIndex);
+        // No BOM: UTF-16 text is half zero bytes, and which half says the order.
+        int evenZeros = 0, oddZeros = 0, sample = Math.Min(bytes.Length, 512);
+        for (int i = 0; i < sample; i++)
+            if (bytes[i] == 0) { if (i % 2 == 0) evenZeros++; else oddZeros++; }
 
-            // Sound
-            ini.Set(section, "SND1", obj.SND1);
-
-            // Flags
-            ini.Set(section, "CuraVeneno", obj.CuraVeneno);
-            ini.Set(section, "Envenena", obj.Envenena);
-            ini.Set(section, "Refuerzo", obj.Refuerzo);
-            ini.Set(section, "Newbie", obj.Newbie);
-            ini.Set(section, "Paraliza", obj.Paraliza);
-
-            ini.Set(section, "StaffPower", obj.StaffPower);
-            ini.Set(section, "StaffDamageBonus", obj.StaffDamageBonus);
-            ini.Set(section, "DefensaMagicaMin", obj.DefensaMagicaMin);
-            ini.Set(section, "DefensaMagicaMax", obj.DefensaMagicaMax);
-            ini.Set(section, "MinSkill", obj.MinSkill);
-            ini.Set(section, "CreaAura", obj.CreaAura);
-            ini.Set(section, "Upgrade", obj.Upgrade);
-            ini.Set(section, "ForoId", obj.ForoId);
-            ini.Set(section, "MochilaType", obj.MochilaType);
-        }
-
-        ini.Save(Path.Combine(datDir, "Obj.dat"));
+        if (oddZeros > sample / 8) return Encoding.Unicode;
+        if (evenZeros > sample / 8) return Encoding.BigEndianUnicode;
+        return Encoding.Latin1;
     }
 }

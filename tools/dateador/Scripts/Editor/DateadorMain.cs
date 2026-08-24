@@ -69,30 +69,9 @@ namespace AODateador.Editor
         private bool         _npcSuppressEvents = false;
 
         // ── Object tab ────────────────────────────────────────────────────────
-        private EntityListPanel? _objList;
-        private ObjData?         _currentObj;
-
-        private LineEdit?    _objName;
-        private OptionButton? _objTypeOb;
-        private SpinBox?     _objGrh, _objValor;
-        private CheckBox?    _objAgarrable;
-        // Weapon
-        private SpinBox?  _objMinHIT, _objMaxHIT, _objWeaponAnim, _objMunicion;
-        private CheckBox? _objDosManos, _objProyectil;
-        // Defense
-        private SpinBox?  _objMinDef, _objMaxDef, _objShieldAnim, _objCascoAnim, _objNumRopaje;
-        // Potion
-        private SpinBox?  _objTipoPocion, _objMinMod, _objMaxMod, _objDuracion;
-        // Door   (Cerrada is int in ObjData)
-        private SpinBox?  _objLlave, _objCerrada, _objIndexAbierta, _objIndexCerrada;
-        // Smithing
-        private SpinBox?  _objSkHerr, _objSkCarp, _objLingH, _objLingO, _objLingP, _objMadera;
-        // Restrictions
-        private CheckBox? _objReal, _objCaos, _objNewbie;
-        private SpinBox?  _objLvl;
-        // Spell / Sound
-        private SpinBox?  _objHechIndex, _objSND1;
-        private bool      _objSuppressEvents = false;
+        // Built in DateadorMain.Objects.cs: its fields are generated from
+        // FieldDefs per ObjType instead of being declared one by one here.
+        private ObjData? _currentObj;
 
         // ── Spell tab ─────────────────────────────────────────────────────────
         private EntityListPanel? _spellList;
@@ -131,7 +110,15 @@ namespace AODateador.Editor
         {
             SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
             BuildUI();
-            SetStatus("Bienvenido — abrí una carpeta dat para comenzar.");
+
+            // Reopen what was in use last, or find server/dat automatically.
+            // Picking the folder by hand on every run is friction the tool does
+            // not need to impose.
+            string? startupDir = ResolveStartupDatDir();
+            if (startupDir != null)
+                LoadAllData(startupDir);
+            else
+                SetStatus("Bienvenido — abrí una carpeta dat para comenzar.");
         }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -343,126 +330,6 @@ namespace AODateador.Editor
             AddField(props, "SND3", _npcSND3);
 
             WireNpcEvents();
-
-            scroll.AddChild(props);
-            split.AddChild(scroll);
-            return split;
-        }
-
-        private Control BuildObjTab()
-        {
-            var split = new HSplitContainer { SplitOffset = 280 };
-            split.AddThemeConstantOverride("separation", 4);
-
-            _objList = new EntityListPanel();
-            _objList.ItemSelected += OnObjSelected;
-            _objList.AddRequested += OnObjAdd;
-            split.AddChild(_objList);
-
-            var scroll = new ScrollContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            scroll.AddThemeStyleboxOverride("panel",
-                DateadorTheme.FlatBox(DateadorTheme.BG_PANEL, 0, 0, 0));
-
-            var props = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-            props.AddThemeConstantOverride("separation", 6);
-
-            // General
-            AddSection(props, "General");
-            _objName      = DateadorTheme.MakeLineEdit("Nombre del objeto");
-            _objTypeOb    = DateadorTheme.MakeOptionButton(ObjTypeNames);
-            _objGrh       = DateadorTheme.MakeSpinBox(0, 99999);
-            _objValor     = DateadorTheme.MakeSpinBox(0, 9999999);
-            _objAgarrable = DateadorTheme.MakeCheckBox("Agarrable");
-            AddField(props, "Name",      _objName);
-            AddField(props, "ObjType",   _objTypeOb);
-            AddField(props, "GrhIndex",  _objGrh);
-            AddField(props, "Valor",     _objValor);
-            AddField(props, "Agarrable", _objAgarrable);
-
-            // Arma
-            AddSection(props, "Arma");
-            _objMinHIT     = DateadorTheme.MakeSpinBox(0, 9999);
-            _objMaxHIT     = DateadorTheme.MakeSpinBox(0, 9999);
-            _objWeaponAnim = DateadorTheme.MakeSpinBox(0, 9999);
-            _objDosManos   = DateadorTheme.MakeCheckBox("DosManos");
-            _objProyectil  = DateadorTheme.MakeCheckBox("Proyectil");   // bool in ObjData
-            _objMunicion   = DateadorTheme.MakeSpinBox(0, 9999);
-            AddField(props, "MinHIT",     _objMinHIT);
-            AddField(props, "MaxHIT",     _objMaxHIT);
-            AddField(props, "WeaponAnim", _objWeaponAnim);
-            AddField(props, "DosManos",   _objDosManos);
-            AddField(props, "Proyectil",  _objProyectil);
-            AddField(props, "Municion",   _objMunicion);
-
-            // Defensa
-            AddSection(props, "Defensa");
-            _objMinDef     = DateadorTheme.MakeSpinBox(0, 9999);
-            _objMaxDef     = DateadorTheme.MakeSpinBox(0, 9999);
-            _objShieldAnim = DateadorTheme.MakeSpinBox(0, 9999);
-            _objCascoAnim  = DateadorTheme.MakeSpinBox(0, 9999);
-            _objNumRopaje  = DateadorTheme.MakeSpinBox(0, 9999);
-            AddField(props, "MinDef",     _objMinDef);
-            AddField(props, "MaxDef",     _objMaxDef);
-            AddField(props, "ShieldAnim", _objShieldAnim);
-            AddField(props, "CascoAnim",  _objCascoAnim);
-            AddField(props, "NumRopaje",  _objNumRopaje);
-
-            // Pociones
-            AddSection(props, "Pociones");
-            _objTipoPocion = DateadorTheme.MakeSpinBox(0, 99);
-            _objMinMod     = DateadorTheme.MakeSpinBox(0, 9999);
-            _objMaxMod     = DateadorTheme.MakeSpinBox(0, 9999);
-            _objDuracion   = DateadorTheme.MakeSpinBox(0, 9999);
-            AddField(props, "TipoPocion",     _objTipoPocion);
-            AddField(props, "MinModificador", _objMinMod);
-            AddField(props, "MaxModificador", _objMaxMod);
-            AddField(props, "DuracionEfecto", _objDuracion);
-
-            // Puerta  (Cerrada is int: 0=open, 1=closed)
-            AddSection(props, "Puerta");
-            _objLlave        = DateadorTheme.MakeSpinBox(0, 9999);
-            _objCerrada      = DateadorTheme.MakeSpinBox(0, 1);     // int field
-            _objIndexAbierta = DateadorTheme.MakeSpinBox(0, 9999);
-            _objIndexCerrada = DateadorTheme.MakeSpinBox(0, 9999);
-            AddField(props, "Llave",        _objLlave);
-            AddField(props, "Cerrada",      _objCerrada);
-            AddField(props, "IndexAbierta", _objIndexAbierta);
-            AddField(props, "IndexCerrada", _objIndexCerrada);
-
-            // Herrería / Carpintería
-            AddSection(props, "Herrería / Carpintería");
-            _objSkHerr = DateadorTheme.MakeSpinBox(0, 100);
-            _objSkCarp = DateadorTheme.MakeSpinBox(0, 100);
-            _objLingH  = DateadorTheme.MakeSpinBox(0, 999);
-            _objLingO  = DateadorTheme.MakeSpinBox(0, 999);
-            _objLingP  = DateadorTheme.MakeSpinBox(0, 999);
-            _objMadera = DateadorTheme.MakeSpinBox(0, 999);
-            AddField(props, "SkHerreria",    _objSkHerr);
-            AddField(props, "SkCarpinteria", _objSkCarp);
-            AddField(props, "LingH",         _objLingH);
-            AddField(props, "LingO",         _objLingO);
-            AddField(props, "LingP",         _objLingP);
-            AddField(props, "Madera",        _objMadera);
-
-            // Restricciones
-            AddSection(props, "Restricciones");
-            _objReal   = DateadorTheme.MakeCheckBox("Solo Real");
-            _objCaos   = DateadorTheme.MakeCheckBox("Solo Caos");
-            _objNewbie = DateadorTheme.MakeCheckBox("Newbie");
-            _objLvl    = DateadorTheme.MakeSpinBox(0, 999);
-            AddField(props, "Real",   _objReal);
-            AddField(props, "Caos",   _objCaos);
-            AddField(props, "Newbie", _objNewbie);
-            AddField(props, "Lvl",    _objLvl);
-
-            // Hechizo / Sonido
-            AddSection(props, "Hechizo / Sonido");
-            _objHechIndex = DateadorTheme.MakeSpinBox(0, 9999);
-            _objSND1      = DateadorTheme.MakeSpinBox(0, 9999);
-            AddField(props, "HechIndex", _objHechIndex);
-            AddField(props, "SND1",      _objSND1);
-
-            WireObjEvents();
 
             scroll.AddChild(props);
             split.AddChild(scroll);
@@ -748,53 +615,6 @@ namespace AODateador.Editor
             WireSB(_npcSND3, v => { if (_currentNpc != null) _currentNpc.SND3 = (int)v; });
         }
 
-        private void WireObjEvents()
-        {
-            WireLE(_objName,  () => { if (_currentObj != null) _currentObj.Name    = _objName!.Text; });
-            WireOB(_objTypeOb,() => { if (_currentObj != null) _currentObj.ObjType = _objTypeOb!.Selected; });
-            WireSB(_objGrh,   v  => { if (_currentObj != null) _currentObj.GrhIndex = (int)v; });
-            WireSB(_objValor, v  => { if (_currentObj != null) _currentObj.Valor    = (int)v; });
-            WireCB(_objAgarrable, v => { if (_currentObj != null) _currentObj.Agarrable = v; });
-
-            WireSB(_objMinHIT,     v => { if (_currentObj != null) _currentObj.MinHIT     = (int)v; });
-            WireSB(_objMaxHIT,     v => { if (_currentObj != null) _currentObj.MaxHIT     = (int)v; });
-            WireSB(_objWeaponAnim, v => { if (_currentObj != null) _currentObj.WeaponAnim = (int)v; });
-            WireCB(_objDosManos,   v => { if (_currentObj != null) _currentObj.DosManos   = v; });
-            WireCB(_objProyectil,  v => { if (_currentObj != null) _currentObj.Proyectil  = v; });
-            WireSB(_objMunicion,   v => { if (_currentObj != null) _currentObj.Municion   = (int)v; });
-
-            WireSB(_objMinDef,     v => { if (_currentObj != null) _currentObj.MinDef     = (int)v; });
-            WireSB(_objMaxDef,     v => { if (_currentObj != null) _currentObj.MaxDef     = (int)v; });
-            WireSB(_objShieldAnim, v => { if (_currentObj != null) _currentObj.ShieldAnim = (int)v; });
-            WireSB(_objCascoAnim,  v => { if (_currentObj != null) _currentObj.CascoAnim  = (int)v; });
-            WireSB(_objNumRopaje,  v => { if (_currentObj != null) _currentObj.NumRopaje  = (int)v; });
-
-            WireSB(_objTipoPocion, v => { if (_currentObj != null) _currentObj.TipoPocion     = (int)v; });
-            WireSB(_objMinMod,     v => { if (_currentObj != null) _currentObj.MinModificador  = (int)v; });
-            WireSB(_objMaxMod,     v => { if (_currentObj != null) _currentObj.MaxModificador  = (int)v; });
-            WireSB(_objDuracion,   v => { if (_currentObj != null) _currentObj.DuracionEfecto  = (int)v; });
-
-            WireSB(_objLlave,        v => { if (_currentObj != null) _currentObj.Llave        = (int)v; });
-            WireSB(_objCerrada,      v => { if (_currentObj != null) _currentObj.Cerrada       = (int)v; });
-            WireSB(_objIndexAbierta, v => { if (_currentObj != null) _currentObj.IndexAbierta  = (int)v; });
-            WireSB(_objIndexCerrada, v => { if (_currentObj != null) _currentObj.IndexCerrada  = (int)v; });
-
-            WireSB(_objSkHerr, v => { if (_currentObj != null) _currentObj.SkHerreria    = (int)v; });
-            WireSB(_objSkCarp, v => { if (_currentObj != null) _currentObj.SkCarpinteria = (int)v; });
-            WireSB(_objLingH,  v => { if (_currentObj != null) _currentObj.LingH         = (int)v; });
-            WireSB(_objLingO,  v => { if (_currentObj != null) _currentObj.LingO         = (int)v; });
-            WireSB(_objLingP,  v => { if (_currentObj != null) _currentObj.LingP         = (int)v; });
-            WireSB(_objMadera, v => { if (_currentObj != null) _currentObj.Madera        = (int)v; });
-
-            WireCB(_objReal,   v => { if (_currentObj != null) _currentObj.Real   = v; });
-            WireCB(_objCaos,   v => { if (_currentObj != null) _currentObj.Caos   = v; });
-            WireCB(_objNewbie, v => { if (_currentObj != null) _currentObj.Newbie = v; });
-            WireSB(_objLvl,    v => { if (_currentObj != null) _currentObj.Lvl    = (int)v; });
-
-            WireSB(_objHechIndex, v => { if (_currentObj != null) _currentObj.HechIndex = (int)v; });
-            WireSB(_objSND1,      v => { if (_currentObj != null) _currentObj.SND1      = (int)v; });
-        }
-
         private void WireSpellEvents()
         {
             WireLE(_spNombre,   () => { if (_currentSpell != null) _currentSpell.Nombre          = _spNombre!.Text; });
@@ -841,8 +661,9 @@ namespace AODateador.Editor
             WireSB(_spLoops, v => { if (_currentSpell != null) _currentSpell.Loops = (int)v; });
         }
 
-        // Suppress flag: any of the three suppress flags blocks all handlers.
-        private bool AnySuppressed => _npcSuppressEvents || _objSuppressEvents || _spSuppressEvents;
+        // Suppress flag: any of the suppress flags blocks all handlers. The
+        // object tab guards its own generated fields with _objLoading instead.
+        private bool AnySuppressed => _npcSuppressEvents || _spSuppressEvents;
 
         private void WireLE(LineEdit? le, Action onChange)
         {
@@ -905,6 +726,7 @@ namespace AODateador.Editor
             {
                 dialog.QueueFree();
                 LoadAllData(path);
+                SaveDatDirToConfig(path);
             };
             dialog.Canceled += () => dialog.QueueFree();
             AddChild(dialog);
@@ -922,7 +744,7 @@ namespace AODateador.Editor
             try
             {
                 _npcDb?.Save(_datDir);
-                _objDb?.Save(_datDir);
+                SaveObjects();
                 _spellDb?.Save(_datDir);
                 _expTable?.Save(_datDir);
                 _craftData?.Save(_datDir);
@@ -955,20 +777,25 @@ namespace AODateador.Editor
                 _craftData = CraftingData.Load(datDir);
 
                 PopulateNpcList();
-                PopulateObjList();
+                RefreshObjList();
                 PopulateSpellList();
                 PopulateExpFields();
                 PopulateCraftLists();
 
                 _dirty = false;
                 UpdateDirtyIndicator();
-                SetStatus(
-                    $"Listo — {_npcDb.Npcs.Count} NPCs, {_objDb.Objects.Count} objetos, " +
-                    $"{_spellDb.Spells.Count} hechizos cargados desde {datDir}");
+                string summary =
+                    $"{_npcDb.Npcs.Count} NPCs, {_objDb.Objects.Count} objetos, " +
+                    $"{_spellDb.Spells.Count} hechizos cargados desde {datDir}";
+                SetStatus($"Listo — {summary}");
+                GD.Print($"[Dateador] {summary}");
             }
             catch (Exception ex)
             {
                 SetStatus($"Error al cargar datos: {ex.Message}");
+                // Also to the console: the status label is invisible in headless
+                // runs, which is how this tool gets smoke-tested.
+                GD.PushError($"[Dateador] Error al cargar datos: {ex}");
             }
         }
 
@@ -981,15 +808,6 @@ namespace AODateador.Editor
             foreach (var npc in _npcDb.Npcs)
                 items.Add((npc.Index, $"[{npc.Index}] {npc.Name}"));
             _npcList.SetItems(items);
-        }
-
-        private void PopulateObjList()
-        {
-            if (_objList == null || _objDb == null) return;
-            var items = new List<(int, string)>();
-            foreach (var obj in _objDb.Objects)
-                items.Add((obj.Index, $"[{obj.Index}] {obj.Name}"));
-            _objList.SetItems(items);
         }
 
         private void PopulateSpellList()
@@ -1035,15 +853,6 @@ namespace AODateador.Editor
             if (id < 0) return;
             _currentNpc = _npcDb.Npcs.Find(n => n.Index == id);
             if (_currentNpc != null) PopulateNpcFields(_currentNpc);
-        }
-
-        private void OnObjSelected(int _)
-        {
-            if (_objDb == null) return;
-            int id = _objList?.SelectedId() ?? -1;
-            if (id < 0) return;
-            _currentObj = _objDb.Objects.Find(o => o.Index == id);
-            if (_currentObj != null) PopulateObjFields(_currentObj);
         }
 
         private void OnSpellSelected(int _)
@@ -1103,58 +912,6 @@ namespace AODateador.Editor
                 _npcSND3!.Value = npc.SND3;
             }
             finally { _npcSuppressEvents = false; }
-        }
-
-        private void PopulateObjFields(ObjData obj)
-        {
-            _objSuppressEvents = true;
-            try
-            {
-                _objName!.Text        = obj.Name;
-                _objTypeOb!.Selected   = Math.Clamp(obj.ObjType, 0, ObjTypeNames.Length - 1);
-                _objGrh!.Value        = obj.GrhIndex;
-                _objValor!.Value      = obj.Valor;
-                _objAgarrable!.ButtonPressed = obj.Agarrable;
-
-                _objMinHIT!.Value           = obj.MinHIT;
-                _objMaxHIT!.Value           = obj.MaxHIT;
-                _objWeaponAnim!.Value       = obj.WeaponAnim;
-                _objDosManos!.ButtonPressed  = obj.DosManos;
-                _objProyectil!.ButtonPressed = obj.Proyectil;
-                _objMunicion!.Value         = obj.Municion;
-
-                _objMinDef!.Value     = obj.MinDef;
-                _objMaxDef!.Value     = obj.MaxDef;
-                _objShieldAnim!.Value = obj.ShieldAnim;
-                _objCascoAnim!.Value  = obj.CascoAnim;
-                _objNumRopaje!.Value  = obj.NumRopaje;
-
-                _objTipoPocion!.Value = obj.TipoPocion;
-                _objMinMod!.Value     = obj.MinModificador;
-                _objMaxMod!.Value     = obj.MaxModificador;
-                _objDuracion!.Value   = obj.DuracionEfecto;
-
-                _objLlave!.Value        = obj.Llave;
-                _objCerrada!.Value      = obj.Cerrada;         // int field
-                _objIndexAbierta!.Value = obj.IndexAbierta;
-                _objIndexCerrada!.Value = obj.IndexCerrada;
-
-                _objSkHerr!.Value = obj.SkHerreria;
-                _objSkCarp!.Value = obj.SkCarpinteria;
-                _objLingH!.Value  = obj.LingH;
-                _objLingO!.Value  = obj.LingO;
-                _objLingP!.Value  = obj.LingP;
-                _objMadera!.Value = obj.Madera;
-
-                _objReal!.ButtonPressed   = obj.Real;
-                _objCaos!.ButtonPressed   = obj.Caos;
-                _objNewbie!.ButtonPressed = obj.Newbie;
-                _objLvl!.Value            = obj.Lvl;
-
-                _objHechIndex!.Value = obj.HechIndex;
-                _objSND1!.Value      = obj.SND1;
-            }
-            finally { _objSuppressEvents = false; }
         }
 
         private void PopulateSpellFields(SpellData sp)
@@ -1221,17 +978,6 @@ namespace AODateador.Editor
             _npcDb.Npcs.Add(n);
             PopulateNpcList();
             _npcList?.SelectById(nextId);
-            MarkDirty();
-        }
-
-        private void OnObjAdd()
-        {
-            if (_objDb == null) return;
-            int nextId = _objDb.Objects.Count == 0 ? 1 : _objDb.Objects[^1].Index + 1;
-            var o = new ObjData { Index = nextId, Name = $"Nuevo Objeto {nextId}" };
-            _objDb.Objects.Add(o);
-            PopulateObjList();
-            _objList?.SelectById(nextId);
             MarkDirty();
         }
 
