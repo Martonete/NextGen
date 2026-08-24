@@ -104,12 +104,32 @@ public static class GameDataLoader
         return ParseBodyData(File.ReadAllBytes(personajesPath));
     }
 
+    /// <summary>Marker written where the legacy layout keeps its Int16 count.</summary>
+    private const int WideFormatMagic = -32000;
+
+    /// <summary>
+    /// Positions the reader past the count and reports the layout. The legacy
+    /// format stored GRHs as 16-bit, capping the catalogue at 65535; the wide
+    /// one uses Int32 so terrain can be indexed cell by cell.
+    /// </summary>
+    private static (int count, bool wide) ReadTableHeader(BinaryReader reader)
+    {
+        reader.BaseStream.Seek(263, SeekOrigin.Begin); // MiCabecera
+        if (reader.ReadInt32() == WideFormatMagic)
+            return (reader.ReadInt32(), true);
+
+        reader.BaseStream.Seek(263, SeekOrigin.Begin);
+        return (reader.ReadInt16(), false);
+    }
+
+    private static int ReadGrh(BinaryReader reader, bool wide)
+        => wide ? reader.ReadInt32() : reader.ReadUInt16();
+
     private static (int[] grhs, int[] headOfsX, int[] headOfsY) ParseBodyData(byte[] data)
     {
         using var reader = new BinaryReader(new MemoryStream(data));
 
-        reader.BaseStream.Seek(263, SeekOrigin.Begin); // MiCabecera
-        short count = reader.ReadInt16();
+        var (count, wide) = ReadTableHeader(reader);
         if (count <= 0)
             return (Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>());
 
@@ -118,10 +138,10 @@ public static class GameDataLoader
         var ofsY = new int[count + 1];
         for (int i = 1; i <= count; i++)
         {
-            reader.ReadInt16(); // Walk North
-            reader.ReadInt16(); // Walk East
-            grhs[i] = reader.ReadInt16(); // Walk South — used for preview
-            reader.ReadInt16(); // Walk West
+            ReadGrh(reader, wide); // Walk North
+            ReadGrh(reader, wide); // Walk East
+            grhs[i] = ReadGrh(reader, wide); // Walk South — used for preview
+            ReadGrh(reader, wide); // Walk West
             ofsX[i] = reader.ReadInt16(); // HeadOffsetX
             ofsY[i] = reader.ReadInt16(); // HeadOffsetY
         }
@@ -144,17 +164,16 @@ public static class GameDataLoader
     {
         using var reader = new BinaryReader(new MemoryStream(data));
 
-        reader.BaseStream.Seek(263, SeekOrigin.Begin);
-        short count = reader.ReadInt16();
+        var (count, wide) = ReadTableHeader(reader);
         if (count <= 0) return Array.Empty<int>();
 
         var heads = new int[count + 1];
         for (int i = 1; i <= count; i++)
         {
-            reader.ReadInt16(); // North
-            reader.ReadInt16(); // East
-            heads[i] = reader.ReadInt16(); // South — used for preview
-            reader.ReadInt16(); // West
+            ReadGrh(reader, wide); // North
+            ReadGrh(reader, wide); // East
+            heads[i] = ReadGrh(reader, wide); // South — used for preview
+            ReadGrh(reader, wide); // West
         }
 
         GD.Print($"[GameData] Loaded {count} head south-facing GRHs");

@@ -7,11 +7,41 @@ namespace ArgentumNextgen.Data;
 
 /// <summary>
 /// Loads Personajes.ind, Cabezas.ind, Cascos.ind, Fxs.ind binary files.
-/// Format: MiCabecera(263) + Count(2 bytes Integer) + entries
+///
+/// Two layouts are supported, distinguished by a marker where the legacy format
+/// keeps its count:
+///   legacy: MiCabecera(263) + Count(Int16) + records with UInt16 GRHs
+///   wide:   MiCabecera(263) + Magic(Int32) + Count(Int32) + records with Int32 GRHs
+///
+/// The legacy UInt16 capped the catalogue at 65535 GRHs, which is not enough to
+/// index 3094 sheets of terrain cell by cell. Nothing outside the client reads
+/// these files, so the wide layout lifts the cap.
 /// </summary>
 public static class BodyLoader
 {
     private const int MiCabeceraSize = 263;
+
+    /// <summary>Marker written by grhtool where the legacy count would sit.</summary>
+    private const int WideFormatMagic = -32000;
+
+    /// <summary>
+    /// Positions the reader after the count and reports which layout this file
+    /// uses, so each record is read at the right width.
+    /// </summary>
+    private static (int count, bool wide) ReadTableHeader(BinaryReader reader)
+    {
+        reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
+        int marker = reader.ReadInt32();
+        if (marker == WideFormatMagic)
+            return (reader.ReadInt32(), true);
+
+        // Legacy: the count is the first 2 bytes of what we just read.
+        reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
+        return (reader.ReadInt16(), false);
+    }
+
+    private static int ReadGrh(BinaryReader reader, bool wide)
+        => wide ? reader.ReadInt32() : reader.ReadUInt16();
 
     /// <summary>
     /// Load Personajes.ind — body animations per direction + head offset.
@@ -22,20 +52,19 @@ public static class BodyLoader
         byte[] fileData = resources.ReadBytes("INIT/Personajes.ind");
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
-        reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
-        short count = reader.ReadInt16();
+        var (count, wide) = ReadTableHeader(reader);
 
-        GD.Print($"[BODY] Loading {count} bodies");
+        GD.Print($"[BODY] Loading {count} bodies ({(wide ? "32-bit" : "legacy")})");
         var bodies = new BodyData[count + 1];
         for (int i = 0; i <= count; i++)
             bodies[i] = new BodyData();
 
         for (int i = 1; i <= count; i++)
         {
-            bodies[i].Walk[1] = reader.ReadUInt16(); // North
-            bodies[i].Walk[2] = reader.ReadUInt16(); // East
-            bodies[i].Walk[3] = reader.ReadUInt16(); // South
-            bodies[i].Walk[4] = reader.ReadUInt16(); // West
+            bodies[i].Walk[1] = ReadGrh(reader, wide); // North
+            bodies[i].Walk[2] = ReadGrh(reader, wide); // East
+            bodies[i].Walk[3] = ReadGrh(reader, wide); // South
+            bodies[i].Walk[4] = ReadGrh(reader, wide); // West
             bodies[i].HeadOffsetX = reader.ReadInt16();
             bodies[i].HeadOffsetY = reader.ReadInt16();
         }
@@ -53,10 +82,9 @@ public static class BodyLoader
         byte[] fileData = resources.ReadBytes("INIT/Cabezas.ind");
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
-        reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
-        short count = reader.ReadInt16();
+        var (count, wide) = ReadTableHeader(reader);
 
-        GD.Print($"[HEAD] Loading {count} heads");
+        GD.Print($"[HEAD] Loading {count} heads ({(wide ? "32-bit" : "legacy")})");
         var heads = new HeadData[count + 1];
         for (int i = 0; i <= count; i++)
             heads[i] = new HeadData();
@@ -64,10 +92,10 @@ public static class BodyLoader
         for (int i = 1; i <= count; i++)
         {
             heads[i].Head = new int[5]; // 1-indexed
-            heads[i].Head[1] = reader.ReadUInt16();
-            heads[i].Head[2] = reader.ReadUInt16();
-            heads[i].Head[3] = reader.ReadUInt16();
-            heads[i].Head[4] = reader.ReadUInt16();
+            heads[i].Head[1] = ReadGrh(reader, wide);
+            heads[i].Head[2] = ReadGrh(reader, wide);
+            heads[i].Head[3] = ReadGrh(reader, wide);
+            heads[i].Head[4] = ReadGrh(reader, wide);
         }
 
         GD.Print($"[HEAD] Loaded {count} heads");
@@ -83,10 +111,9 @@ public static class BodyLoader
         byte[] fileData = resources.ReadBytes("INIT/Cascos.ind");
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
-        reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);
-        short count = reader.ReadInt16();
+        var (count, wide) = ReadTableHeader(reader);
 
-        GD.Print($"[CASCO] Loading {count} helmets");
+        GD.Print($"[CASCO] Loading {count} helmets ({(wide ? "32-bit" : "legacy")})");
         var cascos = new HeadData[count + 1];
         for (int i = 0; i <= count; i++)
             cascos[i] = new HeadData();
@@ -94,10 +121,10 @@ public static class BodyLoader
         for (int i = 1; i <= count; i++)
         {
             cascos[i].Head = new int[5];
-            cascos[i].Head[1] = reader.ReadUInt16();
-            cascos[i].Head[2] = reader.ReadUInt16();
-            cascos[i].Head[3] = reader.ReadUInt16();
-            cascos[i].Head[4] = reader.ReadUInt16();
+            cascos[i].Head[1] = ReadGrh(reader, wide);
+            cascos[i].Head[2] = ReadGrh(reader, wide);
+            cascos[i].Head[3] = ReadGrh(reader, wide);
+            cascos[i].Head[4] = ReadGrh(reader, wide);
         }
 
         GD.Print($"[CASCO] Loaded {count} helmets");

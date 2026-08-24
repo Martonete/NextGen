@@ -5,13 +5,26 @@ namespace GrhTool;
 /// <summary>
 /// Writers for the entity index files: Personajes.ind, Cabezas.ind, Cascos.ind.
 ///
-/// All three share the layout MiCabecera(263) + Count(Int16) + fixed records,
-/// and all three store GRH numbers as UInt16 - anything above 65535 wraps
-/// silently rather than failing, which is why the catalogue is capped before
-/// these are generated.
+/// Layout: MiCabecera(263) + Version(Int32) + Count(Int32) + fixed records.
+///
+/// The original VB6 format stored GRH numbers as UInt16, capping the catalogue
+/// at 65535 — a real constraint, since 3094 sheets of tiles need more than that
+/// to be indexed cell by cell. Nothing outside the client and these tools reads
+/// these files (the server never touches them, and no GRH crosses the wire), so
+/// the fields were widened to Int32.
+///
+/// A version marker distinguishes the two: the old format has the entry count
+/// at offset 263 as an Int16, the new one writes <see cref="FormatMagic"/>
+/// there instead. Readers check for it and fall back to the 16-bit layout.
 /// </summary>
 public static class EntityTables
 {
+    /// <summary>
+    /// Written where the old format kept its Int16 count. Negative, so an old
+    /// reader sees a nonsensical count instead of silently misparsing.
+    /// </summary>
+    public const int FormatMagic = -32000;
+
     /// <summary>
     /// Row order inside a body sheet, confirmed by rendering the first frame of
     /// each row: row 0 faces south (chest visible), row 1 north (back), rows 2
@@ -62,38 +75,36 @@ public static class EntityTables
             foreach (var (dirs, offX, offY) in bodies)
             {
                 // dirs[] is indexed by sheet row; the file wants N, E, S, W.
-                w.Write((ushort)dirs[RowNorth]);
-                w.Write((ushort)dirs[RowEast]);
-                w.Write((ushort)dirs[RowSouth]);
-                w.Write((ushort)dirs[RowWest]);
+                w.Write(dirs[RowNorth]);
+                w.Write(dirs[RowEast]);
+                w.Write(dirs[RowSouth]);
+                w.Write(dirs[RowWest]);
                 w.Write(offX);
                 w.Write(offY);
             }
         });
 
-    /// <summary>Cabezas.ind and Cascos.ind share a format: four UInt16 per entry.</summary>
+    /// <summary>Cabezas.ind and Cascos.ind share a format: four Int32 per entry.</summary>
     public static void WriteHeadTable(string path, IReadOnlyList<int[]> entries)
         => WriteTable(path, entries.Count, w =>
         {
             foreach (var dirs in entries)
             {
-                w.Write((ushort)dirs[RowNorth]);
-                w.Write((ushort)dirs[RowEast]);
-                w.Write((ushort)dirs[RowSouth]);
-                w.Write((ushort)dirs[RowWest]);
+                w.Write(dirs[RowNorth]);
+                w.Write(dirs[RowEast]);
+                w.Write(dirs[RowSouth]);
+                w.Write(dirs[RowWest]);
             }
         });
 
     private static void WriteTable(string path, int count, Action<BinaryWriter> writeRecords)
     {
-        if (count > short.MaxValue)
-            throw new InvalidOperationException($"{Path.GetFileName(path)}: {count} entradas exceden el Int16 del Count");
-
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         using var fs = File.Create(path);
         using var w = new BinaryWriter(fs);
         w.Write(SynthHeader());
-        w.Write((short)count);
+        w.Write(FormatMagic); // marks the 32-bit layout
+        w.Write(count);
         writeRecords(w);
     }
 

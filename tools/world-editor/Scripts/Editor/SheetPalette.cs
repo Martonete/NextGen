@@ -318,8 +318,8 @@ public partial class SheetPalette : VBoxContainer
         var matches = new List<int>();
         foreach (int fileNumber in _availableFiles)
         {
-            int original = fileNumber - 100000;
-            if (filter.Length == 0 || original.ToString().Contains(filter, StringComparison.Ordinal))
+            // Match against the real sheet number, the one shown on the button.
+            if (filter.Length == 0 || fileNumber.ToString().Contains(filter, StringComparison.Ordinal))
                 matches.Add(fileNumber);
         }
         return matches;
@@ -384,19 +384,22 @@ public partial class SheetPalette : VBoxContainer
 
     private Control CreateSheetButton(int fileNumber)
     {
-        int originalFileNumber = fileNumber >= 100000 ? fileNumber - 100000 : fileNumber;
+        // The sheet number is shown and opened as-is. Subtracting 100000 dates
+        // from when that range was assumed to mirror the classic catalogue with
+        // an offset; they are independent sheets, so the shift both mislabelled
+        // them and made LoadSheet open a number that does not exist.
         var box = new VBoxContainer { CustomMinimumSize = new Vector2(78, 88) };
         var button = new TextureButton
         {
             CustomMinimumSize = new Vector2(76, 68),
             IgnoreTextureSize = true,
             StretchMode = TextureButton.StretchModeEnum.KeepAspectCentered,
-            TooltipText = $"{originalFileNumber}.png",
+            TooltipText = $"{fileNumber}.png",
         };
         button.TextureNormal = Textures?.GetTexture(fileNumber);
-        button.Pressed += () => LoadSheet(originalFileNumber);
+        button.Pressed += () => LoadSheet(fileNumber);
         box.AddChild(button);
-        var label = EditorTheme.MakeLabel($"{originalFileNumber}", EditorTheme.TEXT_MUTED, EditorTheme.FONT_XS);
+        var label = EditorTheme.MakeLabel($"{fileNumber}", EditorTheme.TEXT_MUTED, EditorTheme.FONT_XS);
         label.HorizontalAlignment = HorizontalAlignment.Center;
         box.AddChild(label);
         return box;
@@ -424,21 +427,19 @@ public partial class SheetPalette : VBoxContainer
         if (_detailView != null) _detailView.Visible = true;
     }
 
-    private void LoadSheet(int originalFileNumber)
+    private void LoadSheet(int fileNumber)
     {
         if (Grhs == null || Textures == null || _regions == null
             || _sheetPreview == null || _status == null) return;
-        if (originalFileNumber <= 0) return;
+        if (fileNumber <= 0) return;
 
-        // Imported sheets win: a legacy FileNum with the same number can be an
-        // unrelated asset from the previous catalog.
-        int importedFileNumber = originalFileNumber + 100000;
-        int fileNumber = Textures.GetTexture(importedFileNumber) != null
-            ? importedFileNumber : originalFileNumber;
+        // Opened by its real number. This used to add 100000 to undo the shift
+        // the gallery applied when labelling the button, so the sheet on screen
+        // never matched the number beside it.
         var sheet = Textures.GetTexture(fileNumber);
         if (sheet == null)
         {
-            _status.Text = $"No se encontró {originalFileNumber}.png";
+            _status.Text = $"No se encontró {fileNumber}.png";
             ShowDetail();
             return;
         }
@@ -456,8 +457,8 @@ public partial class SheetPalette : VBoxContainer
         int mainGrh = FindMainGraphic();
         if (_mainButton != null) _mainButton.Disabled = mainGrh == 0;
         _status.Text = mainGrh == 0
-            ? $"{originalFileNumber}.png — {_currentRegions.Count} regiones"
-            : $"{originalFileNumber}.png — {_currentRegions.Count} regiones · principal GRH {mainGrh}";
+            ? $"{fileNumber}.png — {_currentRegions.Count} regiones"
+            : $"{fileNumber}.png — {_currentRegions.Count} regiones · principal GRH {mainGrh}";
         ShowDetail();
     }
 

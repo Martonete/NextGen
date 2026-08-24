@@ -13,10 +13,10 @@ Source: `client/Scripts/Data/GrhLoader.cs`, `client/Scripts/Data/TextureManager.
 
 ## 1. Graficos.ind Binary Format
 
-The GRH database is a single binary file containing 53,526 sprite entries, all of
+The GRH database is a single binary file containing 207,145 sprite entries, all of
 them from the pixel-art catalogue (sheets 100000+). Legacy art was dropped and the
-numbering compacted to 1..53526 — see `docs/catalog/remap.json` for the old-to-new
-map. Three header formats exist; `GrhLoader.Load()` auto-detects which one is present.
+numbering restarted at 1 — see `docs/catalog/remap.json` for the old-to-new map.
+Three header formats exist; `GrhLoader.Load()` auto-detects which one is present.
 
 ### Header Detection (3 formats)
 
@@ -32,7 +32,7 @@ wins. Note it does **not** judge by how large `Count` is: an earlier version
 rejected `Count > 100000` and fell through to a wrong offset once the catalogue
 grew, so `Count` is treated purely as a hint for the initial array size.
 
-Current values: `Version=447`, `Count=53526`.
+Current values: `Version=447`, `Count=207145`.
 
 **MiCabeceraSize** = 263 bytes (255 desc + 4 CRC + 4 magic).
 
@@ -190,21 +190,19 @@ Example: A 32x32 texture with `SX=32` wraps to `SX=0`.
 
 ## 7. Water Animation Pattern
 
-Water tiles use interleaved GRH indices across a 4x4 tile grid with 20 frames:
+Water GRHs are **no longer hardcoded**. `WorldRenderer.IsWaterGrh()` reads the
+ranges from `INIT/GrhCatalog.json`, which `grhtool special` fills in by finding
+tiles that are both animated and blue — two independent signals, because a false
+positive does more than look wrong: `InputHandler` uses this to decide whether a
+tile can be walked on.
 
-- **GRH range**: 1505-1520 (primary water)
-- **Additional ranges**: 5665-5680, 13547-13562
-- Layout: 4x4 tiles, each tile is a 20-frame animation
-- Interleaved: tile (0,0) frames are at indices 1505, 1521, 1537, ...
-  tile (1,0) at 1506, 1522, 1538, etc.
-
-The `IsWater()` check in `WorldRenderer.cs`:
 ```csharp
-bool isWater = (g >= 1505 && g <= 1520)
-    || (g >= 5665 && g <= 5680)
-    || (g >= 13547 && g <= 13562);
-return isWater && tile.Layer2 <= 0;  // water only if no L2 overlay
+public static bool IsWaterGrh(int g) => _catalog?.IsWater(g) ?? false;
 ```
+
+Regenerate after any renumbering:
+
+    grhtool special <ind> <GrhCatalog.json> <graficosDir> --apply
 
 ---
 
@@ -214,23 +212,35 @@ return isWater && tile.Layer2 <= 0;  // water only if no L2 overlay
 |----------|-------|--------|
 | TileSize | 32 | WorldRenderer.cs, CharRenderer.cs |
 | Water / tree GRHs | (data) | `INIT/GrhCatalog.json` — no longer hardcoded |
-| MaxGRHs | 53,526 | Graficos.ind header |
+| MaxGRHs | 207,145 | Graficos.ind header |
 | Version | 447 | Graficos.ind header |
 | MiCabeceraSize | 263 | GrhLoader.cs |
 | MaxCacheSize | 4,096 | TextureManager.cs |
 | BlackThreshold | 3 | TextureManager.cs |
 
-### Hard ceilings
+### Ceilings
 
-These truncate silently rather than failing, so anything that grows the catalogue
-has to check them:
-
-| Limit | Where | Why |
-|-------|-------|-----|
-| 65,535 | Personajes/Cabezas/Cascos.ind | GRH stored as UInt16 |
+| Limit | Where | Notes |
+|-------|-------|-------|
+| none | Personajes/Cabezas/Cascos.ind | **lifted** — see below |
 | 32,767 | Fxs.ind `Animacion` | signed Int16 — animations are numbered 1..3103 to stay under it |
 | 32,767 | legacy `.map` layers | signed Int16 (the reason those maps were archived) |
-| 32,767 | every `.ind` Count field | signed Int16 |
+
+**The UInt16 cap was removed.** Personajes/Cabezas/Cascos originally stored GRH
+numbers as UInt16, capping the catalogue at 65,535 — not enough to index 3094
+sheets of terrain cell by cell. Nothing outside the client and `tools/` reads
+these files (the server never opens them, and no GRH crosses the wire), so the
+fields were widened to Int32.
+
+Both layouts are still readable, told apart by a marker at offset 263 where the
+legacy format keeps its Int16 count:
+
+    legacy: MiCabecera(263) + Count(Int16)              + records with UInt16 GRHs
+    wide:   MiCabecera(263) + Magic(-32000, Int32) + Count(Int32) + records with Int32 GRHs
+
+Readers: `client/Scripts/Data/BodyLoader.cs`,
+`tools/world-editor/Scripts/Data/GameDataLoader.cs`. Writer:
+`tools/grhtool/EntityTables.cs`.
 
 ---
 

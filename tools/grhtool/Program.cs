@@ -63,6 +63,7 @@ internal static class Program
                 "special" => SpecialCmd(args),
                 "maps" => MapsCmd(args),
                 "palette" => PaletteCmd(args),
+                "densify" => DensifyCmd(args),
                 _ => Usage(),
             };
         }
@@ -429,6 +430,95 @@ internal static class Program
         File.Copy(indPath, indPath + ".bak", overwrite: true);
         idx.Entries.AddRange(added);
         idx.Count = idx.Entries.Max(e => e.Index);
+        idx.Save(indPath);
+        Console.WriteLine($"\nescrito {indPath} (respaldo en {indPath}.bak)");
+        return 0;
+    }
+
+    // ---- densify ------------------------------------------------------------
+
+    /// <summary>
+    /// Fills in missing 32x32 cells on tile sheets that were only partially
+    /// indexed.
+    ///
+    /// 414 sheets carry a handful of cells out of hundreds — sheet 130109 has
+    /// two indexed columns out of sixteen. Capturing a block from one of those
+    /// finds tiles only where cells happen to exist, so the mosaic comes out
+    /// full of holes and paints as a thin strip.
+    ///
+    /// Every missing cell would be ~298000 GRHs against a 65535 ceiling, so each
+    /// sheet is filled up to a cap, contiguously from the top-left: a block
+    /// capture needs neighbouring cells, which a spread-out sample would not give.
+    /// </summary>
+    private static int DensifyCmd(string[] args)
+    {
+        if (args.Length < 3) return Usage();
+        string indPath = args[1], gfxDir = args[2];
+        bool apply = args.Contains("--apply");
+        int cap = 256;
+        for (int i = 3; i < args.Length - 1; i++)
+            if (args[i] == "--cap") cap = int.Parse(args[i + 1]);
+
+        var idx = GrhIndex.Load(indPath);
+        var statics = idx.Entries.Where(e => !e.IsAnimated).ToList();
+        int nextGrh = idx.Entries.Max(e => e.Index) + 1;
+
+        // Cells already present, per sheet, so nothing is indexed twice.
+        var occupied = new Dictionary<int, HashSet<(short, short)>>();
+        foreach (var e in statics)
+        {
+            if (e.Width != 32 || e.Height != 32) continue;
+            if (!occupied.TryGetValue(e.FileNum, out var set))
+                occupied[e.FileNum] = set = new HashSet<(short, short)>();
+            set.Add((e.SX, e.SY));
+        }
+
+        var added = new List<GrhEntry>();
+        int sheetsFilled = 0;
+
+        foreach (var (sheet, cells) in occupied.OrderBy(kv => kv.Key))
+        {
+            string png = Path.Combine(gfxDir, $"{sheet}.png");
+            if (!File.Exists(png)) continue;
+
+            int width, height;
+            using (var bmp = new System.Drawing.Bitmap(png)) { width = bmp.Width; height = bmp.Height; }
+
+            int cols = width / 32, rows = height / 32;
+            int possible = cols * rows;
+            if (possible <= cells.Count) continue;
+
+            int budget = Math.Min(cap - cells.Count, possible - cells.Count);
+            if (budget <= 0) continue;
+
+            var regions = SheetScanner.Grid(png, 32);
+            int before = added.Count;
+            foreach (var r in regions)
+            {
+                if (budget <= 0) break;
+                if (cells.Contains(((short)r.X, (short)r.Y))) continue;
+                added.Add(new GrhEntry
+                {
+                    Index = nextGrh++,
+                    NumFrames = 1,
+                    FileNum = sheet,
+                    SX = (short)r.X, SY = (short)r.Y,
+                    Width = 32, Height = 32,
+                });
+                budget--;
+            }
+            if (added.Count > before) sheetsFilled++;
+        }
+
+        int maxGrh = nextGrh - 1;
+        Console.WriteLine($"laminas completadas : {sheetsFilled}");
+        Console.WriteLine($"celdas agregadas    : {added.Count}");
+        Console.WriteLine($"indice maximo       : {maxGrh}");
+        if (!apply) { Console.WriteLine("\n(dry-run - pasar --apply para escribir)"); return 0; }
+
+        File.Copy(indPath, indPath + ".bak", overwrite: true);
+        idx.Entries.AddRange(added);
+        idx.Count = maxGrh;
         idx.Save(indPath);
         Console.WriteLine($"\nescrito {indPath} (respaldo en {indPath}.bak)");
         return 0;
@@ -953,8 +1043,16 @@ internal static class Program
         return 0;
     }
 
+    /// <summary>Entry count of a .ind table, in either the legacy or wide layout.</summary>
     private static int CountInd(string path)
-        => File.Exists(path) ? BitConverter.ToInt16(File.ReadAllBytes(path), 263) : 0;
+    {
+        if (!File.Exists(path)) return 0;
+        byte[] data = File.ReadAllBytes(path);
+        if (data.Length < 267) return 0;
+        return BitConverter.ToInt32(data, 263) == EntityTables.FormatMagic
+            ? BitConverter.ToInt32(data, 267)
+            : BitConverter.ToInt16(data, 263);
+    }
 
     // ---- entities -----------------------------------------------------------
 
@@ -1053,12 +1151,8 @@ internal static class Program
         Console.WriteLine($"animaciones nuevas: {newAnims.Count}  (GRH {(newAnims.Count > 0 ? newAnims[0].Index : 0)}..{nextGrh - 1})");
 
         int maxGrh = nextGrh - 1;
-        Console.WriteLine($"indice maximo     : {maxGrh}  {(maxGrh <= 65535 ? "OK" : "EXCEDE EL TECHO UInt16")}");
-        if (maxGrh > 65535)
-        {
-            Console.Error.WriteLine("\nABORTA: las animaciones de cuerpo empujan el indice sobre 65535.");
-            return 1;
-        }
+        // No UInt16 ceiling any more: the entity tables store GRHs as Int32.
+        Console.WriteLine($"indice maximo     : {maxGrh}");
 
         if (!apply) { Console.WriteLine("\n(dry-run - pasar --apply para escribir)"); return 0; }
 
@@ -1190,17 +1284,12 @@ internal static class Program
 
         Console.WriteLine($"animaciones      : {animCount}  (renumeradas en 1..{animCount})");
         Console.WriteLine();
-        Console.WriteLine($"techo 65535 (Personajes/Cabezas/Cascos): {(keep.Count <= 65535 ? "OK" : "EXCEDIDO")}");
+        Console.WriteLine($"techo Int32 (Personajes/Cabezas/Cascos): OK");
         Console.WriteLine($"techo 32767 (Fxs.ind, animaciones)     : {(animCount <= 32767 ? "OK" : "EXCEDIDO")}");
 
         if (broken.Count > 0)
         {
             Console.Error.WriteLine("\nABORTA: hay animaciones con cuadros descartados.");
-            return 1;
-        }
-        if (keep.Count > 65535)
-        {
-            Console.Error.WriteLine("\nABORTA: el catalogo compactado excede el techo UInt16.");
             return 1;
         }
         if (animCount > 32767)
