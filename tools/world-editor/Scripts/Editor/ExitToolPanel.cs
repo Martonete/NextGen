@@ -17,6 +17,12 @@ public partial class ExitToolPanel : PanelContainer
     public Action<string>? OnStatus;
     public Action<int, int, int>? OnFollowRequested;
 
+    /// <summary>
+    /// Maps present on disk, used to warn when an exit points nowhere. Null
+    /// disables the check rather than rejecting everything.
+    /// </summary>
+    public System.Collections.Generic.HashSet<int>? AvailableMaps;
+
     private Label? _sourceLabel;
     private SpinBox? _mapSpin;
     private SpinBox? _xSpin;
@@ -163,6 +169,12 @@ public partial class ExitToolPanel : PanelContainer
             return;
         }
 
+        // A destination that does not exist, or a coordinate outside the
+        // walkable frame, produces an exit that silently strands the player.
+        // It is still written — the destination map may not be drawn yet — but
+        // the warning says so instead of leaving it to be found in-game.
+        string? warning = DescribeDestinationProblem(destMap, destX, destY);
+
         var before = Map!.Tiles[_sourceX, _sourceY];
         ref var tile = ref Map.Tiles[_sourceX, _sourceY];
         tile.ExitMap = (short)destMap;
@@ -172,9 +184,37 @@ public partial class ExitToolPanel : PanelContainer
 
         if (RecordChange(before, Map.Tiles[_sourceX, _sourceY], "Set Exit"))
         {
-            OnStatus?.Invoke($"Salida ({_sourceX},{_sourceY}) -> M{destMap} ({destX},{destY})");
+            string message = $"Salida ({_sourceX},{_sourceY}) -> M{destMap} ({destX},{destY})";
+            if (warning != null) message += $"  ⚠ {warning}";
+            OnStatus?.Invoke(message);
             OnChanged?.Invoke();
         }
+    }
+
+    /// <summary>
+    /// Why this destination is suspect, or null when it looks fine. Checks
+    /// against the same walkable frame the server enforces
+    /// (movement.rs walk_min/max), since a tile inside the border margin can be
+    /// warped to but not walked out of.
+    /// </summary>
+    private string? DescribeDestinationProblem(int destMap, int destX, int destY)
+    {
+        if (AvailableMaps != null && !AvailableMaps.Contains(destMap))
+            return $"el mapa {destMap} no existe en disco";
+
+        // Only the current map's dimensions are known here; for another map the
+        // usual 100x100 is the best available guess.
+        int width = destMap == Map!.MapNumber ? Map.Width : 100;
+        int height = destMap == Map.MapNumber ? Map.Height : 100;
+
+        if (destX < EdgeStitcher.MarginLeft || destX > width - EdgeStitcher.MarginRight
+            || destY < EdgeStitcher.MarginTop || destY > height - EdgeStitcher.MarginBottom)
+        {
+            return $"({destX},{destY}) cae en el borde no caminable "
+                 + $"(x {EdgeStitcher.MarginLeft}-{width - EdgeStitcher.MarginRight}, "
+                 + $"y {EdgeStitcher.MarginTop}-{height - EdgeStitcher.MarginBottom})";
+        }
+        return null;
     }
 
     public void ClearExit()

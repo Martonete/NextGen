@@ -222,6 +222,9 @@ public partial class EditorMain : Control
         if (_readyCalled) return;
         _readyCalled = true;
 
+        // `-- --test-world` runs the stitcher checks and exits without building the UI.
+        if (RunWorldTestsIfRequested()) return;
+
         // Wire dirty tracking
         _undo.Changed += () => _state.MarkDirty();
         _state.DirtyChanged += OnDirtyChanged;
@@ -308,6 +311,9 @@ public partial class EditorMain : Control
         _mapsMenu = new PopupMenu { Name = "Mapas" };
         _mapsMenu.IdPressed += OnMapsMenuId;
         _menuBar.AddChild(_mapsMenu);
+
+        // World grid: where each map sits and how neighbours connect.
+        _menuBar.AddChild(BuildWorldMenu());
 
         AddChild(_menuBar);
 
@@ -753,6 +759,9 @@ public partial class EditorMain : Control
         {
             Map = _map,
             Undo = _undo,
+            // Shared by reference, so the panel sees maps added later without
+            // needing to be told.
+            AvailableMaps = _state.AvailableMaps,
             Visible = false,
         };
         _exitPanel.OnChanged += OnExitChanged;
