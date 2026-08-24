@@ -936,13 +936,22 @@ public partial class SheetPalette : VBoxContainer
         {
             var grh = Grhs[id];
             if (grh.NumFrames > 1 || grh.FileNum != _selectedFileNumber) continue;
-            if (grh.PixelWidth > 32 || grh.PixelHeight > 32) continue;
 
             int area = grh.PixelWidth * grh.PixelHeight;
             if (grh.SX == cellX && grh.SY == cellY)
             {
-                // Among pieces anchored here, the one filling the cell best wins.
+                // Anchored on this cell: take it whatever its size. Rejecting
+                // pieces over 32px suited the old art, where everything sat on a
+                // 32px grid, but the new catalogue has cells of other pitches and
+                // whole props as single regions — those selected as nothing at all.
                 if (area > bestArea) { bestArea = area; best = id; }
+            }
+            else if (grh.PixelWidth > 32 || grh.PixelHeight > 32)
+            {
+                // Oversized and not anchored here: it would be drawn from this
+                // cell's corner and spill across neighbours the selection never
+                // covered, so it is not a candidate.
+                continue;
             }
             else if (best == 0
                 && grh.SX >= cellX && grh.SY >= cellY

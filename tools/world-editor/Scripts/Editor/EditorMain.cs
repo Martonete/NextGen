@@ -1837,16 +1837,46 @@ public partial class EditorMain : Control
     }
 
     /// <summary>
-    /// Resolve the distinct PNG files backing the catalog's texture refs and
-    /// decode them on worker threads. Only sheets the palette actually shows
-    /// are touched, so this does not pull in the whole 1.3 GB Graficos folder.
+    /// Refs whose textures are decoded up front: the first entries of the first
+    /// few categories, which is all the user can see before scrolling.
+    ///
+    /// Capping per category is not enough on its own — there are ~630 of them,
+    /// most backed by a distinct sheet, so a per-category slice still pulls in
+    /// most of the 740-megapixel catalogue. Limiting the number of categories
+    /// too keeps startup proportional to what is on screen.
+    /// </summary>
+    private const int StartupTexturesPerCategory = 24;
+    private const int StartupCategories = 8;
+
+    private IEnumerable<Data.TextureRef> StartupTextureRefs()
+    {
+        if (_catalog == null) yield break;
+        int categories = 0;
+        foreach (var category in _catalog.CategoryOrder)
+        {
+            if (!_catalog.Categories.TryGetValue(category, out var refs)) continue;
+            if (++categories > StartupCategories) yield break;
+            for (int i = 0; i < refs.Count && i < StartupTexturesPerCategory; i++)
+                yield return refs[i];
+        }
+    }
+
+    /// <summary>
+    /// Decode, on worker threads, the PNGs behind the thumbnails shown at
+    /// startup — the first screenful of each category, matching what
+    /// TilePalette preloads.
+    ///
+    /// Decoding every sheet the palette can reach means 740 megapixels and
+    /// ~2.9 GB of RGBA, each passing through a per-pixel colour key. It is also
+    /// pointless: the texture cache holds 4096 entries, so most of that work is
+    /// evicted before anything asks for it. The rest load on demand.
     /// </summary>
     private void PreloadCatalogTexturesParallel()
     {
         if (_catalog == null || _grhs == null || _textures == null) return;
 
         var fileNums = new HashSet<int>();
-        foreach (var texRef in _catalog.AllRefs)
+        foreach (var texRef in StartupTextureRefs())
         {
             int grhIndex = texRef.GrhIndex;
             if (grhIndex <= 0 || grhIndex >= _grhs.Length) continue;
@@ -2158,9 +2188,10 @@ public partial class EditorMain : Control
         _map.MapNumber = mapNumber;
         _map.Name = $"Mapa {mapNumber}";
 
-        for (int y = 1; y <= MapHeight; y++)
-            for (int x = 1; x <= MapWidth; x++)
-                _map.Tiles[x, y].Layer1 = 1;
+        // Tiles start empty (GRH 0). Filling layer 1 with GRH 1 used to paint
+        // grass, but GRH numbers are positional: after the catalogue was
+        // renumbered, index 1 became an animation and a blank map came up
+        // carpeted in torches. A new map now starts genuinely blank.
 
         _state.CurrentMapNumber = mapNumber;
         _undo.Clear();
@@ -2745,7 +2776,8 @@ public partial class EditorMain : Control
             {
                 if (!_map.InBounds(x, y)) continue;
                 var before = _map.Tiles[x, y];
-                _map.Tiles[x, y] = new MapTile { Layer1 = 1 };
+                // Deleting leaves the tile empty; GRH 1 is a real graphic, not blank.
+                _map.Tiles[x, y] = new MapTile();
                 _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
             }
         _undo.EndBatch();
@@ -2929,7 +2961,8 @@ public partial class EditorMain : Control
                     if (_map.InBounds(sx, sy))
                     {
                         var before = _map.Tiles[sx, sy];
-                        _map.Tiles[sx, sy] = new MapTile { Layer1 = 1 };
+                        // Moved-from tiles are left empty, not filled with GRH 1.
+                        _map.Tiles[sx, sy] = new MapTile();
                         _undo.RecordTileChange(sx, sy, before, _map.Tiles[sx, sy]);
                     }
                 }

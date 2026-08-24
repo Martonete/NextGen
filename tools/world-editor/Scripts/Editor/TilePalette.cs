@@ -871,18 +871,22 @@ public partial class TilePalette : VBoxContainer
     }
 
     /// <summary>
-    /// Thumbnails generated at startup per category — roughly the first screenful.
-    /// There are ~630 categories, so this multiplies: the rest are built lazily
-    /// when a category is actually opened.
+    /// Thumbnails generated at startup: the first screenful of the first few
+    /// categories. Both limits matter — there are ~630 categories, so a
+    /// per-category cap alone still decodes most of the catalogue. Everything
+    /// else is built the first time its category is opened.
     /// </summary>
     private const int PreloadPerCategory = 24;
+    private const int PreloadCategories = 8;
 
     private IEnumerable<TextureRef> PreloadSlice()
     {
         if (Catalog == null) yield break;
+        int categories = 0;
         foreach (var category in Catalog.CategoryOrder)
         {
             if (!Catalog.Categories.TryGetValue(category, out var refs)) continue;
+            if (++categories > PreloadCategories) yield break;
             for (int i = 0; i < refs.Count && i < PreloadPerCategory; i++)
                 yield return refs[i];
         }
