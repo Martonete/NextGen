@@ -168,25 +168,26 @@ public partial class EditorMain
     {
         var cell = new WorldCell(col, row);
 
-        var dialog = new AcceptDialog
-        {
-            Title = $"Mapa para la celda {cell}",
-            OkButtonText = "Aceptar",
-        };
-
-        var box = new VBoxContainer();
-        box.AddThemeConstantOverride("separation", 8);
+        // Built with StyleDialogWindow rather than AcceptDialog: an
+        // AcceptDialog keeps its own internal container, so children added
+        // directly to it render but never receive input — the number showed up
+        // and could not be typed into.
+        var window = new Window();
+        var box = EditorTheme.StyleDialogWindow(window, $"Mapa para la celda {cell}",
+                                                new Vector2I(420, 230));
 
         var numberRow = new HBoxContainer();
         numberRow.AddThemeConstantOverride("separation", 8);
         numberRow.AddChild(EditorTheme.MakeLabel("Número de mapa",
-            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_MD));
         var numberSpin = EditorTheme.MakeSpinBox(1, 9999, 1, FirstFreeMapNumber());
+        numberSpin.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         numberRow.AddChild(numberSpin);
         box.AddChild(numberRow);
 
         var hint = EditorTheme.MakeLabel("", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
         hint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        hint.CustomMinimumSize = new Vector2(0, 44);
         box.AddChild(hint);
 
         // Says up front whether Accept will create a map or place an existing
@@ -201,19 +202,29 @@ public partial class EditorMain
         numberSpin.ValueChanged += _ => UpdateHint();
         UpdateHint();
 
-        dialog.AddChild(box);
-        dialog.AddCancelButton("Cancelar");
+        box.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill });
 
-        dialog.Confirmed += () =>
+        var buttons = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.End };
+        buttons.AddThemeConstantOverride("separation", 8);
+        buttons.AddChild(EditorTheme.MakeButton("Cancelar", () =>
+        {
+            window.Hide();
+            window.QueueFree();
+        }));
+        buttons.AddChild(EditorTheme.PrimaryButton("Aceptar", () =>
         {
             int mapNumber = (int)numberSpin.Value;
-            dialog.QueueFree();
+            window.Hide();
+            window.QueueFree();
             PlaceMapInCell(cell, mapNumber);
-        };
-        dialog.Canceled += () => dialog.QueueFree();
+        }));
+        box.AddChild(buttons);
 
-        AddChild(dialog);
-        dialog.PopupCentered();
+        AddChild(window);
+        window.PopupCentered();
+        // Focused and pre-selected, so the number can be overtyped straight away.
+        numberSpin.GetLineEdit().GrabFocus();
+        numberSpin.GetLineEdit().SelectAll();
     }
 
     private void PlaceMapInCell(WorldCell cell, int mapNumber)
@@ -279,13 +290,10 @@ public partial class EditorMain
 
         var existing = World().CellOf(mapNumber);
 
-        var dialog = new AcceptDialog
-        {
-            Title = $"Ubicar el mapa {mapNumber} en el mundo",
-            OkButtonText = "Ubicar",
-        };
-        var box = new VBoxContainer();
-        box.AddThemeConstantOverride("separation", 6);
+        var window = new Window();
+        var box = EditorTheme.StyleDialogWindow(window,
+            $"Ubicar el mapa {mapNumber} en el mundo", new Vector2I(420, 220));
+
         box.AddChild(EditorTheme.MakeLabel("Columna crece al este, fila al sur.",
             EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM));
 
@@ -293,27 +301,39 @@ public partial class EditorMain
         row.AddThemeConstantOverride("separation", 8);
         var colSpin = EditorTheme.MakeSpinBox(-999, 999, 1, existing?.Col ?? 0);
         var rowSpin = EditorTheme.MakeSpinBox(-999, 999, 1, existing?.Row ?? 0);
-        row.AddChild(EditorTheme.MakeLabel("Columna", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        colSpin.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        rowSpin.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        row.AddChild(EditorTheme.MakeLabel("Columna", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_MD));
         row.AddChild(colSpin);
-        row.AddChild(EditorTheme.MakeLabel("Fila", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        row.AddChild(EditorTheme.MakeLabel("Fila", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_MD));
         row.AddChild(rowSpin);
         box.AddChild(row);
-        dialog.AddChild(box);
-        dialog.AddCancelButton("Cancelar");
 
-        dialog.Confirmed += () =>
+        box.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill });
+
+        var buttons = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.End };
+        buttons.AddThemeConstantOverride("separation", 8);
+        buttons.AddChild(EditorTheme.MakeButton("Cancelar", () =>
+        {
+            window.Hide();
+            window.QueueFree();
+        }));
+        buttons.AddChild(EditorTheme.PrimaryButton("Ubicar", () =>
         {
             var cell = new WorldCell((int)colSpin.Value, (int)rowSpin.Value);
+            window.Hide();
+            window.QueueFree();
             World().Assign(cell, mapNumber);
             SaveWorldGrid();
             RefreshWorldPanel();
             SetStatus($"Mapa {mapNumber} ubicado en la celda {cell}");
-            dialog.QueueFree();
-        };
-        dialog.Canceled += () => dialog.QueueFree();
+        }));
+        box.AddChild(buttons);
 
-        AddChild(dialog);
-        dialog.PopupCentered();
+        AddChild(window);
+        window.PopupCentered();
+        colSpin.GetLineEdit().GrabFocus();
+        colSpin.GetLineEdit().SelectAll();
     }
 
     // ── Navigation ────────────────────────────────────────────────────────
