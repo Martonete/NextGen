@@ -143,16 +143,15 @@ public static partial class CharRenderer
 				: new Color(1f + 0.7f * k, 1f + 0.7f * k, 1f + 0.7f * k, fovAlpha); // bright flash
 		}
 
-		// Apply walk bob — purely visual offset, no effect on tile position or gameplay
-		Vector2 bobbedPos = ch.BobY != 0f ? new Vector2(screenPos.X, screenPos.Y + ch.BobY) : screenPos;
-
 		// Heading-dependent draw order (VB6: dibujarPersonaje)
-		DrawCharParts(canvas, ch, bobbedPos, headOffset, heading, data, animator, state,
+		// No walk bob: AO2020 has no vertical bounce, the body sprites carry
+		// whatever motion the stride needs.
+		DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state,
 					  colorOverride: invisOverride);
 
 		// FX overlays — not drawn when invisible (VB6: entire char skipped in invisible branch)
 		if (!ch.Invisible)
-			DrawFx(canvas, ch, bobbedPos, data, animator, deltaMs);
+			DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
 
 		// Character-attached particles — not drawn when invisible
 		if (!ch.Invisible && state != null && (state.Config?.ShowParticles ?? true))

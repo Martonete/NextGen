@@ -71,6 +71,12 @@ public partial class PacketHandler
     }
 
 
+    /// <summary>
+    /// Furthest a position correction may be and still be slid into rather than
+    /// cut to. Beyond this it is a teleport, not a disagreement about a step.
+    /// </summary>
+    private const int MaxSlideCorrectionTiles = 2;
+
     private void HandleBinPosUpdate(ByteQueue bq)
     {
         int x = bq.ReadInteger();
@@ -81,13 +87,26 @@ public partial class PacketHandler
 
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
         {
-            ch.PosX = x;
-            ch.PosY = y;
-            ch.MoveOffsetX = 0;
-            ch.MoveOffsetY = 0;
-            ch.Moving = false;
-            ch.ScrollDirectionX = 0;
-            ch.ScrollDirectionY = 0;
+            // A correction a tile or two away is the server disagreeing with
+            // the client's prediction: slide there, the way AO2020's
+            // TranslateCharacterToPos does, instead of snapping. Anything
+            // further is a teleport and should cut, not glide across the map.
+            int distance = Math.Abs(x - ch.PosX) + Math.Abs(y - ch.PosY);
+            if (distance > 0 && distance <= MaxSlideCorrectionTiles)
+            {
+                ch.TranslateTo(x, y);
+            }
+            else
+            {
+                ch.PosX = x;
+                ch.PosY = y;
+                ch.MoveOffsetX = 0;
+                ch.MoveOffsetY = 0;
+                ch.Moving = false;
+                ch.TranslationActive = false;
+                ch.ScrollDirectionX = 0;
+                ch.ScrollDirectionY = 0;
+            }
         }
         _state.ScreenOffsetX = 0;
         _state.ScreenOffsetY = 0;

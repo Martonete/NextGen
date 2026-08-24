@@ -26,10 +26,64 @@ public class Character
 	public int ScrollDirectionX;
 	public int ScrollDirectionY;
 
-	// Per-character walk animation frame counter (VB6: each char has its own FrameCounter).
-	// Only advances when Moving=true. Reset to 0 on move start.
+	// Per-character walk animation frame. Advances only while Moving.
+	//
+	// AO2020 (TileEngine_Chars.Char_Move_by_Head) starts the cycle when a
+	// character begins to walk and freezes it on stopping, so every stride
+	// begins on the same foot. It only carries the phase over when the heading
+	// changes *mid-walk*, via SyncGrhPhase — turning a corner must not restart
+	// the legs.
 	public float WalkFrame;
-	public float BobY;   // Vertical bob offset in pixels (±2px during walk, 0 at rest)
+
+	/// <summary>
+	/// Heading the current walk cycle belongs to, so a turn can be told apart
+	/// from starting to walk. 0 means no cycle is running.
+	/// </summary>
+	public int WalkFrameHeading;
+
+	/// <summary>
+	/// Per-character speed multiplier (AO2020 charlist().Speeding). 1.0 is
+	/// normal walking pace.
+	/// </summary>
+	public float Speeding = 1f;
+
+	// Time-based translation, AO2020's TranslateCharacterToPos. Used when the
+	// character has to cover a distance in a fixed time rather than at walking
+	// speed — a server position correction, above all. Snapping straight to the
+	// new tile reads as a teleport; sliding there reads as a stumble.
+	public bool TranslationActive;
+	public float TranslationElapsedMs;
+	public float TranslationTimeMs;
+	public float TranslationFromX;
+	public float TranslationFromY;
+
+	/// <summary>
+	/// Slides to a new tile over <paramref name="timeMs"/>. The offset starts at
+	/// the full distance back to where the character was and is interpolated to
+	/// zero, so the sprite appears to travel while the logical position is
+	/// already the new one.
+	/// </summary>
+	public void TranslateTo(int newX, int newY, float timeMs = 200f)
+	{
+		int diffX = newX - PosX;
+		int diffY = newY - PosY;
+		PosX = newX;
+		PosY = newY;
+
+		if (diffX == 0 && diffY == 0) { TranslationActive = false; return; }
+
+		TranslationFromX = -32f * diffX;
+		TranslationFromY = -32f * diffY;
+		MoveOffsetX = TranslationFromX;
+		MoveOffsetY = TranslationFromY;
+		ScrollDirectionX = Math.Sign(diffX);
+		ScrollDirectionY = Math.Sign(diffY);
+
+		TranslationActive = true;
+		TranslationElapsedMs = 0f;
+		TranslationTimeMs = timeMs;
+		Moving = false;
+	}
 
 	// Combat hit flash — brief color tint when this character takes or deals a blow.
 	// Timer counts down in CharRenderer.UpdateCharacterTimers; tint applied in DrawCharacter.

@@ -639,11 +639,28 @@ public partial class Main
 		{
 			var ch = kvp.Value;
 
-			// Advance walk animation frame only while Moving (VB6: per-char FrameCounter)
+			// Walk animation, following AO2020's model: the cycle starts when a
+			// character begins to walk and freezes when it stops, so every
+			// stride begins on the same foot. Turning mid-walk keeps the phase
+			// (SyncGrhPhase) rather than snapping back to frame 0.
 			if (ch.Moving && ch.Body > 0 && ch.Body < _gameData.Bodies.Length)
 			{
 				int heading = ch.Heading;
 				if (heading < 1 || heading > 4) heading = 3;
+
+				// Starting to walk: begin the cycle. Previously the counter ran
+				// forever, so a character set off on an arbitrary frame.
+				if (ch.WalkFrameHeading == 0)
+				{
+					ch.WalkFrame = 0f;
+					ch.WalkFrameHeading = heading;
+				}
+				else if (ch.WalkFrameHeading != heading)
+				{
+					// Turned while walking: carry the phase across.
+					ch.WalkFrameHeading = heading;
+				}
+
 				int walkGrh = _gameData.Bodies[ch.Body].Walk[heading];
 				if (walkGrh > 0 && walkGrh < _gameData.Grhs.Length)
 				{
@@ -655,24 +672,53 @@ public partial class Main
 						// Keep that cadence intact: bodies such as the Nigromante have
 						// 16 frames (instead of the usual 4-6), so a global slowdown
 						// makes their walk look unnaturally sluggish.
-						ch.WalkFrame += deltaMs * grh.NumFrames / speed;
+						ch.WalkFrame += deltaMs * grh.NumFrames / speed * ch.Speeding;
 						if (ch.WalkFrame >= grh.NumFrames)
 							ch.WalkFrame %= grh.NumFrames;
-
-						// Head bob: sine wave over the walk frame cycle (±1px, sutil)
-						float bobProgress = (ch.WalkFrame % grh.NumFrames) / grh.NumFrames;
-						ch.BobY = MathF.Sin(bobProgress * MathF.PI * 2f) * 1f;
 					}
 				}
+			}
+			else if (!ch.Moving && ch.WalkFrameHeading != 0)
+			{
+				// Stopped: freeze on the resting frame. AO2020 sets
+				// Walk(.Heading).started = 0 here; there is no idle bob.
+				ch.WalkFrame = 0f;
+				ch.WalkFrameHeading = 0;
+			}
+
+			// Time-based translation takes precedence over walking speed:
+			// AO2020 checks Moving first, then TranslationActive as an
+			// alternative branch (engine.bas:1404-1418).
+			if (ch.TranslationActive)
+			{
+				ch.TranslationElapsedMs += deltaMs;
+				float t = ch.TranslationTimeMs > 0f
+					? Math.Min(ch.TranslationElapsedMs / ch.TranslationTimeMs, 1f)
+					: 1f;
+
+				// Interpolate from the full offset back to zero.
+				ch.MoveOffsetX = ch.TranslationFromX * (1f - t);
+				ch.MoveOffsetY = ch.TranslationFromY * (1f - t);
+
+				if (t >= 1f)
+				{
+					ch.MoveOffsetX = 0f;
+					ch.MoveOffsetY = 0f;
+					ch.ScrollDirectionX = 0;
+					ch.ScrollDirectionY = 0;
+					ch.TranslationActive = false;
+				}
+				continue;
 			}
 
 			if (!ch.Moving && ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
 				continue;
 
-			// Interpolate X using ScrollDirection
+			// Interpolate X using ScrollDirection.
+			// AO2020: MoveOffsetX + ScrollPixelsPerFrameX * Sgn(dir) * ticks * .Speeding
 			if (ch.MoveOffsetX != 0)
 			{
-				ch.MoveOffsetX += scrollPixels * ch.ScrollDirectionX;
+				ch.MoveOffsetX += scrollPixels * ch.ScrollDirectionX * ch.Speeding;
 				// Complete when offset crosses zero (moved past destination)
 				if ((ch.ScrollDirectionX > 0 && ch.MoveOffsetX >= 0) ||
 					(ch.ScrollDirectionX < 0 && ch.MoveOffsetX <= 0) ||
@@ -685,7 +731,7 @@ public partial class Main
 			// Interpolate Y using ScrollDirection
 			if (ch.MoveOffsetY != 0)
 			{
-				ch.MoveOffsetY += scrollPixels * ch.ScrollDirectionY;
+				ch.MoveOffsetY += scrollPixels * ch.ScrollDirectionY * ch.Speeding;
 				if ((ch.ScrollDirectionY > 0 && ch.MoveOffsetY >= 0) ||
 					(ch.ScrollDirectionY < 0 && ch.MoveOffsetY <= 0) ||
 					ch.ScrollDirectionY == 0)
@@ -699,7 +745,6 @@ public partial class Main
 				ch.Moving = false;
 				ch.ScrollDirectionX = 0;
 				ch.ScrollDirectionY = 0;
-				ch.BobY = 0f;
 			}
 		}
 	}
