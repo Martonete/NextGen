@@ -1023,7 +1023,8 @@ public partial class Main : Control
 		_startupLoadingScreen.Init(_state);
 		_startupLoadingScreen.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
 		GetNode("UILayer").AddChild(_startupLoadingScreen);
-		_startupLoadingScreen.Show("Argentum Nextgen");
+		// No title: the backdrop already has one painted on it.
+		_startupLoadingScreen.Show();
 		_startupLoadingScreen.SetLabel("Cargando gráficos...");
 
 		// Preload only what the login screen draws — its backdrop map plus the
