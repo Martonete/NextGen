@@ -44,23 +44,26 @@ public class TextureManager
     }
 
     /// <summary>
-    /// Preload all textures referenced by GrhData. Returns an enumerator for
-    /// time-budgeted incremental loading (call TickPreload from _Process).
+    /// Preload the given sheets. Returns an enumerator for time-budgeted
+    /// incremental loading (call TickPreload from _Process).
+    ///
+    /// Only pass what is about to be drawn. GetTexture loads and caches on
+    /// demand, so anything left out still appears the moment it is needed —
+    /// preloading the whole catalogue just moves that cost to startup, and
+    /// past MaxCacheSize entries it is worse than useless because the later
+    /// loads evict the earlier ones.
     /// </summary>
-    public IEnumerator<int> PreloadAll(GrhData[] grhs)
+    public IEnumerator<int> Preload(IEnumerable<int> fileNums)
     {
-        var fileNums = new HashSet<int>();
-        for (int i = 1; i < grhs.Length; i++)
-        {
-            int fn = grhs[i].FileNum;
-            if (fn > 0) fileNums.Add(fn);
-        }
+        var unique = new HashSet<int>();
+        foreach (int fn in fileNums)
+            if (fn > 0) unique.Add(fn);
 
-        PreloadTotal = fileNums.Count;
+        PreloadTotal = unique.Count;
         PreloadDone = 0;
         PreloadFinished = false;
 
-        foreach (int fn in fileNums)
+        foreach (int fn in unique)
         {
             LoadAndCache(fn);
             PreloadDone++;
@@ -69,6 +72,35 @@ public class TextureManager
 
         PreloadFinished = true;
         GD.Print($"[TextureManager] Preloaded {PreloadDone} textures ({_cache.Count} cached, base={_resources.BasePath})");
+    }
+
+    /// <summary>
+    /// Decodes the given sheets right away, blocking until done. Used on map
+    /// change, where a hitch while loading beats tiles popping in over the
+    /// first few frames. Sheets already cached cost nothing.
+    /// </summary>
+    public int PreloadImmediate(IEnumerable<int> fileNums)
+    {
+        int loaded = 0;
+        foreach (int fn in fileNums)
+        {
+            if (fn <= 0 || _cache.ContainsKey(fn)) continue;
+            LoadAndCache(fn);
+            loaded++;
+        }
+        return loaded;
+    }
+
+    /// <summary>
+    /// Every sheet in the catalogue. Kept for tooling that genuinely wants all
+    /// of them; the game should preload per map instead.
+    /// </summary>
+    public IEnumerator<int> PreloadAll(GrhData[] grhs)
+    {
+        var fileNums = new List<int>(grhs.Length);
+        for (int i = 1; i < grhs.Length; i++)
+            if (grhs[i].FileNum > 0) fileNums.Add(grhs[i].FileNum);
+        return Preload(fileNums);
     }
 
     /// <summary>

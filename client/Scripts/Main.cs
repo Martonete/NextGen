@@ -1026,9 +1026,15 @@ public partial class Main : Control
 		_startupLoadingScreen.Show("Argentum Nextgen");
 		_startupLoadingScreen.SetLabel("Cargando gráficos...");
 
-		// Start texture preload
+		// Preload only what the login screen draws — its backdrop map plus the
+		// character art. Decoding the whole catalogue here meant ~5700 sheets
+		// and 800 megapixels before the player could even type a password, and
+		// most of it was evicted from the 4096-entry cache on the way in.
+		// Everything else loads on demand through GetTexture.
 		_startupPreloadDone = false;
-		_texturePreloadIter = _gameData.Textures!.PreloadAll(_gameData.Grhs);
+		var startupSheets = Data.MapTextureSet.For(_gameData, _state.MapData);
+		Data.MapTextureSet.AddVisibleCharacters(_gameData, _state, startupSheets);
+		_texturePreloadIter = _gameData.Textures!.Preload(startupSheets);
 		GD.Print($"[MAIN] Starting texture preload: {_gameData.Textures.PreloadTotal} textures");
 	}
 

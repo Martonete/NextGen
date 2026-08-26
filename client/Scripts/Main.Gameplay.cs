@@ -773,6 +773,16 @@ public partial class Main
 			_gameData.Textures?.ResetPreload(); // Allow re-evaluation of preload state on map change
 			_worldRenderer?.ResetMapVisualCaches(); // drops textures cached for the previous map
 
+			// Decode this map's sheets now rather than letting the first frame
+			// fault them in one by one, which is what makes crossing a border
+			// hitch. Around a hundred sheets for a typical map.
+			if (_gameData.Textures != null)
+			{
+				var sheets = Data.MapTextureSet.For(_gameData, _state.MapData);
+				Data.MapTextureSet.AddVisibleCharacters(_gameData, _state, sheets);
+				_gameData.Textures.PreloadImmediate(sheets);
+			}
+
 			// .aoinf stores mapper-placed objects as ObjIndex/ObjAmount on tiles.
 			// Unlike runtime ObjectCreate packets, MapLoader does not create draw
 			// entries for them automatically; materialize them before rendering.
