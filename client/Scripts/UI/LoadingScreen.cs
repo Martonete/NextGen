@@ -21,7 +21,6 @@ public partial class LoadingScreen : Control
     private TextureRect? _bgImage;
     private Label? _loadingLabel;
     private ColorRect? _barFill;
-    private Label? _mapNameLabel;
 
     // State
     private float _progress;
@@ -96,7 +95,9 @@ public partial class LoadingScreen : Control
         _barFill.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(_barFill);
 
-        // Status text, under the bar so it never covers the painted caption.
+        // Status text, under the bar. Stays empty on the startup pass — the
+        // backdrop already reads "Cargando..." and a second caption under it
+        // just repeats the artwork. Map transitions may still set a name here.
         _loadingLabel = RpgTheme.CreateInfoLabel("", ResolutionManager.S(13));
         _loadingLabel.Position = new Vector2(barRect.Position.X,
                                              barRect.End.Y + ResolutionManager.S(8));
@@ -104,15 +105,6 @@ public partial class LoadingScreen : Control
         _loadingLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _loadingLabel.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(_loadingLabel);
-
-        // Map name, above the bar. Blank on the startup pass.
-        _mapNameLabel = RpgTheme.CreateTitleLabel("", ResolutionManager.S(17));
-        _mapNameLabel.Position = new Vector2(barRect.Position.X,
-                                             barRect.Position.Y - ResolutionManager.S(38));
-        _mapNameLabel.Size = new Vector2(barRect.Size.X, ResolutionManager.S(28));
-        _mapNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _mapNameLabel.MouseFilter = MouseFilterEnum.Ignore;
-        AddChild(_mapNameLabel);
     }
 
     private void LoadBackdrop()
@@ -179,10 +171,10 @@ public partial class LoadingScreen : Control
         // Reset the fade so a second load is not stuck at the last alpha.
         Modulate = Colors.White;
 
-        if (_mapNameLabel != null)
-            _mapNameLabel.Text = string.IsNullOrEmpty(mapName) ? "" : mapName;
         if (_background != null) _background.Color = new Color(0, 0, 0, 1f);
-        if (_loadingLabel != null) _loadingLabel.Text = "";
+        // The map's name, when there is one, goes under the bar; the startup
+        // pass passes nothing and the artwork speaks for itself.
+        if (_loadingLabel != null) _loadingLabel.Text = mapName ?? "";
         if (_barFill != null) _barFill.Size = new Vector2(0, _barFill.Size.Y);
     }
 
@@ -199,7 +191,6 @@ public partial class LoadingScreen : Control
     public void Complete()
     {
         _targetProgress = 1f;
-        if (_loadingLabel != null) _loadingLabel.Text = "Listo!";
     }
 
     public void ForceHide()

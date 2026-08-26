@@ -1023,9 +1023,8 @@ public partial class Main : Control
 		_startupLoadingScreen.Init(_state);
 		_startupLoadingScreen.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
 		GetNode("UILayer").AddChild(_startupLoadingScreen);
-		// No title: the backdrop already has one painted on it.
+		// No title or caption: the backdrop already has both painted on it.
 		_startupLoadingScreen.Show();
-		_startupLoadingScreen.SetLabel("Cargando gráficos...");
 
 		// Preload only what the login screen draws — its backdrop map plus the
 		// character art. Decoding the whole catalogue here meant ~5700 sheets
@@ -1114,9 +1113,8 @@ public partial class Main : Control
 			float progress = texMgr.PreloadTotal > 0
 				? (float)texMgr.PreloadDone / texMgr.PreloadTotal
 				: 1f;
+			// Progress only: the backdrop already says "Cargando...".
 			_startupLoadingScreen?.SetProgress(progress);
-			_startupLoadingScreen?.SetLabel(
-				$"Cargando gráficos... ({texMgr.PreloadDone}/{texMgr.PreloadTotal})");
 
 			if (done)
 			{
