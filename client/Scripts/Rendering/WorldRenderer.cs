@@ -175,16 +175,28 @@ public partial class WorldRenderer : Node2D
 	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in any known water range.
 	private bool[,]? _waterMap;
 
-	// AO20 water deformation constants. Adjacent water tiles share their border phase,
-	// while coast-facing edges stay fixed so water never opens a gap over terrain.
+	// AO20 water deformation (clsBatch.DrawWater). Every vertex is displaced by a
+	// sine/cosine of its own position, so a wave travels across the surface.
+	// Coast-facing edges are pinned instead, which is what keeps the water from
+	// opening a gap over the shore — and what makes the effect read as a coast.
 	private const float WaterWavePeriodTilesX = 4f;
+	private const float WaterWavePeriodTilesY = 4f;
 	private const float WaterWaveHeight = 3f;
 	private const float Tau = Mathf.Pi * 2f;
+
+	// Phase per pixel, matching WATER_WAVE_FACTOR_X/Y: one full wave every 4 tiles.
+	private const float WaterWaveFactorX = Tau / (WaterWavePeriodTilesX * TileSize);
+	private const float WaterWaveFactorY = Tau / (WaterWavePeriodTilesY * TileSize);
+	// Phase difference across one tile, so neighbouring tiles line up seamlessly.
+	private const float WaterTileFactorX = TileSize * WaterWaveFactorX;
+	private const float WaterTileFactorY = TileSize * WaterWaveFactorY;
+
 	private readonly Vector2[] _waterQuad = new Vector2[4];
 	private readonly Vector2[] _waterQuadUvs = new Vector2[4];
 	private readonly Color[] _waterQuadColors = { Colors.White, Colors.White, Colors.White, Colors.White };
-	private readonly float[] _waterWaveSin = new float[4];
-	private readonly float[] _waterWaveCos = new float[4];
+
+	/// <summary>Wave clock, advanced once per frame (AO20: FrameTime Mod 62831 * 0.001).</summary>
+	private float _waterWaveTime;
 
 	// Cached per-column and per-row screen coordinate arrays (Opt 4).
 	// Resized only when the frame range changes. Avoids per-tile multiply in the hot path.
@@ -1302,28 +1314,38 @@ void fragment() {
 		int height = Math.Min(grh.PixelHeight, textureHeight - sy);
 		if (width <= 0 || height <= 0) return;
 
-		int phase = (mapX + mapY) & 3;
-		int phaseRight = (phase + 1) & 3;
-		int phaseBottom = phaseRight;
-		int phaseBottomRight = (phase + 2) & 3;
+		// Phase from the tile's own world position, as AO20 does. A lookup of
+		// four precomputed phases was standing in for this, which meant every
+		// tile of the same parity moved in lockstep and no wave ever travelled.
+		float tX = mapX * TileSize * WaterWaveFactorX;
+		float tY = mapY * TileSize * WaterWaveFactorY;
+		float basePhase = _waterWaveTime + tX + tY;
 
+		// A vertex shared with the neighbouring tile must use that tile's phase
+		// too, or the two would tear apart along the seam.
+		float phaseTL = basePhase;
+		float phaseTR = basePhase + WaterTileFactorX;
+		float phaseBL = basePhase + WaterTileFactorY;
+		float phaseBR = basePhase + WaterTileFactorX + WaterTileFactorY;
+
+		// Edges facing land are pinned: this is what shapes the coastline.
 		float top = IsWaterTile(mapX, mapY - 1) ? 1f : 0f;
 		float right = IsWaterTile(mapX + 1, mapY) ? 1f : 0f;
 		float bottom = IsWaterTile(mapX, mapY + 1) ? 1f : 0f;
 		float left = IsWaterTile(mapX - 1, mapY) ? 1f : 0f;
 
 		Vector2 bl = new(
-			pos.X + _waterWaveCos[phaseBottom] * WaterWaveHeight * left,
-			pos.Y + TileSize + _waterWaveSin[phaseBottom] * WaterWaveHeight * bottom);
+			pos.X + Mathf.Cos(phaseBL) * WaterWaveHeight * left,
+			pos.Y + TileSize + Mathf.Sin(phaseBL) * WaterWaveHeight * bottom);
 		Vector2 br = new(
-			pos.X + TileSize + _waterWaveCos[phaseBottomRight] * WaterWaveHeight * right,
-			pos.Y + TileSize + _waterWaveSin[phaseBottomRight] * WaterWaveHeight * bottom);
+			pos.X + TileSize + Mathf.Cos(phaseBR) * WaterWaveHeight * right,
+			pos.Y + TileSize + Mathf.Sin(phaseBR) * WaterWaveHeight * bottom);
 		Vector2 tr = new(
-			pos.X + TileSize + _waterWaveCos[phaseRight] * WaterWaveHeight * right,
-			pos.Y + _waterWaveSin[phaseRight] * WaterWaveHeight * top);
+			pos.X + TileSize + Mathf.Cos(phaseTR) * WaterWaveHeight * right,
+			pos.Y + Mathf.Sin(phaseTR) * WaterWaveHeight * top);
 		Vector2 tl = new(
-			pos.X + _waterWaveCos[phase] * WaterWaveHeight * left,
-			pos.Y + _waterWaveSin[phase] * WaterWaveHeight * top);
+			pos.X + Mathf.Cos(phaseTL) * WaterWaveHeight * left,
+			pos.Y + Mathf.Sin(phaseTL) * WaterWaveHeight * top);
 
 		Vector2 uvBl = new((float)sx / textureWidth, (float)(sy + height) / textureHeight);
 		Vector2 uvTl = new((float)sx / textureWidth, (float)sy / textureHeight);
@@ -1343,17 +1365,15 @@ void fragment() {
 		canvas.DrawPolygon(_waterQuad, _waterQuadColors, _waterQuadUvs, texture);
 	}
 
+	/// <summary>
+	/// Advances the wave clock once per frame. 62831 is 2*PI*10000, so the phase
+	/// wraps cleanly and never loses precision however long the client runs
+	/// (AO20: FrameTime Mod 62831 * 0.001).
+	/// </summary>
 	private void UpdateWaterWaveLookup()
 	{
 		if (_animator == null) return;
-		float time = (float)((_animator.GlobalTimeMs % 62831) * 0.001);
-		float phaseStep = Tau / WaterWavePeriodTilesX;
-		for (int i = 0; i < 4; i++)
-		{
-			float phase = time + i * phaseStep;
-			_waterWaveSin[i] = Mathf.Sin(phase);
-			_waterWaveCos[i] = Mathf.Cos(phase);
-		}
+		_waterWaveTime = (float)((_animator.GlobalTimeMs % 62831) * 0.001);
 	}
 
 	private bool IsWaterTile(int x, int y)
