@@ -77,9 +77,9 @@ public partial class Main : Control
 		if (_hudFrame != null)
 			_hudFrame.ResizeToWindow();
 
-		// Stat bar overlay
+		// Stat bar overlay — compact intrinsic size, tracks UIScale
 		if (_statBarOverlay != null)
-			_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+			_statBarOverlay.Size = StatBarOverlay.IntrinsicSize;
 
 		// --- Sidebar internal elements ---
 		// Name frame
@@ -96,52 +96,39 @@ public partial class Main : Control
 		if (_xpBarBg != null) { _xpBarBg.Position = new Vector2(sbX + S(2), S(78)); _xpBarBg.Size = new Vector2(sbW - S(4), S(14)); }
 		// ExpLabel
 		if (_expLabel != null) { _expLabel.Position = new Vector2(sbX + S(2), S(78)); _expLabel.Size = new Vector2(sbW - S(4), S(14)); _expLabel.AddThemeFontSizeOverride("font_size", S(8)); }
-		// Gold icon + label
-		if (_goldIcon != null) { _goldIcon.Position = new Vector2(sbX + S(140), ResolutionManager.BottomBarY - S(137)); _goldIcon.Size = new Vector2(S(14), S(14)); }
-		if (_goldLabel != null) { _goldLabel.Position = new Vector2(sbX + S(155), ResolutionManager.BottomBarY - S(135)); _goldLabel.Size = new Vector2(S(60), S(14)); _goldLabel.AddThemeFontSizeOverride("font_size", S(8)); }
-		// --- Sidebar buttons (relative to BottomBarY) ---
-		int btnX = sbX + S(122);
-		int btn0Y = ResolutionManager.BottomBarY - S(120);
-		int btnStep = S(21);
+		// Gold icon + label — Position/Size for both now come from LayoutStatusContent
+		// (they live inside the "Estado" floating window); only the font size stays here.
+		if (_goldLabel != null) _goldLabel.AddThemeFontSizeOverride("font_size", S(8));
+		// Sidebar buttons + coords/online/fps labels: Position/Size for all of these now
+		// come from LayoutStatusContent (they live inside the "Estado" floating window);
+		// only the font sizes stay here.
 		int btnFontSize = S(10);
-		int btnW = S(93);
-
-		// Coords label (map name + coords) — centered below stat bars (left half of sidebar)
-		int coordsW = S(120);
-		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX, S(549)); _coordsLabel.Size = new Vector2(coordsW, S(28)); _coordsLabel.HorizontalAlignment = HorizontalAlignment.Center; _coordsLabel.AddThemeFontSizeOverride("font_size", S(8)); }
-		// Online + FPS — centered below Clanes button
-		int clanesBottomY = btn0Y + btnStep * 4 + S(22);
-		if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(btnX, clanesBottomY); _onlineLabel.Size = new Vector2(btnW, S(12)); _onlineLabel.HorizontalAlignment = HorizontalAlignment.Center; _onlineLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(btnX, clanesBottomY + S(12)); _fpsLabel.Size = new Vector2(btnW, S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-
-		if (_mapaButton != null) { _mapaButton.Position = new Vector2(btnX, btn0Y); _mapaButton.Size = new Vector2(S(93), S(20)); _mapaButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
-		if (_grupoButton != null) { _grupoButton.Position = new Vector2(btnX, btn0Y + btnStep); _grupoButton.Size = new Vector2(S(93), S(20)); _grupoButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
-		if (_opcionesButton != null) { _opcionesButton.Position = new Vector2(btnX, btn0Y + btnStep * 2); _opcionesButton.Size = new Vector2(S(93), S(20)); _opcionesButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
-		if (_estadisticasButton != null) { _estadisticasButton.Position = new Vector2(btnX, btn0Y + btnStep * 3); _estadisticasButton.Size = new Vector2(S(93), S(20)); _estadisticasButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
-		if (_clanesButton != null) { _clanesButton.Position = new Vector2(btnX, btn0Y + btnStep * 4); _clanesButton.Size = new Vector2(S(93), S(20)); _clanesButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_coordsLabel != null) _coordsLabel.AddThemeFontSizeOverride("font_size", S(8));
+		if (_onlineLabel != null) _onlineLabel.AddThemeFontSizeOverride("font_size", S(7));
+		if (_fpsLabel != null) _fpsLabel.AddThemeFontSizeOverride("font_size", S(7));
+		if (_mapaButton != null) _mapaButton.AddThemeFontSizeOverride("font_size", btnFontSize);
+		if (_grupoButton != null) _grupoButton.AddThemeFontSizeOverride("font_size", btnFontSize);
+		if (_opcionesButton != null) _opcionesButton.AddThemeFontSizeOverride("font_size", btnFontSize);
+		if (_estadisticasButton != null) _estadisticasButton.AddThemeFontSizeOverride("font_size", btnFontSize);
+		if (_clanesButton != null) _clanesButton.AddThemeFontSizeOverride("font_size", btnFontSize);
 
 		// Minimize/Close buttons
 		if (_minimizeButton != null) { _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4)); _minimizeButton.Size = new Vector2(S(17), S(17)); }
 		if (_closeMenuButton != null) { _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4)); _closeMenuButton.Size = new Vector2(S(17), S(17)); }
 
 		// --- Inventory/Spell panel area ---
-		int contentW = S(190);
-		int designOffset = S(10);
-		int sideX = ResolutionManager.SidebarX + designOffset + extraSidebar / 2;
-		int tabX = sideX - S(6);
-		int tabBtnW = (contentW + S(12)) / 2;
-		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); _invTabButton.AddThemeFontSizeOverride("font_size", S(10)); }
-		if (_spellTabButton != null) { _spellTabButton.Position = new Vector2(tabX + tabBtnW, S(122)); _spellTabButton.Size = new Vector2(tabBtnW, S(34)); _spellTabButton.AddThemeFontSizeOverride("font_size", S(10)); }
-		int invX = sideX + (contentW - S(171)) / 2;
+		// Position/Size for tabs, dydToggle, lanzar/info and the move arrows now come
+		// from LayoutInventoryContent (they live inside the "Mochila" floating window).
+		// The grid/spell panel still need their Size+Scale set here — LayoutInventoryContent
+		// only positions them (and reads this Size back to center them).
 		float uiScale = ResolutionManager.UIScale;
-		if (_inventoryPanel != null) { _inventoryPanel.Position = new Vector2(invX, S(158)); _inventoryPanel.Size = new Vector2(171, 174); _inventoryPanel.Scale = new Vector2(uiScale, uiScale); }
-		if (_spellPanel != null) { _spellPanel.Position = new Vector2(sideX, S(158)); _spellPanel.Size = new Vector2(190, 186); _spellPanel.Scale = new Vector2(uiScale, uiScale); }
-		if (_dydToggle != null) { _dydToggle.Position = new Vector2(sideX - S(25), S(338)); _dydToggle.Size = new Vector2(S(21), S(21)); }
-		int halfBtn = contentW / 2 - S(2);
-		if (_lanzarButton != null) { _lanzarButton.Position = new Vector2(sideX, S(348)); _lanzarButton.Size = new Vector2(halfBtn, S(28)); _lanzarButton.AddThemeFontSizeOverride("font_size", S(10)); }
-		if (_infoButton != null) { _infoButton.Position = new Vector2(sideX + halfBtn + S(4), S(348)); _infoButton.Size = new Vector2(halfBtn, S(28)); _infoButton.AddThemeFontSizeOverride("font_size", S(10)); }
-		if (_spellUpButton != null) _spellUpButton.Position = new Vector2(sideX + contentW + S(2), S(200));
-		if (_spellDownButton != null) _spellDownButton.Position = new Vector2(sideX + contentW + S(2), S(230));
+		if (_inventoryPanel != null) { _inventoryPanel.Size = new Vector2(171, 174); _inventoryPanel.Scale = new Vector2(uiScale, uiScale); }
+		if (_spellPanel != null) { _spellPanel.Size = new Vector2(190, 186); _spellPanel.Scale = new Vector2(uiScale, uiScale); }
+		if (_dydToggle != null) _dydToggle.Size = new Vector2(S(21), S(21));
+		if (_invTabButton != null) _invTabButton.AddThemeFontSizeOverride("font_size", S(10));
+		if (_spellTabButton != null) _spellTabButton.AddThemeFontSizeOverride("font_size", S(10));
+		if (_lanzarButton != null) _lanzarButton.AddThemeFontSizeOverride("font_size", S(10));
+		if (_infoButton != null) _infoButton.AddThemeFontSizeOverride("font_size", S(10));
 
 		// --- Stat labels ---
 		int bbY = ResolutionManager.BottomBarY + S(9);
@@ -149,12 +136,10 @@ public partial class Main : Control
 		if (_helmLabel != null) { _helmLabel.Position = new Vector2(S(170), bbY); _helmLabel.Size = new Vector2(S(90), S(17)); _helmLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 		if (_shieldLabel != null) { _shieldLabel.Position = new Vector2(S(310), bbY); _shieldLabel.Size = new Vector2(S(95), S(17)); _shieldLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 		if (_weaponLabel != null) { _weaponLabel.Position = new Vector2(S(435), bbY); _weaponLabel.Size = new Vector2(S(90), S(17)); _weaponLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-		// Agilidad | Fuerza — centered row
-		int statRowW = S(190);
-		int statRowY = ResolutionManager.BottomBarY - S(160);
-		if (_agilidadLabel != null) { _agilidadLabel.Position = new Vector2(sideX, statRowY); _agilidadLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _agilidadLabel.HorizontalAlignment = HorizontalAlignment.Right; _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
-		if (_statSepLabel != null) { _statSepLabel.Position = new Vector2(sideX + statRowW / 2 - S(5), statRowY); _statSepLabel.Size = new Vector2(S(10), S(14)); }
-		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sideX + statRowW / 2 + S(5), statRowY); _fuerzaLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _fuerzaLabel.HorizontalAlignment = HorizontalAlignment.Left; _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		// Agilidad | Fuerza — Position/Size come from LayoutStatusContent (inside the
+		// "Estado" floating window); alignment + font size aren't touched there, so they stay.
+		if (_agilidadLabel != null) { _agilidadLabel.HorizontalAlignment = HorizontalAlignment.Right; _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		if (_fuerzaLabel != null) { _fuerzaLabel.HorizontalAlignment = HorizontalAlignment.Left; _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 		// --- Minimap (inside console area, top-right corner) ---
 		// Position: right-aligned to ConsoleRight, with S(5) gap from console text
 		int mmBorderW = S(118);
@@ -924,12 +909,13 @@ public partial class Main : Control
 		ApplyFont(_onlineLabel, "Tahoma", 700);
 		_onlineLabel.AddThemeFontSizeOverride("font_size", S(7));
 
-		// Custom stat bar overlay — draws colored fill rects at VB6 positions
+		// Custom stat bar overlay — compact Hp/Mana/Sta/Ham/Agua stack, lives inside
+		// the "Estado" floating HUD window (positioned by LayoutStatusContent).
 		_statBarOverlay = new StatBarOverlay();
 		_statBarOverlay.DataPath = dataPath;
 		_statBarOverlay.Resources = _resources;
 		_statBarOverlay.Position = Vector2.Zero;
-		_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		_statBarOverlay.Size = StatBarOverlay.IntrinsicSize;
 		_statBarOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_gameUI.AddChild(_statBarOverlay);
 
