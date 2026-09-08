@@ -281,7 +281,7 @@ public class InputHandler
 			else if (Input.IsKeyPressed(Key.Key9)) macroIdx = 8;
 			else if (Input.IsKeyPressed(Key.Key0)) macroIdx = 9;
 
-			if (macroIdx >= 0)
+			if (macroIdx >= 0 && !_state.QuickbarKeys.Contains(macroIdx == 9 ? Key.Key0 : (Key)((long)Key.Key1 + macroIdx)))
 			{
 				ExecuteMacro(macroIdx);
 				_keyCooldownUntilMs = nowMs + KeyCooldownMs;

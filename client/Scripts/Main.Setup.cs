@@ -204,6 +204,7 @@ public partial class Main
 
 		// Apply consistent layout — same code path as resolution change
 		RepositionUI();
+		SetupFloatingHud();
 	}
 
 	private void SetupSidebarButtons()

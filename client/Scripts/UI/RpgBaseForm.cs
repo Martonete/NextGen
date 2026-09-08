@@ -87,6 +87,7 @@ public partial class RpgBaseForm : Control
 
         switch (FormStyle)
         {
+            case "entry": BuildEntry(); break;
             case "v2": BuildV2(); break;
             case "v3": BuildV3(); break;
             case "v4": BuildV4(); break;
@@ -136,6 +137,21 @@ public partial class RpgBaseForm : Control
         ContentContainer.AddThemeConstantOverride("margin_left", RpgTheme.FormMarginLeft);
         ContentContainer.AddThemeConstantOverride("margin_right", RpgTheme.FormMarginRight);
         ContentContainer.AddThemeConstantOverride("margin_bottom", RpgTheme.FormMarginBottom);
+        AddChild(ContentContainer);
+        RpgTheme.FillParent(ContentContainer);
+    }
+
+    private void BuildEntry()
+    {
+        var panel = new Panel { MouseFilter = MouseFilterEnum.Ignore };
+        var style = EntryTheme.Box("101a20f5", "9e855c", 0);
+        style.SetBorderWidthAll(2);
+        panel.AddThemeStyleboxOverride("panel", style);
+        AddChild(panel);
+        RpgTheme.FillParent(panel);
+        ContentContainer = new MarginContainer { MouseFilter = MouseFilterEnum.Ignore };
+        foreach (string edge in new[] { "left", "right", "top", "bottom" })
+            ContentContainer.AddThemeConstantOverride("margin_" + edge, 28);
         AddChild(ContentContainer);
         RpgTheme.FillParent(ContentContainer);
     }

@@ -366,7 +366,9 @@ public class GameState
 	/// True when any modal form/panel is open that should block game input (CheckKeys).
 	/// Used by InputHandler and Main._Input to suppress game actions while UI is active.
 	/// </summary>
-	public bool AnyFormOpen =>
+	public bool QuickbarEditing;
+	public readonly HashSet<Godot.Key> QuickbarKeys = new();
+	public bool AnyFormOpen => QuickbarEditing ||
 		EscapeMenuOpen || Comerciando || Banqueando || BovedaAbierta
 		|| MacroPanelOpen || OptionsPanelOpen || KeyBindPanelOpen
 		|| ShowTravelPanel || Trading || DropDialogOpen || StatsPanelOpen;

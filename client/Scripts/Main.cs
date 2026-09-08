@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Collections.Generic;
 using ArgentumNextgen.Data;
@@ -204,6 +204,7 @@ public partial class Main : Control
 		CenterPanelsInViewport();
 
 		// Fog overlay needs redraw
+		LayoutFloatingHud();
 		_worldRenderer?.QueueRedraw();
 	}
 
@@ -547,6 +548,8 @@ public partial class Main : Control
 	public override void _Ready()
 	{
 		GD.Print("=== Argentum Nextgen — Godot 4 Client ===");
+		// Establish the actual window mode before the synchronous data load.
+		GetTree().Root.Mode = Window.ModeEnum.Fullscreen;
 
 		string dataPath;
 		if (OS.HasFeature("editor"))
@@ -575,6 +578,10 @@ public partial class Main : Control
 
 		// Load user configuration (Options.ao)
 		_state.Config = GameConfig.Load(dataPath);
+		// The local launcher explicitly requests fullscreen, overriding an old
+		// saved windowed preference without removing the in-game F12 toggle.
+		if (Array.IndexOf(OS.GetCmdlineUserArgs(), "--start-fullscreen") >= 0)
+			_state.Config.Fullscreen = true;
 		_state.ShowNames = _state.Config.ShowNames;
 
 		// Apply V-Sync + FPS cap. FpsLimit 0 = uncapped: always assign so it can't
@@ -1037,8 +1044,11 @@ public partial class Main : Control
 		// most of it was evicted from the 4096-entry cache on the way in.
 		// Everything else loads on demand through GetTexture.
 		_startupPreloadDone = false;
-		var startupSheets = Data.MapTextureSet.For(_gameData, _state.MapData);
-		Data.MapTextureSet.AddVisibleCharacters(_gameData, _state, startupSheets);
+		// Read the map from the backdrop's own state: it keeps a private GameState,
+		// so Main's MapData is still null here and the set came out empty.
+		var backdropState = _loginBackdrop?.BackdropState ?? _state;
+		var startupSheets = Data.MapTextureSet.For(_gameData, backdropState.MapData);
+		Data.MapTextureSet.AddVisibleCharacters(_gameData, backdropState, startupSheets);
 		_texturePreloadIter = _gameData.Textures!.Preload(startupSheets);
 		GD.Print($"[MAIN] Starting texture preload: {_gameData.Textures.PreloadTotal} textures");
 	}
@@ -1125,7 +1135,8 @@ public partial class Main : Control
 			{
 				_startupPreloadDone = true;
 				_texturePreloadIter = null;
-				_startupLoadingScreen?.Complete();
+				// The login is ready: don't hold input behind an artificial progress/fade delay.
+				_startupLoadingScreen?.ForceHide();
 				GD.Print("[MAIN] Texture preload complete");
 
 				// Now show login or window mode dialog
@@ -1428,6 +1439,13 @@ public partial class Main : Control
 	{
 		// Block all input during startup preload
 		if (!_startupPreloadDone) return;
+
+		if (_state.CurrentScreen == Screen.Game)
+		{
+			if (@event is InputEventKey quickKey && _quickbar?.HandleKey(quickKey) == true)
+			{ GetViewport().SetInputAsHandled(); return; }
+			if (@event is InputEventMouseButton hudMouse && OverFloatingHud(hudMouse.Position)) return;
+		}
 
 		// Borderless window drag: click+drag on non-interactive areas moves the window.
 		// Uses position-based check instead of GuiGetHoveredControl (which is unreliable).

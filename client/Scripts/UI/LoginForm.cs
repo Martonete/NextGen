@@ -16,13 +16,13 @@ public partial class LoginForm : RpgBaseForm
 
     private LineEdit? _accountInput;
     private LineEdit? _passwordInput;
-    private TextureButton? _connectButton;
+    private Button? _connectButton;
     private Label? _statusLabel;
     private Button? _rememberCheck;
 
     // Public accessors for Main.cs
     public Label? StatusLabel => _statusLabel;
-    public TextureButton? ConnectButton => _connectButton;
+    public Button? ConnectButton => _connectButton;
     public LineEdit? AccountInput => _accountInput;
 
     public bool Connecting { get => _connecting; set => _connecting = value; }
@@ -34,7 +34,7 @@ public partial class LoginForm : RpgBaseForm
     public Action? OnCreateAccountPressed;
 
     public LoginForm(GameState state, string dataPath)
-        : base("Argentum Nextgen", new Vector2(340, 355), "v2")
+        : base("Argentum Nextgen", new Vector2(390, 520), "entry")
     {
         _state = state;
         _dataPath = dataPath;
@@ -46,32 +46,34 @@ public partial class LoginForm : RpgBaseForm
     {
         var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingLg);
         ContentContainer.AddChild(vbox);
+        vbox.AddChild(EntryTheme.Header("ARGENTUM NEXTGEN  /  TIERRAS SAGRADAS", "Tu aventura continúa", "Ingresá a tu cuenta para volver al mundo."));
 
         // Account
-        vbox.AddChild(RpgTheme.CreateInfoLabel("Cuenta:", 13));
-        _accountInput = RpgTheme.CreateRpgInput("Ingresa tu cuenta...");
-        _accountInput.TextSubmitted += (_) => OnConnectPressed();
+        vbox.AddChild(EntryTheme.Text("CUENTA", 11));
+        _accountInput = EntryTheme.Input("Nombre de cuenta");
+        _accountInput.TextSubmitted += (_) => _passwordInput?.GrabFocus();
         vbox.AddChild(_accountInput);
 
         // Password
-        vbox.AddChild(RpgTheme.CreateInfoLabel("Contraseña:", 13));
-        _passwordInput = RpgTheme.CreateRpgInput("Ingresa tu contraseña...");
+        vbox.AddChild(EntryTheme.Text("CONTRASEÑA", 11));
+        _passwordInput = EntryTheme.Input("Tu contraseña");
         _passwordInput.Secret = true;
         _passwordInput.TextSubmitted += (_) => OnConnectPressed();
         vbox.AddChild(_passwordInput);
 
         // Remember check
-        var rememberRow = RpgTheme.CreateRpgCheckboxRow("Recordar cuenta", "default", false);
-        _rememberCheck = rememberRow.GetChild(1) as Button;
-        vbox.AddChild(rememberRow);
+        var remember = new CheckButton { Text = "Recordar mi cuenta" };
+        remember.AddThemeFontSizeOverride("font_size", 12);
+        _rememberCheck = remember;
+        vbox.AddChild(remember);
 
         // Buttons
-        _connectButton = RpgTheme.CreateRpgButton("Conectar", true, 16);
+        _connectButton = EntryTheme.Button("Ingresar a mi cuenta", true);
         _connectButton.CustomMinimumSize = new Vector2(0, 40);
         _connectButton.Pressed += OnConnectPressed;
         vbox.AddChild(_connectButton);
 
-        var crearCuentaBtn = RpgTheme.CreateRpgButton("Crear Cuenta", false, 13);
+        var crearCuentaBtn = EntryTheme.Button("Crear una cuenta");
         crearCuentaBtn.CustomMinimumSize = new Vector2(0, 34);
         crearCuentaBtn.Pressed += () => OnCreateAccountPressed?.Invoke();
         vbox.AddChild(crearCuentaBtn);
@@ -80,6 +82,7 @@ public partial class LoginForm : RpgBaseForm
         _statusLabel = RpgTheme.CreateInfoLabel("", 12);
         _statusLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _statusLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _statusLabel.CustomMinimumSize = new Vector2(0, 30);
         vbox.AddChild(_statusLabel);
     }
 

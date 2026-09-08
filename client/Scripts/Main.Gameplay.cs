@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Threading.Tasks;
 using ArgentumNextgen.Data;
@@ -160,8 +160,10 @@ public partial class Main
 		root.ContentScaleAspect = _state.Config.AspectRatioMode == 0
 			? Window.ContentScaleAspectEnum.Keep
 			: Window.ContentScaleAspectEnum.Ignore;
-		DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
-		DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+		// Keep Godot's Window state in sync with the native window. Direct
+		// DisplayServer changes can be overwritten by Window on the next frame.
+		root.Borderless = false;
+		root.Mode = Window.ModeEnum.Fullscreen;
 	}
 
 	/// <summary>
@@ -175,16 +177,14 @@ public partial class Main
 		root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
 		root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
 		root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-		DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+		root.Unresizable = false;
 		// Borderless window — we have our own minimize/close buttons
-		DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, true);
-		DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+		root.Mode = Window.ModeEnum.Windowed;
+		root.Borderless = true;
 		var winSize = new Vector2I(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
-		DisplayServer.WindowSetSize(winSize);
-		var screenSize = DisplayServer.ScreenGetSize();
-		DisplayServer.WindowSetPosition(new Vector2I(
-			(screenSize.X - winSize.X) / 2,
-			(screenSize.Y - winSize.Y) / 2));
+		var workArea = DisplayServer.ScreenGetUsableRect(root.CurrentScreen);
+		root.Size = new Vector2I(Math.Min(winSize.X, workArea.Size.X), Math.Min(winSize.Y, workArea.Size.Y));
+		root.Position = workArea.Position + (workArea.Size - root.Size) / 2;
 	}
 
 	/// <summary>
@@ -646,7 +646,7 @@ public partial class Main
 			// Only a real stop resets the stride; turns keep the current phase.
 			bool advancedThisFrame = ch.Moving || (kvp.Key == _state.UserCharIndex && selfAdvancedThisFrame);
 			ch.UpdateWalkContinuity(advancedThisFrame, deltaMs);
-			if (advancedThisFrame && ch.Body > 0 && ch.Body < _gameData.Bodies.Length)
+			if (advancedThisFrame && ch.Body > 0)
 			{
 				int heading = ch.Heading;
 				if (heading < 1 || heading > 4) heading = 3;
@@ -664,7 +664,12 @@ public partial class Main
 					ch.WalkFrameHeading = heading;
 				}
 
-				int walkGrh = _gameData.Bodies[ch.Body].Walk[heading];
+				// The stride is tracked even for a body outside the catalogue: the
+				// bounds check used to skip this whole block, leaving WalkPoseActive
+				// false, so such a character flashed its idle pose while walking.
+				int walkGrh = ch.Body < _gameData.Bodies.Length
+					? _gameData.Bodies[ch.Body].Walk[heading]
+					: 0;
 				if (walkGrh > 0 && walkGrh < _gameData.Grhs.Length)
 				{
 					var grh = _gameData.Grhs[walkGrh];

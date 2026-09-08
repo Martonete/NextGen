@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Godot;
 using ArgentumNextgen.Data;
@@ -52,6 +52,13 @@ public partial class LoginBackdrop : Control
 	/// Build the backdrop. Safe to fail: if the map can't be loaded the node just
 	/// stays blank and the menu renders over the plain background as before.
 	/// </summary>
+	/// <summary>
+	/// The backdrop keeps its own GameState, so the startup preloader cannot read
+	/// the map through Main's state — it stays null there. Exposed so the sheets
+	/// actually on screen at the login can be preloaded.
+	/// </summary>
+	public GameState BackdropState => _state;
+
 	public void Init(GameData data, IResourceProvider resources)
 	{
 		_data = data;
