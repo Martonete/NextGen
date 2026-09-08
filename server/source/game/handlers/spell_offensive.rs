@@ -195,7 +195,7 @@ pub(super) async fn send_spell_info_user(
 
     // Cosmetic travel beam: light beam from caster to target (client-side, ranged only).
     // Only when the spell has a visual and the target is a different, remote entity.
-    if spell.fx_grh > 0 && caster_id != target_id {
+    if spell.fx_grh > 0 && spell.fx_grh != 8 && caster_id != target_id {
         let beam_pkt = binary_packets::write_spell_beam(caster_ci.0 as i16, target_ci as i16);
         state.send_data_bytes(
             SendTarget::ToArea {
@@ -212,7 +212,7 @@ pub(super) async fn send_spell_info_user(
         let fx_pkt = binary_packets::write_create_fx(
             target_ci as i16,
             spell.fx_grh as i16,
-            spell.loops as i16,
+            if spell.inmoviliza && spell.fx_grh == 8 { -24 } else { spell.loops as i16 },
         );
         state.send_data_bytes(
             SendTarget::ToArea {
@@ -310,7 +310,7 @@ pub(super) async fn send_spell_info_npc(
         .unwrap_or((map, x, y));
 
     // Cosmetic travel beam: light beam from caster to the NPC target (client-side).
-    if spell.fx_grh > 0 && npc_ci != 0 && npc_ci != caster_ci.0 {
+    if spell.fx_grh > 0 && spell.fx_grh != 8 && npc_ci != 0 && npc_ci != caster_ci.0 {
         let beam_pkt = binary_packets::write_spell_beam(caster_ci.0 as i16, npc_ci as i16);
         state.send_data_bytes(
             SendTarget::ToArea {
@@ -324,7 +324,8 @@ pub(super) async fn send_spell_info_npc(
 
     if spell.fx_grh > 0 {
         let fx_pkt =
-            binary_packets::write_create_fx(npc_ci as i16, spell.fx_grh as i16, spell.loops as i16);
+            binary_packets::write_create_fx(npc_ci as i16, spell.fx_grh as i16,
+                if spell.inmoviliza && spell.fx_grh == 8 { -24 } else { spell.loops as i16 });
         state.send_data_bytes(
             SendTarget::ToArea {
                 map: fx_map,

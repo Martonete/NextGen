@@ -1,0 +1,78 @@
+[ZONE1]
+Name=Vestibulo de la Vigilia
+Type=1
+X1=43
+Y1=80
+X2=57
+Y2=90
+Segura=1
+
+[ZONE2]
+Name=Galeria de la Vigilia
+Type=3
+Segura=1
+X1=40
+Y1=59
+X2=60
+Y2=71
+
+[ZONE3]
+Name=Osario
+Type=3
+Segura=1
+X1=14
+Y1=59
+X2=30
+Y2=71
+
+[ZONE4]
+Name=Deposito funerario
+Type=3
+Segura=1
+X1=70
+Y1=59
+X2=86
+Y2=71
+
+[ZONE5]
+Name=Capilla rota
+Type=3
+Segura=1
+X1=14
+Y1=31
+X2=30
+Y2=45
+
+[ZONE6]
+Name=Sala del juramento
+Type=3
+Segura=1
+X1=40
+Y1=31
+X2=60
+Y2=45
+
+[ZONE7]
+Name=Guardia sepulcral
+Type=3
+Segura=1
+X1=70
+Y1=31
+X2=86
+Y2=45
+
+[ZONE8]
+Name=Trono del Custodio
+Type=3
+Segura=1
+X1=38
+Y1=6
+X2=62
+Y2=20
+Niebla=1
+FogDensity=20
+FogR=85
+FogG=110
+FogB=115
+FogSpeedX=1
+FogSpeedY=0

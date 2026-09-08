@@ -391,7 +391,12 @@ pub fn load_npcs(base: &Path) -> Result<NpcDatabase, String> {
     // Sparse index keyed by the actual [NPC<number>] sections in the DAT files.
     let mut npcs: Vec<Option<NpcData>> = vec![None; 1500];
     let normal_count = load_npc_file(&normal_path, &mut npcs);
-    let hostile_count = load_npc_file(&hostile_path, &mut npcs);
+    let mut hostile_count = load_npc_file(&hostile_path, &mut npcs);
+    // Optional additive dungeon templates, isolated from the original databases.
+    let dungeon_path = base.join("dat").join("NPCs-VIGILIA.dat");
+    if dungeon_path.exists() {
+        hostile_count += load_npc_file(&dungeon_path, &mut npcs);
+    }
     let count = npcs.iter().filter(|n| n.is_some()).count();
 
     tracing::info!(
@@ -406,6 +411,57 @@ pub fn load_npcs(base: &Path) -> Result<NpcDatabase, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn vigilia_map_spawns_exits_and_respawn() {
+        use crate::game::types::GameState;
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
+        let dungeon = crate::data::maps::load_map(&base, 205).unwrap();
+        let town = crate::data::maps::load_map(&base, 28).unwrap();
+        assert_eq!(dungeon.info.name, "Cripta de la Vigilia");
+        assert_eq!(dungeon.zones.as_ref().unwrap().zones.len(), 8);
+        let entry = town.tiles.get(54, 47).unwrap().tile_exit.unwrap();
+        assert_eq!((entry.map,entry.x,entry.y),(205,50,87));
+        assert!(dungeon.tiles.get(49,86).unwrap().tile_exit.is_none());
+        let back = dungeon.tiles.get(49,88).unwrap().tile_exit.unwrap();
+        assert_eq!((back.map,back.x,back.y),(28,54,48));
+        assert!(!town.tiles.get(53,47).unwrap().blocked);
+        assert!(town.tiles.get(53,47).unwrap().tile_exit.is_none());
+        let mut visited = std::collections::HashSet::new();
+        let mut pending = std::collections::VecDeque::from([(49usize,86usize)]);
+        visited.insert((49,86));
+        while let Some((x,y)) = pending.pop_front() {
+            for (dx,dy) in [(1isize,0isize),(-1,0),(0,1),(0,-1)] {
+                let (nx,ny)=(x as isize+dx,y as isize+dy);
+                if nx<0 || ny<0 || nx>=100 || ny>=100 {continue;}
+                let pos=(nx as usize,ny as usize);
+                if !dungeon.tiles.get(pos.0,pos.1).unwrap().blocked && visited.insert(pos) {pending.push_back(pos);}
+            }
+        }
+        let db=load_npcs(&base).unwrap();let mut count=0;
+        for y in 0..100 {for x in 0..100 {
+            let tile=dungeon.tiles.get(x,y).unwrap();
+            if !tile.blocked {assert!(visited.contains(&(x,y)), "Unreachable {x},{y}");}
+            if tile.npc_index>0 {count+=1;assert!(db.get(tile.npc_index as usize).is_some());assert!(!tile.blocked);}
+        }}
+        assert_eq!(count,18);
+        let boss=db.get(1103).unwrap();
+        assert!(boss.respawn);assert_eq!(boss.max_hp,6500);assert_eq!(boss.items.len(),2);
+        let config=crate::config::ServerConfig::load(&base).unwrap();
+        let mut maps: Vec<Option<crate::data::maps::GameMap>>=(0..206).map(|_|None).collect();
+        maps[205]=Some(dungeon);
+        let data=crate::data::GameData {experience:vec![],objects:crate::data::objects::load_objects(&base).unwrap(),
+            spells:crate::data::spells::load_spells(&base).unwrap(),maps,npcs:db,balance:Default::default(),crafting:Default::default()};
+        let pool=sqlx::postgres::PgPoolOptions::new().connect_lazy("postgres://test:test@127.0.0.1:1/test").unwrap();
+        let bans=crate::db::bans::BanList{banned_hds:Default::default(),banned_ips:Default::default()};
+        let mut state=GameState::new(config,base,data,pool,bans);
+        assert_eq!(state.spawn_map_npcs(),18);
+        let boss_index=*state.active_npc_indices.iter().find(|&&i|state.get_npc(i).unwrap().npc_number==1103).unwrap();
+        state.kill_npc(boss_index);
+        assert!(state.respawn_npc(boss_index));
+        let boss=state.get_npc(boss_index).unwrap();
+        assert_eq!((boss.map,boss.x,boss.y),(205,50,10));assert_eq!(boss.min_hp,6500);
+    }
 
     #[test]
     fn load_real_npcs() {

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Scripts/Rendering/WalkSpriteLayout.cs" Link="WalkSpriteLayout.cs" />
+    <Compile Include="../../Scripts/Game/Character.cs" Link="Character.cs" />
+    <Compile Include="../../Scripts/Rendering/RoofFadeState.cs" Link="RoofFadeState.cs" />
+    <Compile Include="../../Scripts/Rendering/SceneryMath.cs" Link="SceneryMath.cs" />
+    <Compile Include="../../Scripts/Rendering/ReactiveEffects.cs" Link="ReactiveEffects.cs" />
+    <Compile Include="../../Scripts/Rendering/MeditationStyle.cs" Link="MeditationStyle.cs" />
+    <Compile Include="../../Scripts/Game/LevelUpShortcut.cs" Link="LevelUpShortcut.cs" />
+  </ItemGroup>
+</Project>

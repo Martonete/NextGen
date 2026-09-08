@@ -45,6 +45,7 @@ public partial class WorldRenderer : Node2D
 	private StaticObjectsLayer? _staticObjectsLayer;
 	private StaticForegroundLayer? _staticForegroundLayer;
 	private AuraAdditiveLayer? _auraLayer;
+	private AuraFrontLayer? _auraFrontLayer, _reflAuraFrontLayer;
 	private ContentLayer? _contentLayer;
 	private DialogOverlayLayer? _dialogLayer;
 	private AdditiveParticleLayer? _additiveLayer;
@@ -69,7 +70,7 @@ public partial class WorldRenderer : Node2D
 	// Both gameplay and the login backdrop can retain the fractional camera offset.
 	// This is visual only: movement duration, tile positions, and server authority
 	// remain unchanged.
-	private bool _subpixelCamera;
+	private bool _subpixelCamera = true;
 	public void SetSubpixelCamera(bool enabled) => _subpixelCamera = enabled;
 
 	private bool _clampCameraToMap;
@@ -88,19 +89,18 @@ public partial class WorldRenderer : Node2D
 		: ResolutionManager.HalfTilesY;
 
 	// Buffer sizes beyond visible area
-	private const int TerrainBufferSize = 4; // L1-L4: supports GRHs up to 128px (4 tiles). VB6 max sprite ~128px.
+	private const int TerrainBufferSize = 4;
+	private int _terrainHorizontalBuffer = TerrainBufferSize;
+	private int _terrainBottomBuffer = TerrainBufferSize;
 	private const int CharBufferSize = 1;     // Characters/NPCs: +1 tile for smooth fade at viewport edge
 
 	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)
-	private float _roofAlpha = 255f;
-	private const float RoofFadeSpeed = 400f; // units per second (255→20 in ~0.6s)
-	private const float RoofMinAlpha = 45f; // ~18% opacity — visible ghost of the roof
+	private readonly RoofFadeState _roofFade = new();
 
 	// Pre-computed roof region map: each L4 tile belongs to a connected region (1-based ID).
 	// Tiles without L4 have regionId = 0. Built once per map load.
 	private int[,]? _roofRegionMap;
 	private int _activeRoofRegion;  // region the player is currently inside (0 = outdoors)
-	private int _fadingRoofRegion;  // region currently being faded (persists during fade-out)
 
 	// Delta time in ms for current frame (set in _Process, used in _Draw)
 	private float _deltaMs;
@@ -160,6 +160,7 @@ public partial class WorldRenderer : Node2D
 	/// <summary>Discard map-scoped visual caches when the current map changes.</summary>
 	public void ResetMapVisualCaches()
 	{
+		_reactiveEffects.Clear();
 		Ao20ShadowRenderer.ClearCharacterCache();
 		_particleFrameCache.Clear();
 		_staticLayersDirty = true;
@@ -311,11 +312,13 @@ void fragment() {
 	/// </summary>
 	public void BuildRoofRegions()
 	{
+		RebuildSceneryBounds();
+		_roofFade.Reset(0);
+		_activeRoofRegion = 0;
 		if (_state?.MapData == null) { _roofRegionMap = null; return; }
 		int w = _state.MapData.Width;
 		int h = _state.MapData.Height;
 		_roofRegionMap = new int[w + 1, h + 1]; // 1-based, all 0 by default
-		_activeRoofRegion = 0;
 		int nextRegion = 0;
 		var queue = new Queue<(int x, int y)>();
 
@@ -352,6 +355,7 @@ void fragment() {
 				}
 			}
 		}
+		_roofFade.Reset(nextRegion);
 	}
 
 	public void Init(GameState state, GameData data, GrhAnimator animator, IResourceProvider? resources = null)
@@ -396,6 +400,10 @@ void fragment() {
 		_reflBodyLayer.ZIndex = 0;
 		_reflBodyLayer.SetRenderer(this);
 		AddChild(_reflBodyLayer);
+		_reflAuraFrontLayer = new AuraFrontLayer { Name = "ReflectedAuraFront", Renderer = this, Reflected = true, Material = additiveMat };
+		AddChild(_reflAuraFrontLayer);
+		_waterEffectsLayer = new ReactiveGroundLayer { Name = "ReactiveWater", Renderer = this, Water = true };
+		AddChild(_waterEffectsLayer);
 
 		// Non-water mask layer: standard blend (redraws non-water L1 tiles
 		// to cover body reflection + reflected aura overflow onto land)
@@ -432,6 +440,8 @@ void fragment() {
 		_staticLayer2Layer.SetRenderer(this);
 		AddChild(_staticLayer2Layer);
 		MoveChild(_staticLayer2Layer, GetChildCount() - 2); // before dynamic L2
+		_groundEffectsLayer = new ReactiveGroundLayer { Name = "ReactiveGround", Renderer = this };
+		AddChild(_groundEffectsLayer);
 
 		// Aura layer: additive blend, z=0 (normal auras only)
 		// Added BEFORE ContentLayer — same z draws in tree order,
@@ -448,11 +458,14 @@ void fragment() {
 		_contentLayer.ZIndex = 0;
 		_contentLayer.SetRenderer(this);
 		AddChild(_contentLayer);
+		_auraFrontLayer = new AuraFrontLayer { Name = "AuraFront", Renderer = this, Material = additiveMat };
+		AddChild(_auraFrontLayer);
 
 		_staticObjectsLayer = new StaticObjectsLayer();
 		_staticObjectsLayer.Name = "StaticObjectsLayer";
 		_staticObjectsLayer.ZIndex = 0;
 		_staticObjectsLayer.SetRenderer(this);
+		AddChild(_staticObjectsLayer);
 		MoveChild(_staticObjectsLayer, GetChildCount() - 2); // immediately before Content
 
 		_staticForegroundLayer = new StaticForegroundLayer();
@@ -527,6 +540,7 @@ void fragment() {
 
 	public override void _Process(double delta)
 	{
+		UpdateReactiveEffects((float)delta);
 		if (_state?.MapData == null) return;
 		_deltaMs = (float)delta * 1000f;
 		UpdateRoofFade();
@@ -626,42 +640,15 @@ void fragment() {
 		int h = _state.MapData.Height;
 		if (ux < 1 || ux > w || uy < 1 || uy > h) return;
 
-		// Determine which roof region the player is inside (0 = none)
-		if (_roofRegionMap != null)
+		// L4 overhangs connect roofs, but only interior triggers mean we entered.
+		short trigger = _state.MapData.Tiles[ux, uy].Trigger;
+		if (_roofRegionMap != null && ux < _roofRegionMap.GetLength(0) && uy < _roofRegionMap.GetLength(1)
+			&& (trigger == 1 || trigger == 2 || trigger == 4)
+			&& (_state.Config?.TreeRoofTransparency ?? true))
 			_activeRoofRegion = _roofRegionMap[ux, uy];
 		else
 			_activeRoofRegion = 0;
-
-		// Track which region to apply fade to
-		if (_activeRoofRegion > 0)
-		{
-			if (_fadingRoofRegion != _activeRoofRegion)
-			{
-				// Entered a new/different region — start fade-out from full opacity
-				_fadingRoofRegion = _activeRoofRegion;
-				_roofAlpha = 255f;
-			}
-		}
-		// When outside: keep _fadingRoofRegion so the fade-in transition applies to it
-
-		// Fade control: delta-time based (frame-rate independent)
-		float fadeDelta = RoofFadeSpeed * (_deltaMs / 1000f);
-		if (_activeRoofRegion > 0)
-		{
-			// Inside a roof region → fade out to min alpha
-			_roofAlpha -= fadeDelta;
-			if (_roofAlpha < RoofMinAlpha) _roofAlpha = RoofMinAlpha;
-		}
-		else if (_fadingRoofRegion > 0)
-		{
-			// Outside but a region is still fading back in
-			_roofAlpha += fadeDelta;
-			if (_roofAlpha >= 255f)
-			{
-				_roofAlpha = 255f;
-				_fadingRoofRegion = 0; // fade-in complete, clear
-			}
-		}
+		_roofFade.Update(_activeRoofRegion, _deltaMs / 1000f);
 	}
 
 	private void BuildCharPositionIndex()
@@ -887,10 +874,10 @@ void fragment() {
 		int screenMaxY = _frameUserY + HalfWindowTileHeight;
 
 		// L2/L3 terrain bounds (large buffer for 512px sprites)
-		_frameMinX = screenMinX - TerrainBufferSize;
-		_frameMaxX = screenMaxX + TerrainBufferSize;
+		_frameMinX = screenMinX - _terrainHorizontalBuffer;
+		_frameMaxX = screenMaxX + _terrainHorizontalBuffer;
 		_frameMinY = screenMinY - TerrainBufferSize;
-		_frameMaxY = screenMaxY + TerrainBufferSize;
+		_frameMaxY = screenMaxY + _terrainBottomBuffer;
 
 		// L1 water bounds (+3 to account for pixel offset during smooth scroll)
 		_frameL1MinX = screenMinX - 3;
@@ -1155,11 +1142,8 @@ void fragment() {
 			}
 		}
 
-		// Collect roof draws — per-region fade using _fadingRoofRegion (persists during fade-out AND fade-in)
+		// Each roof retains its own transition when moving between buildings.
 		{
-			float fadeA = _roofAlpha / 255f;
-			Color fadingRoofColor = new Color(1, 1, 1, fadeA); // computed once per frame, reused per fading tile
-
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
 				float sy = _screenYCache[y - _frameMinY];
@@ -1170,12 +1154,11 @@ void fragment() {
 
 					// Determine color: tiles in the fading region get fade, others stay opaque
 					Color roofColor;
-					if (_fadingRoofRegion > 0 && _roofRegionMap != null
+					if (_roofRegionMap != null
 						&& x >= 1 && x <= mapW && y >= 1 && y <= mapH
-						&& _roofRegionMap[x, y] == _fadingRoofRegion)
+						&& x < _roofRegionMap.GetLength(0) && y < _roofRegionMap.GetLength(1))
 					{
-						if (fadeA <= 0f) continue; // fully hidden, skip draw
-						roofColor = fadingRoofColor;
+						roofColor = new Color(1, 1, 1, _roofFade.GetOpacity(_roofRegionMap[x, y]));
 					}
 					else
 					{
@@ -1195,10 +1178,14 @@ void fragment() {
 		_maskLayer?.QueueRedraw();
 		_layer2Layer?.QueueRedraw();
 		_auraLayer?.QueueRedraw();
+		_auraFrontLayer?.QueueRedraw();
+		_reflAuraFrontLayer?.QueueRedraw();
 		_contentLayer?.QueueRedraw();
 		_dialogLayer?.QueueRedraw();
 		_additiveLayer?.QueueRedraw();
 		_roofLayer?.QueueRedraw();
+		_waterEffectsLayer?.QueueRedraw();
+		_groundEffectsLayer?.QueueRedraw();
 	}
 
 	/// <summary>

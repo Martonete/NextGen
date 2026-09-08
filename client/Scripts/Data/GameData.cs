@@ -21,6 +21,33 @@ public class GameData
     public ObjInfo[] Objects = Array.Empty<ObjInfo>();
     public TextMessage[] TextMessages = Array.Empty<TextMessage>();
     public TextureManager? Textures;
+    public readonly System.Collections.Generic.Dictionary<int, Vector2[]> WalkRegistration = new();
+
+    private void RegisterWalkSprites()
+    {
+        WalkRegistration.Clear();
+        foreach (var body in Bodies)
+        foreach (int grhIndex in body.Walk)
+        {
+            if (grhIndex <= 0 || grhIndex >= Grhs.Length || WalkRegistration.ContainsKey(grhIndex)) continue;
+            var grh = Grhs[grhIndex];
+            if (grh.NumFrames < 4) continue;
+            var crops = new Rendering.WalkSpriteLayout.Crop[grh.NumFrames];
+            for (int i = 0; i < crops.Length; i++)
+            {
+                var f = ResolveGrh(grhIndex, i);
+                if (f != null) crops[i] = new(f.FileNum, f.SX, f.SY, f.PixelWidth, f.PixelHeight);
+            }
+            var offsets = Rendering.WalkSpriteLayout.Register(crops);
+            if (offsets == null) continue;
+            var positions = new Vector2[offsets.Length];
+            for (int i = 0; i < positions.Length; i++) positions[i] = new(offsets[i].X, offsets[i].Y);
+            WalkRegistration[grhIndex] = positions;
+        }
+    }
+
+    public Vector2 WalkOffset(int grh, int frame) => WalkRegistration.TryGetValue(grh, out var offsets)
+        ? offsets[Math.Clamp(frame, 0, offsets.Length - 1)] : Vector2.Zero;
 
     /// <summary>Water/tree/UI GRH groups that used to be hardcoded in the renderer.</summary>
     public GrhCatalog Catalog = new();
@@ -106,6 +133,7 @@ public class GameData
             TextMessages = new TextMessage[1];
         }
 
+        RegisterWalkSprites();
         Textures = new TextureManager(resources);
 
         // Load VB6 bitmap fonts (font1/2/3)

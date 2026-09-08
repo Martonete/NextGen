@@ -28,6 +28,8 @@ public class GameConfig
 	public bool ShowNames = true;           // VB6: General_Show_Nicks
 	public bool ShowLights = true;          // (not in VB6, but useful toggle)
 	public bool ShowWaterEffect = true;    // VB6: polygon water deformation
+	public bool ShowVegetationWind = false; // Legacy preference; trees now render statically regardless.
+	public bool ShowReactiveEffects = true; // Footsteps, wakes, impact sparks and meditation sigil
 	public int FogIntensity = 30;          // 0-100, opacity of fog outside the lit core area
 
 	// ── Transparency ──────────────────────────────────────
@@ -109,6 +111,8 @@ public class GameConfig
 		ShowNames = other.ShowNames;
 		ShowLights = other.ShowLights;
 		ShowWaterEffect = other.ShowWaterEffect;
+		ShowVegetationWind = other.ShowVegetationWind;
+		ShowReactiveEffects = other.ShowReactiveEffects;
 		FogIntensity = other.FogIntensity;
 
 		UiTransparency = other.UiTransparency;
@@ -212,6 +216,8 @@ public class GameConfig
 					case "ShowNames": cfg.ShowNames = val == "1"; break;
 					case "ShowLights": cfg.ShowLights = val == "1"; break;
 					case "ShowWaterEffect": cfg.ShowWaterEffect = val == "1"; break;
+					case "ShowVegetationWind": cfg.ShowVegetationWind = val == "1"; break;
+					case "ShowReactiveEffects": cfg.ShowReactiveEffects = val == "1"; break;
 					case "FogIntensity": if (int.TryParse(val, out int fi)) cfg.FogIntensity = Math.Clamp(fi, 0, 100); break;
 
 					// Transparency
@@ -304,6 +310,8 @@ public class GameConfig
 			sb.AppendLine($"ShowNames={(ShowNames ? "1" : "0")}");
 			sb.AppendLine($"ShowLights={(ShowLights ? "1" : "0")}");
 			sb.AppendLine($"ShowWaterEffect={(ShowWaterEffect ? "1" : "0")}");
+			sb.AppendLine($"ShowVegetationWind={(ShowVegetationWind ? "1" : "0")}");
+			sb.AppendLine($"ShowReactiveEffects={(ShowReactiveEffects ? "1" : "0")}");
 			sb.AppendLine($"FogIntensity={FogIntensity}");
 
 			// Transparency

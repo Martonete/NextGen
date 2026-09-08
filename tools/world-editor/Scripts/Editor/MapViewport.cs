@@ -191,6 +191,7 @@ public partial class MapViewport : Control
 
     public override void _Process(double delta)
     {
+        if (!IsVisibleInTree()) return;
         // Step the particle simulation so streams animate (rain falls, fire flickers, etc.)
         if (Particles != null && State != null && State.ShowParticles)
             Particles.Update((float)delta);
@@ -1771,6 +1772,8 @@ public partial class MapViewport : Control
         float centerX, float centerY, float alphaScale = 1f)
     {
         if (Grhs == null || Textures == null) return;
+        if (Particles == null || stream.DefIndex < 1 || stream.DefIndex >= Particles.Defs.Length) return;
+        var def = Particles.Defs[stream.DefIndex];
         foreach (var p in stream.Particles)
         {
             if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
@@ -1792,7 +1795,17 @@ public partial class MapViewport : Control
             float drawX = centerX + p.X - grh.PixelWidth / 2f;
             float drawY = centerY + p.Y - grh.PixelHeight / 2f;
             var destRect = new Rect2(drawX, drawY, drawW, drawH);
-            var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha * alphaScale);
+            float life = p.MaxLife > 0 ? Math.Clamp(p.Life / p.MaxLife, 0, 1) : 1;
+            var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha * alphaScale * (def.FadeAlpha ? life : 1));
+            float scale = def.ScaleOverLife ? def.ResizeX + (def.ResizeY - def.ResizeX) * (1 - life) : 1;
+            float angle = def.RotateVisual ? Mathf.DegToRad(p.Angle) : 0;
+            if (scale != 1 || angle != 0)
+            {
+                canvas.DrawSetTransform(new Vector2(centerX + p.X, centerY + p.Y), angle, new Vector2(scale, scale));
+                canvas.DrawTextureRectRegion(texture, new Rect2(-drawW/2f, -drawH/2f, drawW, drawH), srcRect, color);
+                canvas.DrawSetTransform(Vector2.Zero);
+                continue;
+            }
             canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
         }
     }

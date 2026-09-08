@@ -537,6 +537,7 @@ async fn resolve_ranged_attack_npc(
     };
 
     let u2_pkt = binary_packets::write_multi_user_hit_npc(damage as i32);
+    crate::game::handlers::weapon_visuals::confirmed_hit(state, conn_id, npc_char.0 as i16, false, true);
     state.send_bytes(conn_id, &u2_pkt);
     state.send_chat_over_head_to(
         SendTarget::ToArea { map, x, y },
@@ -730,6 +731,7 @@ async fn resolve_ranged_attack_user(
         damage as i16,
     );
     state.send_bytes(conn_id, &n5_pkt);
+    crate::game::handlers::weapon_visuals::confirmed_hit(state, conn_id, v_char_index.0 as i16, false, true);
 
     state.send_chat_over_head_to(
         SendTarget::ToArea { map, x, y },

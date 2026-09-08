@@ -829,6 +829,15 @@ public partial class PacketHandler
         short charIdx = bq.ReadInteger();
         short streamId = bq.ReadInteger();
 
+        // Offensive spells send the generic impact (106) after CreateFX.
+        // Lightning and bindings deliberately omit the generic flash burst.
+        if (_state.Characters.TryGetValue(charIdx, out var impactTarget))
+        {
+            bool suppress = streamId == 106 && impactTarget.SuppressNextSpellImpact;
+            impactTarget.SuppressNextSpellImpact = false;
+            if (suppress) return;
+        }
+
         if (streamId == 0)
         {
             // Clear all particle streams attached to this character

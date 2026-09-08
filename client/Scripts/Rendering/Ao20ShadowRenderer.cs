@@ -48,12 +48,20 @@ internal static class Ao20ShadowRenderer
 
     private sealed class CompositeCache
     {
-        public Image Image = Image.CreateEmpty(CompositeSize, CompositeSize, false, Image.Format.Rgba8);
-        public ImageTexture Texture = ImageTexture.CreateFromImage(Image.CreateEmpty(CompositeSize, CompositeSize, false, Image.Format.Rgba8));
-        public int Signature;
+        public readonly ImageTexture Texture;
+        public readonly LinkedListNode<CompositeKey> Node;
+        public CompositeCache(ImageTexture texture, CompositeKey key)
+        { Texture = texture; Node = new(key); }
     }
 
-    private static readonly Dictionary<int, CompositeCache> _characterComposites = new();
+    // Exact value keys, not just a hash: collisions cannot substitute another outfit.
+    private readonly record struct PartKey(ulong Texture, int X, int Y, int W, int H, Vector2 Position);
+    private readonly record struct CompositeKey(int Count, PartKey A, PartKey B, PartKey C, PartKey D, PartKey E);
+    private const int CompositeLimit = 256; // <=64 MiB GPU; CPU composites are disposed immediately.
+    private static readonly Dictionary<CompositeKey, CompositeCache> _characterComposites = new();
+    private static readonly LinkedList<CompositeKey> _compositeLru = new();
+    internal static int CachedCompositeCount => _characterComposites.Count;
+    internal static long CompositeBuilds { get; private set; }
     private static readonly Dictionary<ulong, Image> _sourceImages = new();
     private static readonly Vector2[] _vertices = new Vector2[4];
     private static readonly Vector2[] _uvs = new Vector2[4];
@@ -96,28 +104,35 @@ internal static class Ao20ShadowRenderer
     /// <summary>
     /// Build the exact 256x256 AO20 composed character texture (alpha only matters
     /// for its shadow) and project that texture once. The cache is keyed by
-    /// character id and regenerated only when a source frame/layer changes.
+    /// exact frame composition, shared across characters and full animation cycles.
     /// </summary>
     internal static void DrawCharacterShadow(CanvasItem canvas, int characterId,
         IReadOnlyList<SpritePart> parts, Vector2 screenPosition, CornerColors light)
     {
-        if (parts.Count == 0) return;
+        if (parts.Count == 0 || parts.Count > 5) return;
 
-        int signature = BuildSignature(parts);
-        if (!_characterComposites.TryGetValue(characterId, out var cache))
+        var key = BuildKey(parts);
+        if (!_characterComposites.TryGetValue(key, out var cache))
         {
-            cache = new CompositeCache();
-            _characterComposites[characterId] = cache;
-            cache.Signature = int.MinValue;
-        }
-
-        if (cache.Signature != signature)
-        {
-            cache.Image.Fill(Colors.Transparent);
+            if (_characterComposites.Count >= CompositeLimit)
+            {
+                var oldest = _compositeLru.First!;
+                _characterComposites[oldest.Value].Texture.Dispose();
+                _characterComposites.Remove(oldest.Value);
+                _compositeLru.RemoveFirst();
+            }
+            using var composite = Image.CreateEmpty(CompositeSize, CompositeSize, false, Image.Format.Rgba8);
             foreach (var part in parts)
-                BlendPart(cache.Image, part);
-            cache.Texture.Update(cache.Image);
-            cache.Signature = signature;
+                BlendPart(composite, part);
+            cache = new CompositeCache(ImageTexture.CreateFromImage(composite), key);
+            CompositeBuilds++;
+            _characterComposites.Add(key, cache);
+            _compositeLru.AddLast(cache.Node);
+        }
+        else if (cache.Node != _compositeLru.Last)
+        {
+            _compositeLru.Remove(cache.Node);
+            _compositeLru.AddLast(cache.Node);
         }
 
         // VB6 PresentComposedTexture: x = x - 256/2 + 16, y = y - 256 + 32.
@@ -125,7 +140,14 @@ internal static class Ao20ShadowRenderer
             screenPosition - CompositeAnchor, light, Vector2.Zero);
     }
 
-    internal static void ClearCharacterCache() => _characterComposites.Clear();
+    internal static void ClearCharacterCache()
+    {
+        foreach (var cache in _characterComposites.Values) cache.Texture.Dispose();
+        _characterComposites.Clear();
+        _compositeLru.Clear();
+        foreach (var image in _sourceImages.Values) image.Dispose();
+        _sourceImages.Clear();
+    }
 
     internal static bool HasLayer3Shadow(int grhIndex) =>
         grhIndex == 5624 || grhIndex == 5625 || grhIndex == 5626 || grhIndex == 5627 || grhIndex == 51716;
@@ -142,17 +164,16 @@ internal static class Ao20ShadowRenderer
         return new Vector2(x, y);
     }
 
-    private static int BuildSignature(IReadOnlyList<SpritePart> parts)
+    private static CompositeKey BuildKey(IReadOnlyList<SpritePart> parts)
     {
-        var hash = new HashCode();
-        foreach (var part in parts)
+        PartKey Part(int i)
         {
-            hash.Add(part.Texture.GetInstanceId());
-            hash.Add(part.Resolved.SX); hash.Add(part.Resolved.SY);
-            hash.Add(part.Resolved.PixelWidth); hash.Add(part.Resolved.PixelHeight);
-            hash.Add(part.Position.X); hash.Add(part.Position.Y);
+            if (i >= parts.Count) return default;
+            var p = parts[i];
+            return new(p.Texture.GetInstanceId(), p.Resolved.SX, p.Resolved.SY,
+                p.Resolved.PixelWidth, p.Resolved.PixelHeight, p.Position);
         }
-        return hash.ToHashCode();
+        return new(parts.Count, Part(0), Part(1), Part(2), Part(3), Part(4));
     }
 
     private static void BlendPart(Image target, SpritePart part)
@@ -165,6 +186,13 @@ internal static class Ao20ShadowRenderer
         ulong id = part.Texture.GetInstanceId();
         if (!_sourceImages.TryGetValue(id, out var image))
         {
+            // Source readbacks are only needed on cache misses; avoid retaining
+            // every equipment atlas visited during a long play session.
+            if (_sourceImages.Count >= 16)
+            {
+                foreach (var old in _sourceImages.Values) old.Dispose();
+                _sourceImages.Clear();
+            }
             image = part.Texture.GetImage();
             _sourceImages[id] = image;
         }

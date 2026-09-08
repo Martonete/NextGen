@@ -767,6 +767,11 @@ public partial class Main : Control
 		_chatSystem.OnGmPanelToggle = () => _gmPanel?.Toggle();
 		_chatSystem.OnItemSearchCommand = query => _itemSearchPanel?.OpenWithQuery(query);
 		_chatSystem.OnLogoutCommand = RequestLogoutToCharacterSelect;
+		_chatSystem.OnAuraPreview = argument => _state.EnqueueChat(new ChatMessage
+		{
+			Text = AuraPreviewCommand.Apply(_state, _gameData, argument),
+			Type = ChatType.System
+		});
 		_chatSystem.OnSosPanelToggle = () => _sosPanel?.Open();
 		_chatSystem.OnSlashCommand = (cmd) =>
 		{

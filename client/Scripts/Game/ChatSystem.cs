@@ -19,6 +19,7 @@ public class ChatSystem
 
     /// <summary>Callback for slash commands that Main needs to handle.</summary>
     public Action<string>? OnSlashCommand;
+    public Action<string>? OnAuraPreview;
 
     /// <summary>Callback to send a packet via TCP.</summary>
     public Action<byte[]>? SendPacket;
@@ -103,6 +104,12 @@ public class ChatSystem
 
         if (text.StartsWith("/"))
         {
+            if (TryReadCommandArgument(text, "/AURA", out string auraArgument))
+            {
+                OnAuraPreview?.Invoke(auraArgument);
+                HideChat();
+                return;
+            }
             if (text.Equals("/PING", StringComparison.OrdinalIgnoreCase))
             {
                 _state.PingSentMs = Time.GetTicksMsec();

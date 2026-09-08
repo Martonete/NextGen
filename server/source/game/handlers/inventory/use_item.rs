@@ -614,13 +614,15 @@ pub(crate) async fn handle_use_item_inner(
         ObjType::Scroll => {
             // Learn spell from scroll
             let spell_id = obj_data.hechizo_index;
-            if spell_id <= 0 {
+            if spell_id <= 0 || state.get_spell(spell_id).is_none() {
                 return;
             }
 
             // VB6 13.3 parity: only magic classes (max_mana > 0) can learn spells.
+            // GM test characters can learn regardless of class or resources.
+            let is_gm = state.users.get(&conn_id).is_some_and(|u| u.privileges > 0);
             let max_mana = state.users.get(&conn_id).map(|u| u.max_mana).unwrap_or(0);
-            if max_mana == 0 {
+            if !is_gm && max_mana == 0 {
                 state.send_console(
                     conn_id,
                     "Solo las clases mágicas pueden aprender hechizos.",
@@ -635,7 +637,7 @@ pub(crate) async fn handle_use_item_inner(
                 .get(&conn_id)
                 .map(|u| (u.min_ham, u.min_agua))
                 .unwrap_or((1, 1));
-            if min_ham <= 0 || min_agua <= 0 {
+            if !is_gm && (min_ham <= 0 || min_agua <= 0) {
                 state.send_console(
                     conn_id,
                     "No puedes aprender hechizos estando hambriento o sediento.",

@@ -1,5 +1,6 @@
 mod auth;
 mod combat;
+mod weapon_visuals;
 mod commerce;
 pub(crate) mod common;
 mod events;

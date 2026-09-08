@@ -11,6 +11,8 @@ namespace ArgentumNextgen.Data;
 /// </summary>
 public class AuraData
 {
+    public int ProceduralStyle; // 0=legacy GRH, 1=orbits, 2=petals, 3=solar, 4=crystals
+    public int Radius = 22, Height = 40, CycleMs = 3000, Details = 5, Opacity = 65;
     public int GrhIndex;   // Animation GRH
     public byte R, G, B;   // Base color
     public byte RojoF, VerdeF, AzulF; // Pulsing start color
@@ -40,6 +42,12 @@ public static class AuraLoader
         for (int i = 1; i <= count; i++)
         {
             string section = $"AURA{i}";
+            auras[i].ProceduralStyle = Math.Clamp(ini.GetInt(section, "ProceduralStyle", 0), 0, 4);
+            auras[i].Radius = Math.Clamp(ini.GetInt(section, "Radius", 22), 8, 36);
+            auras[i].Height = Math.Clamp(ini.GetInt(section, "Height", 40), 12, 64);
+            auras[i].CycleMs = Math.Clamp(ini.GetInt(section, "CycleMs", 3000), 800, 12000);
+            auras[i].Details = Math.Clamp(ini.GetInt(section, "Details", 5), 3, 8);
+            auras[i].Opacity = Math.Clamp(ini.GetInt(section, "Opacity", 65), 0, 100);
             auras[i].GrhIndex = ini.GetInt(section, "GrhIndex", 0);
             auras[i].R = (byte)ini.GetInt(section, "Rojo", 0);
             auras[i].G = (byte)ini.GetInt(section, "Verde", 0);

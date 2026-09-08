@@ -68,6 +68,7 @@ public partial class OptionsPanel : RpgBaseForm
     private OptionButton? _optPerformance;
     private Button? _chkAuras;
     private Button? _chkParticles;
+    private Button? _chkReactiveEffects;
     private Button? _chkShadows;
     private Button? _chkReflections;
     private Button? _chkDayNight;
@@ -447,6 +448,13 @@ public partial class OptionsPanel : RpgBaseForm
         _chkReflections.Toggled += _ => ApplyImmediate();
         rightCol.AddChild(reflectionsRow);
 
+
+        var reactiveRow = RpgTheme.CreateRpgCheckboxRow("Mundo reactivo");
+        _chkReactiveEffects = GetCheckboxFromRow(reactiveRow);
+        _chkReactiveEffects.TooltipText = "Polvo al caminar, estelas de agua, chispas de impacto y circulo runico al meditar. Respeta Particulas y Auras.";
+        _chkReactiveEffects.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(reactiveRow);
+
         var dayNightRow = RpgTheme.CreateRpgCheckboxRow("Dia/Noche");
         _chkDayNight = GetCheckboxFromRow(dayNightRow);
         _chkDayNight.Toggled += _ => ApplyImmediate();
@@ -643,6 +651,7 @@ public partial class OptionsPanel : RpgBaseForm
     {
         SetCheck(_chkAuras, cfg.ShowAuras);
         SetCheck(_chkParticles, cfg.ShowParticles);
+        SetCheck(_chkReactiveEffects, cfg.ShowReactiveEffects);
         SetCheck(_chkShadows, cfg.ShowShadows);
         SetCheck(_chkReflections, cfg.ShowReflections);
         SetCheck(_chkDayNight, cfg.ShowDayNight);
@@ -704,6 +713,7 @@ public partial class OptionsPanel : RpgBaseForm
         cfg.PerformanceLevel = _optPerformance?.Selected ?? 2;
         cfg.ShowAuras = IsChecked(_chkAuras);
         cfg.ShowParticles = IsChecked(_chkParticles);
+        cfg.ShowReactiveEffects = IsChecked(_chkReactiveEffects);
         cfg.ShowShadows = IsChecked(_chkShadows);
         cfg.ShowNpcShadows = IsChecked(_chkShadows); // Single toggle controls both
         cfg.ShowReflections = IsChecked(_chkReflections);

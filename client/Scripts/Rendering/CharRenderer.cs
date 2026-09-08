@@ -187,13 +187,14 @@ public static partial class CharRenderer
 		// Resolve body to compute the shared anchor point (feetY)
 		int bodyGrh = data.Bodies[ch.Body].Walk[heading];
 		if (bodyGrh <= 0) return;
-		int bodyFrame = ch.Moving ? (int)ch.WalkFrame : 0;
+		int bodyFrame = ch.WalkPoseActive ? (int)ch.WalkFrame : 0;
+		Vector2 bodyRegistration = data.WalkOffset(bodyGrh, bodyFrame);
 		var bodyRes = data.ResolveGrh(bodyGrh, bodyFrame);
 		if (bodyRes == null || bodyRes.FileNum <= 0) return;
 
 		// Body draw position (with centering)
-		float bodyDrawX = screenPos.X;
-		float bodyDrawY = screenPos.Y;
+		float bodyDrawX = screenPos.X + bodyRegistration.X;
+		float bodyDrawY = screenPos.Y + bodyRegistration.Y;
 		if (bodyRes.TileWidth != 1f && bodyRes.TileWidth > 0)
 			bodyDrawX -= (int)(bodyRes.TileWidth * (TileSize / 2)) - TileSize / 2;
 		if (bodyRes.TileHeight != 1f && bodyRes.TileHeight > 0)
@@ -255,7 +256,7 @@ public static partial class CharRenderer
 			int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
 			if (weapGrh > 0)
 			{
-				int weapFrame = ch.Moving ? (int)ch.WalkFrame : 0;
+				int weapFrame = EquipmentFrame(ch, data, weapGrh, heading);
 				var weapRes = data.ResolveGrh(weapGrh, weapFrame);
 				if (weapRes != null && weapRes.FileNum > 0)
 				{
@@ -278,7 +279,7 @@ public static partial class CharRenderer
 			int shieldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
 			if (shieldGrh > 0)
 			{
-				int shieldFrame = ch.Moving ? (int)ch.WalkFrame : 0;
+				int shieldFrame = EquipmentFrame(ch, data, shieldGrh, heading);
 				var shieldRes = data.ResolveGrh(shieldGrh, shieldFrame);
 				if (shieldRes != null && shieldRes.FileNum > 0)
 				{
@@ -359,11 +360,20 @@ public static partial class CharRenderer
 		_ao20ShadowParts.Clear();
 		Vector2 bodyPos = Ao20ShadowRenderer.CompositeAnchor;
 		Vector2 headOffset = new(data.Bodies[ch.Body].HeadOffsetX, data.Bodies[ch.Body].HeadOffsetY);
-		int walkingFrame = ch.Moving ? (int)ch.WalkFrame : 0;
+		headOffset += HeadAttachmentAdjustment(ch, data, heading);
+		int walkingFrame = ch.WalkPoseActive ? (int)ch.WalkFrame : 0;
+		int bodyGrh = data.Bodies[ch.Body].Walk[heading];
+		int headGrh = ch.Head > 0 && ch.Head < data.Heads.Length ? data.Heads[ch.Head].Head[heading] : 0;
+		int helmetGrh = ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length ? data.Cascos[ch.CascoAnim].Head[heading] : 0;
+		int weaponGrh = ch.WeaponAnim > 0 && ch.WeaponAnim < data.Weapons.Length ? data.Weapons[ch.WeaponAnim].Walk[heading] : 0;
+		int shieldGrh = ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length ? data.Shields[ch.ShieldAnim].Walk[heading] : 0;
 
 		void AddPart(int grhIndex, int frame, Vector2 anchor)
 		{
 			if (grhIndex <= 0) return;
+			if (grhIndex == bodyGrh) anchor += data.WalkOffset(grhIndex, frame);
+			else if (grhIndex == weaponGrh || grhIndex == shieldGrh)
+				frame = EquipmentFrame(ch, data, grhIndex, heading);
 			var resolved = data.ResolveGrh(grhIndex, frame);
 			if (resolved == null || resolved.FileNum <= 0) return;
 			var texture = data.Textures?.GetTexture(resolved.FileNum);
@@ -374,11 +384,6 @@ public static partial class CharRenderer
 			_ao20ShadowParts.Add(new Ao20ShadowRenderer.SpritePart(resolved, texture, new Vector2(x, y)));
 		}
 
-		int bodyGrh = data.Bodies[ch.Body].Walk[heading];
-		int headGrh = ch.Head > 0 && ch.Head < data.Heads.Length ? data.Heads[ch.Head].Head[heading] : 0;
-		int helmetGrh = ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length ? data.Cascos[ch.CascoAnim].Head[heading] : 0;
-		int weaponGrh = ch.WeaponAnim > 0 && ch.WeaponAnim < data.Weapons.Length ? data.Weapons[ch.WeaponAnim].Walk[heading] : 0;
-		int shieldGrh = ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length ? data.Shields[ch.ShieldAnim].Walk[heading] : 0;
 		Vector2 headPos = bodyPos + new Vector2(headOffset.X + (ch.Mounted ? 1f : 0f), headOffset.Y + 1f);
 		Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + (ch.Mounted ? 1f : 0f), headOffset.Y + HELMET_Y_OFFSET);
 
@@ -407,6 +412,7 @@ public static partial class CharRenderer
 	{
 		Color? ec = equipColorOverride ?? colorOverride;
 		Color? hc = helmetColorOverride ?? ec;
+		headOffset += HeadAttachmentAdjustment(ch, data, heading);
 		switch (heading)
 		{
 			case 1: // North
@@ -450,7 +456,8 @@ public static partial class CharRenderer
 		if (body.Walk[heading] == 0) return;
 
 		int bodyGrh = body.Walk[heading];
-		int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+		int frame = ch.WalkPoseActive ? (int)ch.WalkFrame : 0;
+		pos += data.WalkOffset(bodyGrh, frame);
 
 		if (colorOverride.HasValue)
 		{
@@ -517,7 +524,7 @@ public static partial class CharRenderer
 		if (grhIndex <= 0) return;
 
 		// VB6: Arma.WeaponWalk drawn at PixelOffsetX, PixelOffsetY (same as body), center=1
-		int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+		int frame = EquipmentFrame(ch, data, grhIndex, heading);
 		DrawGrh(canvas, data, grhIndex, frame, bodyPos, true, colorOverride);
 	}
 
@@ -532,8 +539,28 @@ public static partial class CharRenderer
 		if (grhIndex <= 0) return;
 
 		// VB6: Escudo.ShieldWalk drawn at PixelOffsetX, PixelOffsetY (same as body), center=1
-		int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+		int frame = EquipmentFrame(ch, data, grhIndex, heading);
 		DrawGrh(canvas, data, grhIndex, frame, bodyPos, true, colorOverride);
+	}
+
+	// These imported collars need the head seated slightly deeper. Keep this
+	// separate from body registration: moving the whole sprite would undo the
+	// stable walk anchor. Head and helmet share it in normal/reflection draws.
+	private static Vector2 HeadAttachmentAdjustment(Character ch, GameData data, int heading)
+	{
+		if (ch.Mounted || ch.Navigating || ch.Dead || ch.Body >= data.Bodies.Length
+			|| (ch.Body != 512 && ch.Body != 513)) return Vector2.Zero;
+		int grh = data.Bodies[ch.Body].Walk[heading];
+		return data.WalkRegistration.ContainsKey(grh) ? new Vector2(0, 2) : Vector2.Zero;
+	}
+
+	private static int EquipmentFrame(Character ch, GameData data, int grhIndex, int heading)
+	{
+		if (!ch.WalkPoseActive || grhIndex <= 0 || grhIndex >= data.Grhs.Length
+			|| ch.Body <= 0 || ch.Body >= data.Bodies.Length) return 0;
+		int bodyGrh = data.Bodies[ch.Body].Walk[heading];
+		if (bodyGrh <= 0 || bodyGrh >= data.Grhs.Length) return 0;
+		return WalkSpriteLayout.Frame(ch.WalkFrame, data.Grhs[bodyGrh].NumFrames, data.Grhs[grhIndex].NumFrames);
 	}
 
 	/// <summary>
@@ -549,6 +576,12 @@ public static partial class CharRenderer
 	{
 		if (data.Auras == null || data.Auras.Length <= 1) return;
 		if (ch.Navigating) return; // No auras while on a boat
+		if (ch.PreviewAuraIndex > 0)
+		{
+			float previewAngle = 0;
+			CollectSingleAura(worldRenderer, pos, headOffset, data, ch.PreviewAuraIndex, ref previewAngle, globalTimeMs, alphaOverride);
+			return;
+		}
 
 		CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA, globalTimeMs, alphaOverride);
 		CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW, globalTimeMs, alphaOverride);
@@ -569,6 +602,11 @@ public static partial class CharRenderer
 		if (data.Auras == null || auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
 
 		var aura = data.Auras[auraIndex];
+		if (aura.ProceduralStyle > 0)
+		{
+			worldRenderer.QueueAuraDraw(-auraIndex, 0, tilePos + new Vector2(16, 16 - aura.Offset), Colors.White, 0);
+			return;
+		}
 		if (aura.GrhIndex <= 0) return;
 
 		float drawAngle = aura.Giratoria ? CalculateAuraAngle(globalTimeMs) : 0f;
@@ -607,6 +645,12 @@ public static partial class CharRenderer
 		if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return false;
 
 		var aura = data.Auras[auraIndex];
+		if (aura.ProceduralStyle > 0)
+		{
+			draw = new AuraDrawData(-auraIndex, 0, pos + new Vector2(16, 27 - aura.Offset),
+				new Color(1, 1, 1, alpha), 0, false);
+			return true;
+		}
 		if (aura.GrhIndex <= 0) return false;
 
 		float drawAngle = aura.Giratoria ? CalculateAuraAngle(globalTimeMs) : 0f;

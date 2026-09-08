@@ -1,3 +1,5 @@
+using System;
+
 namespace ArgentumNextgen.Game;
 
 /// <summary>
@@ -26,20 +28,37 @@ public class Character
 	public int ScrollDirectionX;
 	public int ScrollDirectionY;
 
-	// Per-character walk animation frame. Advances only while Moving.
-	//
-	// AO2020 (TileEngine_Chars.Char_Move_by_Head) starts the cycle when a
-	// character begins to walk and freezes it on stopping, so every stride
-	// begins on the same foot. It only carries the phase over when the heading
-	// changes *mid-walk*, via SyncGrhPhase — turning a corner must not restart
-	// the legs.
+	// Per-character walk animation frame. Advances during displacement and
+	// carries its phase across consecutive tiles and turns, until a real stop.
 	public float WalkFrame;
+	public int WalkFrameCount;
 
 	/// <summary>
 	/// Heading the current walk cycle belongs to, so a turn can be told apart
 	/// from starting to walk. 0 means no cycle is running.
 	/// </summary>
 	public int WalkFrameHeading;
+
+	// Presentation only: bridge tile boundaries without changing Moving, input
+	// gates, meditation cancellation, or the duration of a step.
+	private float _walkIdleMs;
+	public bool WalkPoseActive => Moving || WalkFrameHeading != 0;
+
+	public void UpdateWalkContinuity(bool advancedThisFrame, float deltaMs)
+	{
+		if (advancedThisFrame)
+			_walkIdleMs = 0f;
+		else
+			_walkIdleMs += Math.Max(0f, deltaMs);
+
+		// Keep the last pose briefly, not an extra moving/animated step. This
+		// covers a boundary frame even at 20 FPS; a real stop returns to idle.
+		if (_walkIdleMs >= 65f)
+		{
+			WalkFrame = 0f;
+			WalkFrameHeading = 0;
+		}
+	}
 
 	/// <summary>
 	/// Per-character speed multiplier (AO2020 charlist().Speeding). 1.0 is
@@ -90,10 +109,17 @@ public class Character
 	public const float HitFlashDuration = 0.16f; // seconds
 	public float HitFlashTimer;                  // seconds remaining (0 = no flash)
 	public bool HitFlashReceived;                // true=took damage (red), false=dealt (bright)
+	public uint HitEffectSequence;              // Cosmetic event counter; independent of frame timers
+	public float ApocalypseTime = -1;           // FX 13 impact; negative means inactive.
+	public float ElectricDischargeTime = -1;    // FX 11 impact; independent of other spell effects.
+	public float BindingTime = -1;              // FX 8: short visual cast, not a gameplay timer.
+	public bool BindingIsParalysis;
+	public bool SuppressNextSpellImpact;
 
 	/// <summary>Start a hit flash. received=true tints red (hurt), false brightens (struck).</summary>
 	public void HitFlash(bool received)
 	{
+		unchecked { HitEffectSequence++; }
 		HitFlashTimer = HitFlashDuration;
 		HitFlashReceived = received;
 	}
@@ -135,6 +161,7 @@ public class Character
 	// Indices into Auras.dat (AurasPJ array). 0 = no aura.
 	public int AuraIndexA; // Armor
 	public int AuraIndexW; // Weapon
+	public int PreviewAuraIndex; // Local-only preview; never changes equipment or packets.
 	public int AuraIndexE; // Shield
 	public int AuraIndexR; // Ring
 	public int AuraIndexC; // Helmet

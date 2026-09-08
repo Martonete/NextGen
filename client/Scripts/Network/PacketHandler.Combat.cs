@@ -150,8 +150,65 @@ public partial class PacketHandler
         if (!_state.Characters.TryGetValue(charIndex, out var ch))
             return;
 
+        if (fxIndex >= 201 && fxIndex <= 206)
+        {
+            if (!WeaponImpact.Valid(fxIndex, fxLoops) || ch.Invisible
+                || !_state.Config.ShowReactiveEffects || !_state.Config.ShowParticles) return;
+            // The critical roll follows the base hit in the same combat resolution.
+            // Upgrade its presentation instead of stacking a second explosion.
+            for (int i = _state.WeaponImpacts.Count - 1; i >= 0; i--)
+            {
+                var impact = _state.WeaponImpacts[i];
+                if (ReferenceEquals(impact.Owner, ch) && impact.Kind == fxIndex
+                    && impact.Heading == (fxLoops & 7) && impact.Age < .05f && (fxLoops & 8) != 0)
+                { impact.Critical = true; return; }
+            }
+            if (_state.WeaponImpacts.Count >= 128) _state.WeaponImpacts.RemoveAt(0);
+            var strike = new WeaponImpact(ch, _state.MapData, fxIndex, fxLoops);
+            if (fxIndex == 204 || fxIndex == 205)
+                for (int i = _state.ActiveArrows.Count - 1; i >= 0; i--)
+                {
+                    var arrow = _state.ActiveArrows[i];
+                    if (!arrow.Active || arrow.LifetimeMs > 100) continue;
+                    if ((fxIndex == 204 && arrow.TargetCharIndex == charIndex)
+                        || (fxIndex == 205 && arrow.ShooterCharIndex == charIndex))
+                    {
+                        strike.Direction = new Vector2(arrow.TargetX - arrow.X, arrow.TargetY - arrow.Y).Normalized();
+                        break;
+                    }
+                }
+            _state.WeaponImpacts.Add(strike);
+            return;
+        }
+
+        ch.SuppressNextSpellImpact = (fxIndex == 11 || fxIndex == 8)
+            && _state.Config.ShowReactiveEffects && _state.Config.ShowParticles;
+        // Hechizos.dat: Apocalipsis (25) uniquely uses FX 13. The procedural
+        // impact replaces the sprite when enabled, without occupying an FX slot.
+        if (fxIndex == 13)
+        {
+            ch.ApocalypseTime = 0;
+            if (_state.Config.ShowReactiveEffects && _state.Config.ShowParticles) return;
+        }
+        // Descarga Electrica (HECHIZO23) uniquely uses FX 11.
+        if (fxIndex == 11)
+        {
+            ch.ElectricDischargeTime = 0;
+            if (_state.Config.ShowReactiveEffects && _state.Config.ShowParticles) return;
+        }
+        // FX 8: loop marker -24 distinguishes Inmovilizar from Paralizar.
+        // Legacy clients clamp negative loops to one, preserving their classic FX.
+        if (fxIndex == 8)
+        {
+            ch.BindingTime = 0;
+            ch.BindingIsParalysis = fxLoops != -24;
+            if (_state.Config.ShowReactiveEffects && _state.Config.ShowParticles) return;
+        }
         if (fxIndex == 0)
         {
+            ch.ApocalypseTime = -1;
+            ch.ElectricDischargeTime = -1;
+            ch.BindingTime = -1;
             for (int i = 0; i < 3; i++)
             {
                 ch.ActiveFxSlots[i] = 0;

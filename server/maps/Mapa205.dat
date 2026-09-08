@@ -1,0 +1,14 @@
+[MAPA205]
+Name=Cripta de la Vigilia
+MusicNum=0
+Pk=1
+BackUp=1
+Terreno=TIERRA
+Zona=DUNGEON
+R=105
+G=115
+B=125
+RestringirNavegar=1
+MagiaSinEfecto=0
+InviSinEfecto=0
+InvocarSinEfecto=0

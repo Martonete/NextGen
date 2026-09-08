@@ -13,6 +13,14 @@ namespace ArgentumNextgen.Rendering;
 public partial class WorldRenderer
 {
     private readonly List<int> _charSortBuffer = new(16);
+    private Comparison<int>? _charDepthComparison;
+
+    private int CompareCharacterDepth(int a, int b)
+    {
+        float ay = _state!.Characters.TryGetValue(a, out var ca) ? ca.MoveOffsetY : 0f;
+        float by = _state.Characters.TryGetValue(b, out var cb) ? cb.MoveOffsetY : 0f;
+        return ay.CompareTo(by);
+    }
 
     /// <summary>
     /// Draw PASS 3 content: ground objects, characters, layer 3, status overlay.
@@ -65,17 +73,12 @@ public partial class WorldRenderer
                 {
                     var charsHere = GetCharsAt(x, y);
                     // Sort by effective Y for correct isometric z-order (higher Y = drawn on top)
-                    IEnumerable<int> sortedChars;
+                    List<int> sortedChars;
                     if (charsHere.Count > 1)
                     {
                         _charSortBuffer.Clear();
                         _charSortBuffer.AddRange(charsHere);
-                        _charSortBuffer.Sort((a, b) =>
-                        {
-                            float ay = _state.Characters.TryGetValue(a, out var ca) ? ca.MoveOffsetY : 0f;
-                            float by = _state.Characters.TryGetValue(b, out var cb) ? cb.MoveOffsetY : 0f;
-                            return ay.CompareTo(by);
-                        });
+                        _charSortBuffer.Sort(_charDepthComparison ??= CompareCharacterDepth);
                         sortedChars = _charSortBuffer;
                     }
                     else
@@ -90,9 +93,11 @@ public partial class WorldRenderer
                         float charPx = tilePos.X + ch.MoveOffsetX;
                         float charPy = tilePos.Y + ch.MoveOffsetY;
 
+                        DrawBindingEffect(canvas, ch, new Vector2(charPx + 16, charPy + 4), false);
                         CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
                                                    _data, _animator, _deltaMs, _state, this,
                                                    charTileX: x, charTileY: y, charIdx: cid);
+                        DrawBindingEffect(canvas, ch, new Vector2(charPx + 16, charPy + 4), true);
                     }
                 }
 
@@ -108,24 +113,12 @@ public partial class WorldRenderer
 							_animator.GetCurrentFrame(tile.Layer3, _data), tilePos, true,
 							Ao20ShadowRenderer.GetLightCorners(_state, x, y));
 					}
-                    float l3Alpha = 1f;
-                    if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(tile.Layer3))
-                    {
-                        float smoothUserX = _frameUserX + _state.ScreenOffsetX / 32f;
-                        float smoothUserY = _frameUserY + _state.ScreenOffsetY / 32f;
-                        float dx = Math.Abs(x - smoothUserX);
-                        float dy = Math.Abs(y - smoothUserY);
-                        const float innerX = 3f, innerY = 2f;
-                        const float outerX = 5f, outerY = 7f;
-                        float tx = dx <= innerX ? 0f : dx >= outerX ? 1f : (dx - innerX) / (outerX - innerX);
-                        float ty = dy <= innerY ? 0f : dy >= outerY ? 1f : (dy - innerY) / (outerY - innerY);
-                        float t = Math.Max(tx, ty);
-                        float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
-                        l3Alpha = treeAlpha + (1f - treeAlpha) * t;
-                    }
+                    bool isTree = IsTree(tile.Layer3);
+                    float l3Alpha = isTree ? GetTreeOpacity(tile.Layer3, x, y) : 1f;
                     Color l3Color = l3Alpha < 1f ? new Color(treeBright, treeBright, treeBright, l3Alpha) : treeFullColor;
                     l3Color = MultiplyColor(l3Color, GetContentLightColor(x, y));
-                    DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: l3Color);
+                    if (isTree) DrawTree(canvas, tile.Layer3, x, y, tilePos, l3Color);
+                    else DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: l3Color);
                 }
             }
         }
@@ -536,12 +529,20 @@ public partial class WorldRenderer
     /// Uses DrawSetTransform Y-flip (same as character body reflection) so that
     /// tileHeight centering and Offset are handled identically to normal auras.
     /// </summary>
-    public void DrawPendingReflAuras(CanvasItem canvas)
+    public void DrawPendingReflAuras(CanvasItem canvas, bool front = false)
     {
         if (_data == null) return;
 
         foreach (var (grhIndex, frame, pos, color, angle, mirrorY) in _pendingReflAuraDraws)
         {
+            if (grhIndex < 0 && -grhIndex < _data.Auras.Length)
+            {
+                ((Node2D)canvas).DrawSetTransform(new Vector2(0, mirrorY * 2), 0, new Vector2(1,-1));
+                RunicAuraRenderer.Draw(canvas, _data.Auras[-grhIndex], pos, _animator?.GlobalTimeMs ?? 0, color.A, front);
+                ((Node2D)canvas).DrawSetTransform(Vector2.Zero);
+                continue;
+            }
+            if (front) continue;
             // Set Y-flip transform around mirrorY (same as DrawReflection for body)
             if (angle != 0f)
             {
@@ -662,12 +663,18 @@ public partial class WorldRenderer
     /// Draw pending normal aura draws on a given canvas (used by AuraAdditiveLayer).
     /// Only normal (non-reflected) auras — reflected auras are handled by ReflectedAuraLayer.
     /// </summary>
-    public void DrawPendingAuras(CanvasItem canvas)
+    public void DrawPendingAuras(CanvasItem canvas, bool front = false)
     {
         if (_data == null) return;
 
         foreach (var (grhIndex, frame, pos, color, angle) in _pendingAuraDraws)
         {
+            if (grhIndex < 0 && -grhIndex < _data.Auras.Length)
+            {
+                RunicAuraRenderer.Draw(canvas, _data.Auras[-grhIndex], pos, _animator?.GlobalTimeMs ?? 0, color.A, front);
+                continue;
+            }
+            if (front) continue;
             if (angle != 0f)
             {
                 // Rotating aura — use DrawSetTransform for rotation around sprite center
@@ -714,6 +721,7 @@ public partial class WorldRenderer
     public void DrawPendingParticles(CanvasItem canvas)
     {
         if (_data == null) return;
+        DrawReactiveGlow(canvas);
 
         foreach (var (grhIndex, frame, pos, color, angle, scale) in _pendingMapParticleDraws)
         {

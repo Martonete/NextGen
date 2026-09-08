@@ -153,6 +153,12 @@ public static partial class CharRenderer
             mirrorAdj = -4f; // all races: pull mirror 4px closer to body
         float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 
+        if (ch.PreviewAuraIndex > 0)
+        {
+            CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.PreviewAuraIndex, mirrorY, globalTimeMs);
+            return;
+        }
+
         CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, mirrorY, globalTimeMs);
         CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, mirrorY, globalTimeMs);
         CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, mirrorY, globalTimeMs);

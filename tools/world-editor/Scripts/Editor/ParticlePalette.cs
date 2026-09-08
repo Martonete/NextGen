@@ -495,6 +495,7 @@ public partial class ParticlePalette : VBoxContainer
 
         public override void _Process(double delta)
         {
+            if (!IsVisibleInTree()) return;
             _animTime += delta * 1000.0;
             if (!_hasDefinition || _stream == null || Engine == null) return;
             if (_defIndex < 1 || _defIndex >= Engine.Defs.Length) return;
@@ -510,6 +511,8 @@ public partial class ParticlePalette : VBoxContainer
         internal void DrawParticlesOn(CanvasItem canvas)
         {
             if (!_hasDefinition || _stream == null || Grhs == null || Textures == null) return;
+            if (Engine == null || _defIndex < 1 || _defIndex >= Engine.Defs.Length) return;
+            var def = Engine.Defs[_defIndex];
 
             foreach (var p in _stream.Particles)
             {
@@ -534,7 +537,18 @@ public partial class ParticlePalette : VBoxContainer
                 float drawX = CenterX + p.X - grh.PixelWidth  / 2f;
                 float drawY = CenterY + p.Y - grh.PixelHeight / 2f;
                 var destRect = new Rect2(drawX, drawY, drawW, drawH);
-                var color    = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+                float alpha = def.FadeAlpha && p.MaxLife > 0 ? Math.Clamp(p.Life / p.MaxLife, 0, 1) : p.Alpha;
+                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, alpha);
+                float scale = def.ScaleOverLife && p.MaxLife > 0
+                    ? def.ResizeX + (def.ResizeY - def.ResizeX) * Math.Clamp(1 - p.Life / p.MaxLife, 0, 1) : 1;
+                float angle = def.RotateVisual ? Mathf.DegToRad(p.Angle) : 0;
+                if (scale != 1 || angle != 0)
+                {
+                    canvas.DrawSetTransform(new Vector2(CenterX + p.X, CenterY + p.Y), angle, new Vector2(scale, scale));
+                    canvas.DrawTextureRectRegion(texture, new Rect2(-drawW/2f,-drawH/2f,drawW,drawH), srcRect, color);
+                    canvas.DrawSetTransform(Vector2.Zero);
+                    continue;
+                }
                 canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
             }
         }

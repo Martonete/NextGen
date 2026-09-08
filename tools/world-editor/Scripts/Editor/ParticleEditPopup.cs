@@ -820,7 +820,7 @@ public partial class ParticlePreviewControl : Control
 
     public override void _Process(double delta)
     {
-        if (_paused) return;
+        if (_paused || !IsVisibleInTree()) return;
 
         // Shared clock for both GRH frame animation (particles + character) and physics.
         _animTime += delta * 1000.0 * _simSpeed;

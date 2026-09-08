@@ -8,6 +8,7 @@ use crate::game::class_race::{PlayerClass, PlayerRace};
 use crate::game::types::{GameState, SendTarget};
 use crate::net::ConnectionId;
 use crate::protocol::binary_packets;
+use crate::protocol::font_index;
 
 // =====================================================================
 // Level up system
@@ -16,6 +17,64 @@ use crate::protocol::binary_packets;
 /// Hard level cap. Reaching this level stops all further leveling; the exp
 /// curve is unchanged — only progression past 50 is disabled.
 pub(crate) const MAX_LEVEL: i32 = 50;
+
+/// Public F9 action: only the requesting logged-in character, exactly one level.
+/// Uses normal progression so HP/mana/skills and level milestones stay consistent.
+pub(crate) async fn handle_self_level_up(state: &mut GameState, conn_id: ConnectionId) {
+    let level = match state.users.get(&conn_id) {
+        Some(user) if user.logged => user.level,
+        _ => return,
+    };
+    if level >= MAX_LEVEL {
+        state.send_console(conn_id, "Ya alcanzaste el nivel maximo (50).", font_index::INFO);
+        return;
+    }
+    let needed = state.exp_for_level(level);
+    if level < 1 || needed <= 0 { return; }
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.exp = needed;
+    }
+    check_user_level(state, conn_id).await;
+}
+
+#[cfg(test)]
+mod self_level_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn public_level_up_is_self_only_and_caps_at_50() {
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
+        let config = crate::config::ServerConfig::load(&base).unwrap();
+        let data = crate::data::GameData {
+            experience: vec![100; 50], objects: vec![], spells: vec![], maps: vec![],
+            npcs: crate::data::npcs::load_npcs(&base).unwrap(),
+            balance: Default::default(), crafting: Default::default(),
+        };
+        // No live database or account is touched by this test.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://test:test@127.0.0.1:1/test").unwrap();
+        let bans = crate::db::bans::BanList {
+            banned_hds: Default::default(), banned_ips: Default::default(),
+        };
+        let mut state = GameState::new(config, base, data, pool, bans);
+        let mut player = crate::game::types::UserState::new(1, "test".into());
+        player.logged = true;
+        player.privileges = 0;
+        state.users.insert(1, player);
+        state.users.insert(2, crate::game::types::UserState::new(2, "test".into()));
+        handle_self_level_up(&mut state, 2).await;
+        assert_eq!(state.users[&2].level, 1, "Not logged in");
+        for expected in 2..=50 {
+            handle_self_level_up(&mut state, 1).await;
+            assert_eq!(state.users[&1].level, expected, "One level per request");
+        }
+        let points = state.users[&1].skill_pts_libres;
+        handle_self_level_up(&mut state, 1).await;
+        assert_eq!(state.users[&1].level, 50);
+        assert_eq!(state.users[&1].skill_pts_libres, points, "No duplicate max-level rewards");
+        assert_eq!(state.users[&2].level, 1, "Other character unchanged");
+    }
+}
 
 /// VB6 top level whose progression is preserved at the new cap. As the real
 /// level runs 1..=MAX_LEVEL (50), the virtual level runs 1..=VB6_TOP_LEVEL (70),

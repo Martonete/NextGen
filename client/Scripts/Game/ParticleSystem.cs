@@ -120,6 +120,11 @@ public class ParticleSystem
             case "spin_speedl": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.SpinSpeedL); break;
             case "spin_speedh": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.SpinSpeedH); break;
             case "alphablend": def.AlphaBlend = val == "1"; break;
+            case "fade_alpha": def.FadeAlpha = val == "1"; break;
+            case "rotate_visual": def.RotateVisual = val == "1"; break;
+            case "scale_over_life": def.ScaleOverLife = val == "1"; break;
+            case "rx": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.ResizeX); break;
+            case "ry": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.ResizeY); break;
             case "xmove": def.XMove = val == "1"; break;
             case "ymove": def.YMove = val == "1"; break;
             case "life_counter": int.TryParse(val, out def.LifeCounter); break;

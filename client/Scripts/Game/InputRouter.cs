@@ -131,8 +131,19 @@ public class InputRouter
                 return true;
             }
 
-            // F9: toggle macro panel
-            if (key.Keycode == Key.F9 && !_state.ChatActive)
+            // F9: one real self level-up, validated and applied by the server.
+            if (key.Keycode == Key.F9 && !key.CtrlPressed && !_state.ChatActive)
+            {
+                if (LevelUpShortcut.TryCommand(_state.Level, out var command, out var message))
+                    SendPacket?.Invoke(ClientPackets.WriteTalk(command));
+                else
+                    _state.EnqueueChat(new ChatMessage { Text = message, Color = "FFFF00" });
+                viewport.SetInputAsHandled();
+                return true;
+            }
+
+            // Ctrl+F9: retain access to the macro panel.
+            if (key.Keycode == Key.F9 && key.CtrlPressed && !_state.ChatActive)
             {
                 if (_macroPanel != null)
                 {

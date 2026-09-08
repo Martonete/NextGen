@@ -69,6 +69,7 @@ public class ForumPostEntry
 /// </summary>
 public class GameState
 {
+    public readonly List<WeaponImpact> WeaponImpacts = new();
 	// VB6 13.3 game constants
 	public const int MaxLevel = 50;
 	public const int MaxSkillLevel = 100;

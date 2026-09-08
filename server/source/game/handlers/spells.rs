@@ -18,6 +18,9 @@ use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, MAX_SPELL_SLOTS};
 use crate::net::ConnectionId;
 use crate::protocol::font_index;
+#[cfg(test)]
+#[path = "gm_spell_tests.rs"]
+mod gm_spell_tests;
 // Re-export handlers items for use by spell_offensive/spell_support submodules via super::
 #[allow(unused_imports)]
 pub(super) use super::common;
@@ -139,7 +142,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         .get(&conn_id)
         .map(|u| u.equip.weapon > 0)
         .unwrap_or(false);
-    if !weapon_equipped {
+    if privileges == 0 && !weapon_equipped {
         state.send_msg_id(conn_id, 26, ""); // "Necesitas un arma mágica para lanzar hechizos"
         return;
     }
@@ -160,7 +163,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             }
         }
     } // end privileges == 0 mana/stamina gate
-    if spell.min_skill > 0 {
+    if privileges == 0 && spell.min_skill > 0 {
         let magic_skill = state.users.get(&conn_id).map(|u| u.skills[1]).unwrap_or(0);
         if magic_skill < spell.min_skill {
             state.send_msg_id(conn_id, 834, ""); // Magic skill too low
@@ -168,7 +171,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         }
     }
     // VB6: Staff power check for Mages (modHechizos.bas lines 449-460)
-    if spell.need_staff > 0 {
+    if privileges == 0 && spell.need_staff > 0 {
         let (class, weapon_slot, obj_idx) = match state.users.get(&conn_id) {
             Some(u) => {
                 let slot = u.equip.weapon;
@@ -311,7 +314,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 .get(&conn_id)
                 .map(|u| u.class == PlayerClass::Druida)
                 .unwrap_or(false);
-            if is_druid {
+            if is_druid || privileges > 0 {
                 apply_mimetiza_npc(state, conn_id, npc_idx).await;
             }
         }

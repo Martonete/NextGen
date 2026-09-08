@@ -4,7 +4,9 @@
 
 async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd: &str) {
     let cmd_upper = cmd.to_uppercase();
-    if cmd_upper == "/RESUCITAR" {
+    if cmd_upper == "/SUBIRNIVEL" {
+        leveling::handle_self_level_up(state, conn_id).await;
+    } else if cmd_upper == "/RESUCITAR" {
         handle_resucitar(state, conn_id).await;
     } else if cmd_upper.starts_with("/FUNDARCLAN") {
         handle_slash_fundarclan(state, conn_id).await;

@@ -262,6 +262,18 @@ fxLoops                 i16         2 bytes
 
 Total: 7 bytes. Creates a visual effect on a character.
 
+Local confirmed-weapon visual extension: FX 201=sword, 202=heavy,
+203=dagger, 204=arrow impact, 205=bowstring, 206=neutral contact.
+For these IDs only, loops bits 0..2 are heading 1..4 and bit 3 is a
+server-confirmed critical. Other bits are invalid. These IDs do not occupy
+classic FX slots. Requires the updated client to display the extension;
+packet framing and existing blood/arrow feedback remain unchanged.
+
+Local visual extension: with `fxIndex=8`, `fxLoops=-24` identifies Inmovilizar
+(green binding); other loop values use Paralizar (steel-blue clasps). The
+server emits the marker for spells with `inmoviliza=true`. Packet size stays
+unchanged, and the classic client path clamps negative loops to one play.
+
 ---
 
 ## 6. How to Add a New Packet

@@ -1070,6 +1070,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         );
 
         // Apply damage to victim
+        super::weapon_visuals::confirmed_hit(state, conn_id, v_char_index.0 as i16, false, weapon.is_proyectil);
         if let Some(victim) = state.users.get_mut(&victim_id) {
             victim.min_hp = victim.min_hp.saturating_sub(damage as i32);
         }
@@ -1182,6 +1183,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 if let Some(crit_dmg) =
                     do_golpe_critico(class, weapon.obj_index, wrestling_sk, damage)
                 {
+                    super::weapon_visuals::confirmed_hit(state, conn_id, v_char_index.0 as i16, true, false);
                     if let Some(victim) = state.users.get_mut(&victim_id) {
                         victim.min_hp = victim.min_hp.saturating_sub(crit_dmg as i32);
                     }

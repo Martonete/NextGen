@@ -450,28 +450,27 @@ pub(super) async fn handle_slash_acc(
 
 /// /HECHIZO <name> <spell_id> — Teach a spell to a player. Requires Administrador.
 pub(super) async fn handle_slash_hechizo(state: &mut GameState, conn_id: ConnectionId, args: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
+    let privileges = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges > 0 => u.privileges,
         _ => return,
-    }
+    };
 
     let args_upper = args.to_uppercase();
     let parts: Vec<&str> = args_upper.splitn(2, ' ').collect();
-    if parts.len() < 2 {
-        return;
-    }
-
-    let target_name = parts[0].replace('+', " ");
-    let spell_id: i32 = match parts[1].parse() {
+    let spell_arg = if parts.len() == 1 { parts[0] } else { parts[1] };
+    let spell_id: i32 = match spell_arg.parse() {
         Ok(s) if s > 0 => s,
         _ => return,
     };
 
-    let target_upper = target_name.to_uppercase();
-    let target_conn = match state.online_names.get(&target_upper).copied() {
+    if state.get_spell(spell_id).is_none() { return; }
+    let target_upper = parts[0].replace('+', " ");
+    let target_conn = if parts.len() == 1 { conn_id } else { match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
         None => return,
-    };
+    }};
+    // Any GM can equip their own spellbook; granting to others stays admin-only.
+    if target_conn != conn_id && privileges < privilege_level::ADMINISTRADOR { return; }
 
     // Check if they already have this spell
     let already_has = state

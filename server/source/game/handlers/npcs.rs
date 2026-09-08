@@ -438,6 +438,7 @@ pub(super) async fn user_attack_npc(
     }
 
     // Blood FX on NPC
+    super::weapon_visuals::confirmed_hit(state, conn_id, npc_char_index.0 as i16, false, false);
     let fx_pkt = binary_packets::write_create_fx(npc_char_index.0 as i16, 14, 0); // VB6: FXSANGRE = 14
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt);
 
@@ -496,6 +497,7 @@ pub(super) async fn user_attack_npc(
         if let Some(crit_dmg) =
             do_golpe_critico(class, weapon_info.obj_index, wrestling_sk, damage as i64)
         {
+            super::weapon_visuals::confirmed_hit(state, conn_id, npc_char_index.0 as i16, true, false);
             if let Some(npc) = state.get_npc_mut(npc_idx) {
                 npc.min_hp -= crit_dmg as i32;
                 npc.damage_received.push((conn_id, crit_dmg as i32));

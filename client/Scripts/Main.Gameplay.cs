@@ -519,6 +519,7 @@ public partial class Main
 
 		// Characters & objects
 		_state.Characters.Clear();
+		_state.WeaponImpacts.Clear();
 		_state.GroundObjects.Clear();
 
 		// Stats
@@ -599,6 +600,7 @@ public partial class Main
 		float deltaMs = Math.Min(delta * 1000f, 50f);
 		float ticksPerFrame = deltaMs * EngineBaseSpeed;
 		float scrollPixels = ScrollPixelsPerFrame * ticksPerFrame;
+		bool selfAdvancedThisFrame = _state.UserMoving;
 
 		// Camera scroll (VB6 ShowNextFrame → OffsetCounterX/Y)
 		if (_state.UserMoving)
@@ -639,11 +641,12 @@ public partial class Main
 		{
 			var ch = kvp.Value;
 
-			// Walk animation, following AO2020's model: the cycle starts when a
-			// character begins to walk and freezes when it stops, so every
-			// stride begins on the same foot. Turning mid-walk keeps the phase
-			// (SyncGrhPhase) rather than snapping back to frame 0.
-			if (ch.Moving && ch.Body > 0 && ch.Body < _gameData.Bodies.Length)
+			// Include the finishing frame: camera completion clears Moving above,
+			// but that is a tile boundary, not necessarily the end of the walk.
+			// Only a real stop resets the stride; turns keep the current phase.
+			bool advancedThisFrame = ch.Moving || (kvp.Key == _state.UserCharIndex && selfAdvancedThisFrame);
+			ch.UpdateWalkContinuity(advancedThisFrame, deltaMs);
+			if (advancedThisFrame && ch.Body > 0 && ch.Body < _gameData.Bodies.Length)
 			{
 				int heading = ch.Heading;
 				if (heading < 1 || heading > 4) heading = 3;
@@ -667,6 +670,9 @@ public partial class Main
 					var grh = _gameData.Grhs[walkGrh];
 					if (grh.NumFrames > 1)
 					{
+						if (ch.WalkFrameCount > 1 && ch.WalkFrameCount != grh.NumFrames)
+							ch.WalkFrame = ch.WalkFrame / ch.WalkFrameCount * grh.NumFrames;
+						ch.WalkFrameCount = grh.NumFrames;
 						float speed = grh.Speed > 0 ? grh.Speed : 100f;
 						// Graficos.ind defines the complete cycle duration for each body.
 						// Keep that cadence intact: bodies such as the Nigromante have
@@ -677,13 +683,6 @@ public partial class Main
 							ch.WalkFrame %= grh.NumFrames;
 					}
 				}
-			}
-			else if (!ch.Moving && ch.WalkFrameHeading != 0)
-			{
-				// Stopped: freeze on the resting frame. AO2020 sets
-				// Walk(.Heading).started = 0 here; there is no idle bob.
-				ch.WalkFrame = 0f;
-				ch.WalkFrameHeading = 0;
 			}
 
 			// Time-based translation takes precedence over walking speed:
