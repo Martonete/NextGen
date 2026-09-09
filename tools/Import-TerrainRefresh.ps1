@@ -1,6 +1,6 @@
-# Compatibility entry point: independent sheet resizing caused terrain seams.
+# Compatibility entry point for the current full-sheet artwork.
 param([string]$GeneratedDirectory)
 if ($GeneratedDirectory -and (Resolve-Path $GeneratedDirectory).Path -ne (Resolve-Path (Join-Path $PSScriptRoot '../resources/art-source/terrain-refresh/generated')).Path) {
-    throw 'Use the archived shared materials in resources/art-source/terrain-refresh/generated.'
+    throw 'The current import uses the archived originals and reimagined full sheets.'
 }
-& (Join-Path $PSScriptRoot 'Compile-TerrainMaterials.ps1')
+& (Join-Path $PSScriptRoot 'Import-ReimaginedTerrain.ps1')

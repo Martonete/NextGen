@@ -1,5 +1,24 @@
 # Renovacion de terreno 6000-6009
 
+## Version vigente: reimaginacion completa desde originales
+
+El usuario rechazo el acabado repetido de la version anterior. El importador
+vigente es `tools/Import-ReimaginedTerrain.ps1`, tambien invocado por
+`Import-TerrainRefresh.ps1`. Las diez nuevas ediciones imagegen se encuentran
+en reimagined/ junto con el manifiesto y los prompts completos.
+
+Conserva dimensiones nativas (512x512; 6009 128x128), clave negra original
+y coordenadas originales para calcular cobertura de tierra/pasto. Usa el
+pasto de la lamina completa 6000 en todas las piezas y tierra de las nuevas
+laminas, sin reducir el material a un sello de 32x32. Los contornos de las
+imagenes generadas no definen la cobertura del camino. Las depresiones de
+6001-6004 conservan sombreado sin convertirse en caminos nuevos.
+
+Validacion: CatalogRecoverySmoke PASS; inspeccion del conjunto en Tanaris.
+No modifica mapas ni indices. Reiniciar cliente/editor para cargar las PNG.
+
+Las secciones inferiores conservan el historial de las versiones rechazadas.
+
 ## Version actual: materiales compartidos (2026-09-09)
 
 Las pasadas independientes descritas debajo quedaron reemplazadas. Ejecutar
