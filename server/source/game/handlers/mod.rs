@@ -52,8 +52,8 @@ use ticks::*;
 // Re-export functions from new submodules so sibling modules can use `super::fn_name`
 pub(crate) use leveling::check_user_level;
 pub(crate) use warp::{
-    check_update_needed_user, make_user_visible, mover_casper, send_warp_fx, warp_user,
-    warp_user_exact,
+    check_update_needed_user, make_user_visible, mover_casper, send_gm_warp_aura, send_warp_fx,
+    send_warp_sound, warp_user, warp_user_exact,
 };
 // Re-export quest/party functions called from other modules
 // Re-export tick functions called from main.rs

@@ -10,7 +10,7 @@ public static class RunicAuraRenderer
     private static readonly Vector2[] Curve = new Vector2[25];
     public static void Draw(CanvasItem canvas, AuraData aura, Vector2 feet, double timeMs, float alpha = 1, bool? front = null)
     {
-        float phase = (float)(timeMs % aura.CycleMs / aura.CycleMs) * MathF.Tau;
+        float phase = aura.ProceduralStyle == 5 ? 0f : (float)(timeMs % aura.CycleMs / aura.CycleMs) * MathF.Tau;
         float strength = alpha * aura.Opacity / 100f;
         Color primary = new(aura.R / 255f, aura.G / 255f, aura.B / 255f, strength);
         Color accent = new(aura.RojoF / 255f, aura.VerdeF / 255f, aura.AzulF / 255f, strength * .85f);
@@ -51,6 +51,22 @@ public static class RunicAuraRenderer
                         center + new Vector2(MathF.Cos(b), MathF.Sin(b)) * radius, primary, 1.5f, true);
                 }
         }
+        else if (aura.ProceduralStyle == 5)
+        {
+            for (int i = 0; i < Curve.Length; i++)
+            {
+                float a = i * MathF.Tau / (Curve.Length - 1);
+                Curve[i] = feet + new Vector2(MathF.Cos(a) * radius, MathF.Sin(a) * radius * .36f - 4);
+            }
+            DrawCurve(canvas, primary, 1.6f, front);
+
+            for (int i = 0; i < Curve.Length; i++)
+            {
+                float a = i * MathF.Tau / (Curve.Length - 1);
+                Curve[i] = feet + new Vector2(MathF.Cos(a) * radius * .58f, MathF.Sin(a) * radius * .22f - 12);
+            }
+            DrawCurve(canvas, accent, 1f, front);
+        }
         for (int i = 0; i < aura.Details; i++)
         {
             float a = phase + i * MathF.Tau / aura.Details;
@@ -58,8 +74,10 @@ public static class RunicAuraRenderer
             float rise = (float)((timeMs / aura.CycleMs + i / (double)aura.Details) % 1);
             Vector2 p = aura.ProceduralStyle == 4
                 ? feet + new Vector2(MathF.Sin(a) * radius * .7f, -rise * aura.Height)
+                : aura.ProceduralStyle == 5
+                    ? feet + new Vector2(MathF.Cos(a) * radius * .78f, MathF.Sin(a) * radius * .28f - 10)
                 : center + new Vector2(MathF.Cos(a) * radius, MathF.Sin(a) * radius * .4f);
-            float size = aura.ProceduralStyle == 4 ? 3 : 2;
+            float size = aura.ProceduralStyle == 4 ? 3 : aura.ProceduralStyle == 5 ? 2.5f : 2;
             Color c = accent;
             if (aura.ProceduralStyle == 4) c.A *= MathF.Sin(rise * MathF.PI);
             canvas.DrawLine(p + new Vector2(0,-size), p + new Vector2(size,0), c, 1, true);
