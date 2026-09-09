@@ -192,9 +192,45 @@ public partial class WorldRenderer : Node2D
 	private const float WaterTileFactorX = TileSize * WaterWaveFactorX;
 	private const float WaterTileFactorY = TileSize * WaterWaveFactorY;
 
-	private readonly Vector2[] _waterQuad = new Vector2[4];
-	private readonly Vector2[] _waterQuadUvs = new Vector2[4];
-	private readonly Color[] _waterQuadColors = { Colors.White, Colors.White, Colors.White, Colors.White };
+	/// <summary>
+	/// One frame's worth of water quads that share a texture, kept as a flat
+	/// vertex soup so the whole surface goes out as a single triangle array.
+	/// One DrawPolygon per tile is what made water maps crawl: on map 27 the 901
+	/// visible tiles measured 34.6 ms/frame that way against 2.9 ms batched,
+	/// because the compatibility renderer cannot merge polygon commands and
+	/// rebuilds a vertex buffer for each one.
+	/// </summary>
+	private sealed class WaterBatch
+	{
+		public int FileNum;
+		public Texture2D? Texture;
+		public int Quads;
+		public int LiveQuads; // quads whose indices are non-degenerate right now
+		public Vector2[] Points = Array.Empty<Vector2>();
+		public Vector2[] Uvs = Array.Empty<Vector2>();
+		public Color[] Colors = Array.Empty<Color>();
+		public int[] Indices = Array.Empty<int>();
+
+		public void EnsureCapacity(int quads)
+		{
+			if (Points.Length >= quads * 4) return;
+			int capacity = Math.Max(quads, Math.Max(64, Points.Length / 4 * 2));
+			Array.Resize(ref Points, capacity * 4);
+			Array.Resize(ref Uvs, capacity * 4);
+			Array.Resize(ref Indices, capacity * 6);
+			int oldColors = Colors.Length;
+			Array.Resize(ref Colors, capacity * 4);
+			// The water quads carry no tint of their own; the light shader and the
+			// item modulate do the colouring, exactly as with the old per-tile call.
+			for (int i = oldColors; i < Colors.Length; i++) Colors[i] = Godot.Colors.White;
+		}
+	}
+
+	private readonly List<WaterBatch> _waterBatches = new();
+	private int _waterBatchesUsed;
+
+	/// <summary>Triangle arrays the last frame's water surface needed (one per texture).</summary>
+	public int WaterBatchCount => _waterBatchesUsed;
 
 	/// <summary>Wave clock, advanced once per frame (AO20: FrameTime Mod 62831 * 0.001).</summary>
 	private float _waterWaveTime;
@@ -951,8 +987,12 @@ void fragment() {
 		// PASS 1: Layer 1 — ONLY water tiles. Non-water tiles are drawn once
 		// by NonWaterMaskLayer (PASS 1b), avoiding the double-draw that killed FPS.
 		// ==========================================
-		if (_state.Config?.ShowWaterEffect ?? true)
+		bool waveEffect = _state.Config?.ShowWaterEffect ?? true;
+		if (waveEffect)
+		{
 			UpdateWaterWaveLookup();
+			BeginWaterBatches();
+		}
 		for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
 		{
 			for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
@@ -961,12 +1001,15 @@ void fragment() {
 				if (!IsWaterTile(x, y)) continue;
 
 				Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-				if (_state.Config?.ShowWaterEffect ?? true)
+				if (waveEffect)
 					DrawWaterTile(tile.Layer1, x, y, pos);
 				else
 					DrawTileGrh(tile.Layer1, pos);
 			}
 		}
+		// One triangle array per texture, after the whole surface is collected.
+		if (waveEffect)
+			FlushWaterBatches(this);
 
 
 
@@ -1274,14 +1317,15 @@ void fragment() {
 	/// </summary>
 	private void DrawWaterTile(int grhIndex, int mapX, int mapY, Vector2 pos)
 	{
-		DrawWaterTileTo(this, grhIndex, mapX, mapY, pos);
+		QueueWaterTile(grhIndex, mapX, mapY, pos);
 	}
 
 	/// <summary>
-	/// Draws one component of the water surface on the requested canvas. Some maps
-	/// store AO20's foam component in L2, so both components share this exact mesh.
+	/// Builds one component of the water surface. Some maps store AO20's foam
+	/// component in L2, so both components share this exact mesh. The quad joins
+	/// the batch for its texture; <see cref="FlushWaterBatches"/> emits them.
 	/// </summary>
-	private void DrawWaterTileTo(CanvasItem canvas, int grhIndex, int mapX, int mapY, Vector2 pos)
+	private void QueueWaterTile(int grhIndex, int mapX, int mapY, Vector2 pos)
 	{
 		if (_data == null || _animator == null) return;
 		if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
@@ -1339,17 +1383,75 @@ void fragment() {
 		Vector2 uvBr = new((float)(sx + width) / textureWidth, (float)(sy + height) / textureHeight);
 		Vector2 uvTr = new((float)(sx + width) / textureWidth, (float)sy / textureHeight);
 
-		// Same TL-BR diagonal as AO20, with one managed/native draw call per tile.
-		_waterQuad[0] = tl;
-		_waterQuad[1] = bl;
-		_waterQuad[2] = br;
-		_waterQuad[3] = tr;
-		_waterQuadUvs[0] = uvTl;
-		_waterQuadUvs[1] = uvBl;
-		_waterQuadUvs[2] = uvBr;
-		_waterQuadUvs[3] = uvTr;
+		// Same TL-BR diagonal as AO20, now appended to this texture's batch.
+		var batch = GetWaterBatch(grh.FileNum, texture);
+		batch.EnsureCapacity(batch.Quads + 1);
+		int v = batch.Quads * 4;
+		batch.Points[v + 0] = tl; batch.Uvs[v + 0] = uvTl;
+		batch.Points[v + 1] = bl; batch.Uvs[v + 1] = uvBl;
+		batch.Points[v + 2] = br; batch.Uvs[v + 2] = uvBr;
+		batch.Points[v + 3] = tr; batch.Uvs[v + 3] = uvTr;
+		int i6 = batch.Quads * 6;
+		batch.Indices[i6 + 0] = v + 0;
+		batch.Indices[i6 + 1] = v + 1;
+		batch.Indices[i6 + 2] = v + 2;
+		batch.Indices[i6 + 3] = v + 0;
+		batch.Indices[i6 + 4] = v + 2;
+		batch.Indices[i6 + 5] = v + 3;
+		batch.Quads++;
+	}
 
-		canvas.DrawPolygon(_waterQuad, _waterQuadColors, _waterQuadUvs, texture);
+	/// <summary>Starts a frame's water collection. Batches and their buffers persist.</summary>
+	private void BeginWaterBatches()
+	{
+		for (int i = 0; i < _waterBatches.Count; i++)
+			_waterBatches[i].Quads = 0;
+		_waterBatchesUsed = 0;
+	}
+
+	/// <summary>
+	/// The batch for a texture, reusing this frame's batches first. Water rarely
+	/// spans more than a couple of atlases, so the scan stays trivial.
+	/// </summary>
+	private WaterBatch GetWaterBatch(int fileNum, Texture2D texture)
+	{
+		for (int i = 0; i < _waterBatchesUsed; i++)
+			if (_waterBatches[i].FileNum == fileNum)
+				return _waterBatches[i];
+
+		if (_waterBatchesUsed == _waterBatches.Count)
+			_waterBatches.Add(new WaterBatch());
+
+		var batch = _waterBatches[_waterBatchesUsed++];
+		batch.FileNum = fileNum;
+		batch.Texture = texture;
+		batch.Quads = 0;
+		return batch;
+	}
+
+	/// <summary>
+	/// Emits the collected surface: one indexed triangle array per texture. The
+	/// index tail past the used quads is collapsed onto a single vertex so the
+	/// leftovers of a busier frame cannot draw a stray tile.
+	/// </summary>
+	private void FlushWaterBatches(CanvasItem canvas)
+	{
+		var item = canvas.GetCanvasItem();
+		for (int i = 0; i < _waterBatchesUsed; i++)
+		{
+			var batch = _waterBatches[i];
+			for (int q = batch.Quads; q < batch.LiveQuads; q++)
+			{
+				int i6 = q * 6;
+				batch.Indices[i6 + 0] = 0; batch.Indices[i6 + 1] = 0; batch.Indices[i6 + 2] = 0;
+				batch.Indices[i6 + 3] = 0; batch.Indices[i6 + 4] = 0; batch.Indices[i6 + 5] = 0;
+			}
+			batch.LiveQuads = batch.Quads;
+			if (batch.Quads == 0 || batch.Texture == null) continue;
+
+			RenderingServer.CanvasItemAddTriangleArray(item, batch.Indices, batch.Points,
+				batch.Colors, batch.Uvs, null, null, batch.Texture.GetRid());
+		}
 	}
 
 	/// <summary>
