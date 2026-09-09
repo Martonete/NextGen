@@ -15,6 +15,12 @@ public partial class Main : Control
 	private const string ServerHost = "127.0.0.1";
 	private const int ServerPort = 5028;
 
+	// Text sizes from ArgentumOnlineGodot (engine/autoload/global.gd defaults and
+	// screens/game_screen.tscn). Scaled by S() because our HUD grows with the
+	// resolution instead of stretching an 800x600 viewport as that client does.
+	private const int ConsoleFontSize = 12;   // Global.consoleFontSize
+	private const int ChatInputFontSize = 13; // ConsoleInput theme_override_font_sizes/font_size
+
 	// Saved references for runtime repositioning on resolution change
 	private SubViewportContainer? _viewportContainer;
 	private SubViewport? _gameViewport;
@@ -729,12 +735,17 @@ public partial class Main : Control
 		consoleStyle.ContentMarginTop = 1;
 		consoleStyle.ContentMarginBottom = 6;
 		console.AddThemeStyleboxOverride("normal", consoleStyle);
-		var consoleFont = new SystemFont();
-		consoleFont.FontNames = new string[] { "Segoe UI", "Tahoma", "Arial" };
-		consoleFont.FontWeight = 400;
-		consoleFont.MultichannelSignedDistanceField = true;
-		console.AddThemeFontOverride("normal_font", consoleFont);
-		console.AddThemeFontSizeOverride("normal_font_size", S(11));
+		// Console faces and size from the reference client: game_screen.tscn
+		// overrides the four RichTextLabel faces with Alegreya Sans, and
+		// hub_controller._apply_console_font_size drives all four at
+		// Global.consoleFontSize, which is 12.
+		console.AddThemeFontOverride("normal_font", GameFonts.AlegreyaRegular);
+		console.AddThemeFontOverride("bold_font", GameFonts.AlegreyaBold);
+		console.AddThemeFontOverride("italics_font", GameFonts.AlegreyaItalic);
+		console.AddThemeFontOverride("bold_italics_font", GameFonts.AlegreyaBoldItalic);
+		foreach (string sizeItem in new[]
+			{ "normal_font_size", "bold_font_size", "italics_font_size", "bold_italics_font_size" })
+			console.AddThemeFontSizeOverride(sizeItem, S(ConsoleFontSize));
 
 		var chatInput = GetNode<LineEdit>("GameUI/ChatInput");
 		_chatInputNode = chatInput;
@@ -757,12 +768,9 @@ public partial class Main : Control
 		chatInput.AddThemeStyleboxOverride("read_only", (StyleBoxFlat)chatNormal.Duplicate());
 		chatInput.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
 		chatInput.AddThemeColorOverride("caret_color", new Color(0.9f, 0.85f, 0.7f));
-		var chatFont = new SystemFont();
-		chatFont.FontNames = new string[] { "Segoe UI", "Tahoma", "Arial" };
-		chatFont.FontWeight = 400;
-		chatFont.MultichannelSignedDistanceField = true;
-		chatInput.AddThemeFontOverride("font", chatFont);
-		chatInput.AddThemeFontSizeOverride("font_size", S(12));
+		// ConsoleInput in the reference: Alegreya Sans Regular at 13.
+		chatInput.AddThemeFontOverride("font", GameFonts.AlegreyaRegular);
+		chatInput.AddThemeFontSizeOverride("font_size", S(ChatInputFontSize));
 
 		_chatSystem = new ChatSystem(_state);
 		_chatSystem.BindNodes(console, chatInput);
