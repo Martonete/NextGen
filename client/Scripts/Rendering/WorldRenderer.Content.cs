@@ -23,6 +23,22 @@ public partial class WorldRenderer
     }
 
     /// <summary>
+    /// Draw a character's procedural auras at their own point in the tile loop, so a tree
+    /// drawn later covers them the same way it covers the character. Legacy GRH sprite
+    /// auras are not drawn here — they stay on the additive layer (see CollectAuraDraws).
+    /// Mounted characters keep the exclusion the queued pass already had.
+    /// </summary>
+    private void DrawProceduralAuras(CanvasItem canvas, Character ch, Vector2 pos, bool front)
+    {
+        if (_data == null || !(_state!.Config?.ShowAuras ?? true)) return;
+        if (ch.Navigating || ch.Mounted) return;
+
+        float auraAlpha = ch.Invisible ? (ch.TransparenciaBody + 45f) / 255f : 1f;
+        CharRenderer.DrawProceduralAurasInline(canvas, ch, pos, _data,
+            _animator!.GlobalTimeMs, auraAlpha, front);
+    }
+
+    /// <summary>
     /// Draw PASS 3 content: ground objects, characters, layer 3, status overlay.
     /// Called by ContentLayer._Draw().
     /// </summary>
@@ -93,11 +109,13 @@ public partial class WorldRenderer
                         float charPx = tilePos.X + ch.MoveOffsetX;
                         float charPy = tilePos.Y + ch.MoveOffsetY;
 
+                        DrawProceduralAuras(canvas, ch, new Vector2(charPx, charPy), front: false);
                         DrawBindingEffect(canvas, ch, new Vector2(charPx + 16, charPy + 4), false);
                         CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
                                                    _data, _animator, _deltaMs, _state, this,
                                                    charTileX: x, charTileY: y, charIdx: cid);
                         DrawBindingEffect(canvas, ch, new Vector2(charPx + 16, charPy + 4), true);
+                        DrawProceduralAuras(canvas, ch, new Vector2(charPx, charPy), front: true);
                     }
                 }
 

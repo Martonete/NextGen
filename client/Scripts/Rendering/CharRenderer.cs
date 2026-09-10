@@ -566,9 +566,12 @@ public static partial class CharRenderer
 	}
 
 	/// <summary>
-	/// Collect aura draw data for a character and queue to WorldRenderer's aura layer.
-	/// The aura layer (z=1) draws ABOVE the content layer (z=0), so auras appear
-	/// on top of layer 3 tiles and characters, with additive blend.
+	/// Collect legacy GRH-sprite aura draws for a character and queue them to the
+	/// additive aura layer, which is added before ContentLayer — so they render after
+	/// L2 but behind characters AND behind trees, which is the look these have always had.
+	/// Their source art is a black-backed sprite that only keys out under additive blend,
+	/// so they must stay on that layer. Procedural auras take a different path:
+	/// DrawProceduralAurasInline, drawn with the character so trees occlude them too.
 	/// Position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - offset
 	/// Rotation: angle += 0.004 per frame if Giratoria, wraps at 180
 	/// </summary>
@@ -578,7 +581,6 @@ public static partial class CharRenderer
 	{
 		if (data.Auras == null || data.Auras.Length <= 1) return;
 		if (ch.Navigating) return; // No auras while on a boat
-		CollectGmTeleportAura(worldRenderer, ch, pos, data, alphaOverride);
 		if (ch.PreviewAuraIndex > 0)
 		{
 			float previewAngle = 0;
@@ -628,13 +630,59 @@ public static partial class CharRenderer
 	}
 
 	/// <summary>
+	/// Procedural auras (ProceduralStyle > 0), drawn inline in the per-tile character pass
+	/// — the same spot DrawBindingEffect uses — instead of being queued onto the additive
+	/// aura layers. The front half used to live on AuraFrontLayer, which is added AFTER
+	/// ContentLayer and therefore painted straight over trees. Drawing here means a tree
+	/// emitted later in the tile loop covers the aura exactly like it covers the character.
+	///
+	/// Safe to leave the additive layer because these are vector strokes with real alpha,
+	/// unlike the legacy GRH sprite auras (black-backed art that needs additive to key out;
+	/// those stay on AuraAdditiveLayer, which already draws behind trees anyway).
+	/// </summary>
+	public static void DrawProceduralAurasInline(
+		CanvasItem canvas, Character ch, Vector2 pos,
+		GameData data, double globalTimeMs, float alphaOverride, bool front)
+	{
+		if (data.Auras == null || data.Auras.Length <= 1) return;
+		if (ch.Navigating) return; // No auras while on a boat
+
+		DrawGmTeleportAura(canvas, ch, pos, data, alphaOverride, globalTimeMs, front);
+
+		if (ch.PreviewAuraIndex > 0)
+		{
+			DrawProceduralAura(canvas, pos, data, ch.PreviewAuraIndex, globalTimeMs, alphaOverride, front);
+			return;
+		}
+
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexA, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexW, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexE, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexR, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexC, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.NpcAura, globalTimeMs, alphaOverride, front);
+	}
+
+	private static void DrawProceduralAura(
+		CanvasItem canvas, Vector2 pos, GameData data, int auraIndex,
+		double globalTimeMs, float alphaOverride, bool front)
+	{
+		if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
+		var aura = data.Auras[auraIndex];
+		if (aura.ProceduralStyle <= 0) return; // legacy GRH sprite — additive layer handles it
+		RunicAuraRenderer.Draw(canvas, aura, pos + new Vector2(16, 27 - aura.Offset),
+			globalTimeMs, alphaOverride, front);
+	}
+
+	/// <summary>
 	/// One-shot halo the server asks for with CreateFX 207 after a GM warp.
 	/// It is not one of the equipped aura slots: it runs on its own timer, so the
 	/// alpha is computed here (fade in, hold, fade out) instead of coming from
-	/// TryBuildAuraDraw. Queued as a procedural aura (negative index).
+	/// TryBuildAuraDraw. Procedural only, so it draws inline like the rest of them.
 	/// </summary>
-	private static void CollectGmTeleportAura(
-		WorldRenderer worldRenderer, Character ch, Vector2 pos, GameData data, float alphaOverride)
+	private static void DrawGmTeleportAura(
+		CanvasItem canvas, Character ch, Vector2 pos, GameData data, float alphaOverride,
+		double globalTimeMs, bool front)
 	{
 		if (ch.GmTeleportAuraTime < 0f || GmTeleportAuraIndex >= data.Auras.Length) return;
 
@@ -647,8 +695,8 @@ public static partial class CharRenderer
 			* Math.Min(1f, (GmTeleportAuraDuration - age) / 0.35f);
 		if (alpha <= 0.01f) return;
 
-		worldRenderer.QueueAuraDraw(-GmTeleportAuraIndex, 0,
-			pos + new Vector2(16, 27 - aura.Offset), new Color(1, 1, 1, alpha), 0);
+		RunicAuraRenderer.Draw(canvas, aura, pos + new Vector2(16, 27 - aura.Offset),
+			globalTimeMs, alpha, front);
 	}
 
 	private static void CollectSingleAura(
@@ -657,6 +705,10 @@ public static partial class CharRenderer
 	{
 		if (!TryBuildAuraDraw(data, auraIndex, pos, headOffset, globalTimeMs, alphaOverride, out var draw))
 			return;
+
+		// Procedural auras (negative index) draw inline with the character instead —
+		// see DrawProceduralAurasInline. Only GRH sprite auras belong on the additive layer.
+		if (draw.GrhIndex < 0) return;
 
 		if (draw.Rotating)
 			angle = draw.Angle;
