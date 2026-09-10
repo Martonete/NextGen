@@ -32,6 +32,8 @@ internal static class ByteToFloat
 public static partial class CharRenderer
 {
 	private const int TileSize = 32;
+	private const int GmTeleportAuraIndex = 103;
+	private const float GmTeleportAuraDuration = 0.9f;
 	// Helmets use the same head anchor as Cabezas.ind. Older code subtracted 34px here,
 	// which made TS AO helmets float above the character.
 	private const int HELMET_Y_OFFSET = 1;
@@ -576,6 +578,7 @@ public static partial class CharRenderer
 	{
 		if (data.Auras == null || data.Auras.Length <= 1) return;
 		if (ch.Navigating) return; // No auras while on a boat
+		CollectGmTeleportAura(worldRenderer, ch, pos, data, alphaOverride);
 		if (ch.PreviewAuraIndex > 0)
 		{
 			float previewAngle = 0;
@@ -622,6 +625,30 @@ public static partial class CharRenderer
 		var position = new Vector2(tilePos.X, tilePos.Y - aura.Offset + verticalCenterFix);
 		var color = new Color(ByteToFloat.Table[aura.R], ByteToFloat.Table[aura.G], ByteToFloat.Table[aura.B], 1f);
 		worldRenderer.QueueAuraDraw(aura.GrhIndex, frame, position, color, drawAngle);
+	}
+
+	/// <summary>
+	/// One-shot halo the server asks for with CreateFX 207 after a GM warp.
+	/// It is not one of the equipped aura slots: it runs on its own timer, so the
+	/// alpha is computed here (fade in, hold, fade out) instead of coming from
+	/// TryBuildAuraDraw. Queued as a procedural aura (negative index).
+	/// </summary>
+	private static void CollectGmTeleportAura(
+		WorldRenderer worldRenderer, Character ch, Vector2 pos, GameData data, float alphaOverride)
+	{
+		if (ch.GmTeleportAuraTime < 0f || GmTeleportAuraIndex >= data.Auras.Length) return;
+
+		var aura = data.Auras[GmTeleportAuraIndex];
+		if (aura.ProceduralStyle <= 0) return;
+
+		float age = ch.GmTeleportAuraTime;
+		float alpha = alphaOverride
+			* Math.Min(1f, age / 0.12f)
+			* Math.Min(1f, (GmTeleportAuraDuration - age) / 0.35f);
+		if (alpha <= 0.01f) return;
+
+		worldRenderer.QueueAuraDraw(-GmTeleportAuraIndex, 0,
+			pos + new Vector2(16, 27 - aura.Offset), new Color(1, 1, 1, alpha), 0);
 	}
 
 	private static void CollectSingleAura(
@@ -774,6 +801,10 @@ public static partial class CharRenderer
 	/// </summary>
 	public static void UpdateCharacterFovOnly(Character ch, float deltaMs, GameState state)
 	{
+		// A one-shot warp halo far off-screen would otherwise sit frozen at age 0
+		// and replay the moment the character walks back into the viewport.
+		ch.GmTeleportAuraTime = -1f;
+
 		bool insideCore = IsInsideCoreViewport(ch.PosX, ch.PosY, state.UserPosX, state.UserPosY);
 		float fovTarget = insideCore ? 1f : 0f;
 		if (Math.Abs(ch.FovAlpha - fovTarget) > 0.001f)
@@ -790,6 +821,14 @@ public static partial class CharRenderer
 		// ── Combat hit flash decay ──
 		if (ch.HitFlashTimer > 0f)
 			ch.HitFlashTimer = Math.Max(0f, ch.HitFlashTimer - deltaMs / 1000f);
+
+		// ── GM teleport aura (FX 207): plays once and switches itself off ──
+		if (ch.GmTeleportAuraTime >= 0f)
+		{
+			ch.GmTeleportAuraTime += Math.Max(0f, deltaMs) / 1000f;
+			if (ch.GmTeleportAuraTime >= GmTeleportAuraDuration)
+				ch.GmTeleportAuraTime = -1f;
+		}
 
 		// ── FOV fade ──
 		int userX = state.UserPosX;

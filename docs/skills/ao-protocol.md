@@ -274,6 +274,11 @@ Local visual extension: with `fxIndex=8`, `fxLoops=-24` identifies Inmovilizar
 server emits the marker for spells with `inmoviliza=true`. Packet size stays
 unchanged, and the classic client path clamps negative loops to one play.
 
+Local visual extension: `fxIndex=207` is reserved for GM teleports. The client
+renders it as aura 103 (`Destello GM`), a short static procedural halo with
+particles around the arriving character, and it does not occupy classic FX
+slots.
+
 ---
 
 ## 6. How to Add a New Packet

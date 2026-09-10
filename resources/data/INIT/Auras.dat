@@ -1,5 +1,5 @@
 [INIT]
-NumAuras=102
+NumAuras=103
 
 [AURA1]
 GrhIndex=27573
@@ -1223,5 +1223,23 @@ Azul=30
 RojoF=255
 VerdeF=130
 AzulF=45
+Giratoria=0
+Offset=0
+
+[AURA103]
+Nombre=Destello GM
+GrhIndex=0
+ProceduralStyle=5
+Radius=24
+Height=34
+CycleMs=3000
+Details=8
+Opacity=72
+Rojo=80
+Verde=190
+Azul=255
+RojoF=235
+VerdeF=250
+AzulF=255
 Giratoria=0
 Offset=0

@@ -180,6 +180,11 @@ public partial class PacketHandler
             _state.WeaponImpacts.Add(strike);
             return;
         }
+        if (fxIndex == 207)
+        {
+            ch.GmTeleportAuraTime = 0f;
+            return;
+        }
 
         ch.SuppressNextSpellImpact = (fxIndex == 11 || fxIndex == 8)
             && _state.Config.ShowReactiveEffects && _state.Config.ShowParticles;
@@ -209,6 +214,7 @@ public partial class PacketHandler
             ch.ApocalypseTime = -1;
             ch.ElectricDischargeTime = -1;
             ch.BindingTime = -1;
+            ch.GmTeleportAuraTime = -1;
             for (int i = 0; i < 3; i++)
             {
                 ch.ActiveFxSlots[i] = 0;

@@ -17,9 +17,26 @@ namespace ArgentumNextgen;
 /// </summary>
 public partial class Main
 {
-	// VB6 movement constants
-	private const float EngineBaseSpeed = 0.0172f;   // VB6 timerTicksPerFrame = deltaMs * 0.0172
-	private const float ScrollPixelsPerFrame = 8f;   // VB6 ScrollPixelsPerFrameX/Y
+	// Walk pacing copied from ArgentumOnlineGodot (engine/character/character.gd):
+	//   const Speed = 120.0
+	//   position = position.move_toward(_targetPosition, Speed * delta)   # _physics_process
+	// A tile is 32 px at 120 px/s: 266.7 ms, and a fixed tick is what keeps that
+	// figure identical on every machine. Advancing by the elapsed frame time
+	// instead would drop the fraction of a tick left over at each tile, which
+	// costs a 20 FPS player nearly a fifth of their walking speed.
+	private const float WalkPixelsPerSecond = 120f;
+	// The reference ticks at 60 Hz because that is where Godot's _physics_process
+	// runs; the rate itself is invisible as long as the tile divides evenly. 240 Hz
+	// keeps the exact 266.7 ms (64 ticks of 0.5 px) and, unlike 60 Hz, still gives
+	// a fresh position to every frame of a 144 Hz monitor.
+	private const float MovementTickHz = 240f;
+	private const float PhysicsTickMs = 1000f / MovementTickHz;
+	private const float WalkPixelsPerTick = WalkPixelsPerSecond / MovementTickHz;
+	// Same 133 ms of catch-up as Godot's max_physics_steps_per_frame at 60 Hz:
+	// a stall is absorbed, never sprinted through.
+	private const int MaxTicksPerFrame = 32;
+
+	private float _movementTickAccumulatorMs;
 
 	private void HandleScreenChange(Screen newScreen)
 	{
@@ -585,28 +602,50 @@ public partial class Main
 	}
 
 	/// <summary>
-	/// VB6-accurate movement interpolation.
-	/// timerTicksPerFrame = deltaMs * EngineBaseSpeed (0.0172)
-	/// scrollPixels = ScrollPixelsPerFrame (8) * timerTicksPerFrame
-	/// Full tile (32px) ≈ 14 frames ≈ 233ms at 60fps.
-	///
-	/// Delta is capped to prevent lag spikes from completing scrolls in one frame,
-	/// which would let the client send moves faster than intended.
-	/// VB6 timer was fixed ~17ms; we allow up to 50ms (3 frames) for flexibility.
+	/// Drives movement on a fixed tick, run as many times per frame as the elapsed
+	/// time covers and carrying the remainder over. That is what keeps a step at
+	/// exactly 266.7 ms at 20 FPS and at 240 FPS alike: nobody walks faster for
+	/// having a better monitor, and nobody walks slower for having a worse one.
 	/// </summary>
 	private void UpdateMovement(float delta)
 	{
-		// Cap delta to prevent lag-spike acceleration (VB6 timer was ~17ms fixed)
-		float deltaMs = Math.Min(delta * 1000f, 50f);
-		float ticksPerFrame = deltaMs * EngineBaseSpeed;
-		float scrollPixels = ScrollPixelsPerFrame * ticksPerFrame;
-		bool selfAdvancedThisFrame = _state.UserMoving;
+		_movementTickAccumulatorMs += Math.Max(0f, delta * 1000f);
+		float budget = MaxTicksPerFrame * PhysicsTickMs;
+		if (_movementTickAccumulatorMs > budget)
+			_movementTickAccumulatorMs = budget;
+
+		foreach (var ch in _state.Characters.Values)
+			ch.WalkAdvancedThisFrame = false;
+		bool selfAdvancedThisFrame = false;
+
+		while (_movementTickAccumulatorMs >= PhysicsTickMs)
+		{
+			_movementTickAccumulatorMs -= PhysicsTickMs;
+			MovementTick(ref selfAdvancedThisFrame);
+		}
+
+		// The legs are not on the physics clock. In the reference client the walk
+		// cycle is an AnimatedSprite2D, which the engine advances with render time
+		// while _physics_process only picks walk or idle — so the stride stays
+		// smooth above 60 FPS even though the position quantises to the tick.
+		UpdateWalkAnimation(Math.Max(0f, delta * 1000f), selfAdvancedThisFrame);
+	}
+
+	/// <summary>
+	/// One movement tick: the reference client's move_toward step applied to the
+	/// camera, every walking character and any active translation.
+	/// </summary>
+	private void MovementTick(ref bool selfAdvancedThisFrame)
+	{
+		const float deltaMs = PhysicsTickMs;
+		const float scrollPixels = WalkPixelsPerTick;
+		if (_state.UserMoving) selfAdvancedThisFrame = true;
 
 		// Camera scroll (VB6 ShowNextFrame → OffsetCounterX/Y)
 		if (_state.UserMoving)
 		{
-			_state.ScreenOffsetX += ScrollPixelsPerFrame * _state.AddToUserPosX * ticksPerFrame;
-			_state.ScreenOffsetY += ScrollPixelsPerFrame * _state.AddToUserPosY * ticksPerFrame;
+			_state.ScreenOffsetX += scrollPixels * _state.AddToUserPosX;
+			_state.ScreenOffsetY += scrollPixels * _state.AddToUserPosY;
 
 			// Complete when offset reaches a full tile (32px)
 			bool doneX = _state.AddToUserPosX == 0 || Math.Abs(_state.ScreenOffsetX) >= 32f;
@@ -636,59 +675,11 @@ public partial class Main
 			}
 		}
 
-		// Character sprite interpolation + per-character walk animation
+		// Character sprite interpolation
 		foreach (var kvp in _state.Characters)
 		{
 			var ch = kvp.Value;
-
-			// Include the finishing frame: camera completion clears Moving above,
-			// but that is a tile boundary, not necessarily the end of the walk.
-			// Only a real stop resets the stride; turns keep the current phase.
-			bool advancedThisFrame = ch.Moving || (kvp.Key == _state.UserCharIndex && selfAdvancedThisFrame);
-			ch.UpdateWalkContinuity(advancedThisFrame, deltaMs);
-			if (advancedThisFrame && ch.Body > 0)
-			{
-				int heading = ch.Heading;
-				if (heading < 1 || heading > 4) heading = 3;
-
-				// Starting to walk: begin the cycle. Previously the counter ran
-				// forever, so a character set off on an arbitrary frame.
-				if (ch.WalkFrameHeading == 0)
-				{
-					ch.WalkFrame = 0f;
-					ch.WalkFrameHeading = heading;
-				}
-				else if (ch.WalkFrameHeading != heading)
-				{
-					// Turned while walking: carry the phase across.
-					ch.WalkFrameHeading = heading;
-				}
-
-				// The stride is tracked even for a body outside the catalogue: the
-				// bounds check used to skip this whole block, leaving WalkPoseActive
-				// false, so such a character flashed its idle pose while walking.
-				int walkGrh = ch.Body < _gameData.Bodies.Length
-					? _gameData.Bodies[ch.Body].Walk[heading]
-					: 0;
-				if (walkGrh > 0 && walkGrh < _gameData.Grhs.Length)
-				{
-					var grh = _gameData.Grhs[walkGrh];
-					if (grh.NumFrames > 1)
-					{
-						if (ch.WalkFrameCount > 1 && ch.WalkFrameCount != grh.NumFrames)
-							ch.WalkFrame = ch.WalkFrame / ch.WalkFrameCount * grh.NumFrames;
-						ch.WalkFrameCount = grh.NumFrames;
-						float speed = grh.Speed > 0 ? grh.Speed : 100f;
-						// Graficos.ind defines the complete cycle duration for each body.
-						// Keep that cadence intact: bodies such as the Nigromante have
-						// 16 frames (instead of the usual 4-6), so a global slowdown
-						// makes their walk look unnaturally sluggish.
-						ch.WalkFrame += deltaMs * grh.NumFrames / speed * ch.Speeding;
-						if (ch.WalkFrame >= grh.NumFrames)
-							ch.WalkFrame %= grh.NumFrames;
-					}
-				}
-			}
+			if (ch.Moving) ch.WalkAdvancedThisFrame = true;
 
 			// Time-based translation takes precedence over walking speed:
 			// AO2020 checks Moving first, then TranslationActive as an
@@ -750,6 +741,63 @@ public partial class Main
 				ch.ScrollDirectionX = 0;
 				ch.ScrollDirectionY = 0;
 			}
+		}
+	}
+
+	/// <summary>
+	/// Advances the walk cycle on render time for every character that moved
+	/// during this frame. A character that finished its step still counts, so the
+	/// stride carries across a tile boundary instead of blinking back to idle.
+	/// </summary>
+	private void UpdateWalkAnimation(float deltaMs, bool selfAdvancedThisFrame)
+	{
+		foreach (var kvp in _state.Characters)
+		{
+			var ch = kvp.Value;
+
+			bool advancedThisFrame = ch.WalkAdvancedThisFrame || ch.Moving
+				|| (kvp.Key == _state.UserCharIndex && (selfAdvancedThisFrame || _state.UserMoving));
+			ch.UpdateWalkContinuity(advancedThisFrame, deltaMs);
+			if (!advancedThisFrame || ch.Body <= 0) continue;
+
+			int heading = ch.Heading;
+			if (heading < 1 || heading > 4) heading = 3;
+
+			// Starting to walk: begin the cycle. Previously the counter ran
+			// forever, so a character set off on an arbitrary frame.
+			if (ch.WalkFrameHeading == 0)
+			{
+				ch.WalkFrame = 0f;
+				ch.WalkFrameHeading = heading;
+			}
+			else if (ch.WalkFrameHeading != heading)
+			{
+				// Turned while walking: carry the phase across.
+				ch.WalkFrameHeading = heading;
+			}
+
+			// The stride is tracked even for a body outside the catalogue: the
+			// bounds check used to skip this whole block, leaving WalkPoseActive
+			// false, so such a character flashed its idle pose while walking.
+			int walkGrh = ch.Body < _gameData.Bodies.Length
+				? _gameData.Bodies[ch.Body].Walk[heading]
+				: 0;
+			if (walkGrh <= 0 || walkGrh >= _gameData.Grhs.Length) continue;
+
+			var grh = _gameData.Grhs[walkGrh];
+			if (grh.NumFrames <= 1) continue;
+
+			if (ch.WalkFrameCount > 1 && ch.WalkFrameCount != grh.NumFrames)
+				ch.WalkFrame = ch.WalkFrame / ch.WalkFrameCount * grh.NumFrames;
+			ch.WalkFrameCount = grh.NumFrames;
+			float speed = grh.Speed > 0 ? grh.Speed : 100f;
+			// Graficos.ind defines the complete cycle duration for each body.
+			// Keep that cadence intact: bodies such as the Nigromante have
+			// 16 frames (instead of the usual 4-6), so a global slowdown
+			// makes their walk look unnaturally sluggish.
+			ch.WalkFrame += deltaMs * grh.NumFrames / speed * ch.Speeding;
+			if (ch.WalkFrame >= grh.NumFrames)
+				ch.WalkFrame %= grh.NumFrames;
 		}
 	}
 

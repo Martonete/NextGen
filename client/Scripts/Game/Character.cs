@@ -44,6 +44,13 @@ public class Character
 	private float _walkIdleMs;
 	public bool WalkPoseActive => Moving || WalkFrameHeading != 0;
 
+	/// <summary>
+	/// Set by the fixed movement tick when this character travelled during the
+	/// current frame. The walk cycle runs on render time, so it needs to know
+	/// what the tick did even on frames that ran no tick at all.
+	/// </summary>
+	public bool WalkAdvancedThisFrame;
+
 	public void UpdateWalkContinuity(bool advancedThisFrame, float deltaMs)
 	{
 		if (advancedThisFrame)
@@ -113,6 +120,7 @@ public class Character
 	public float ApocalypseTime = -1;           // FX 13 impact; negative means inactive.
 	public float ElectricDischargeTime = -1;    // FX 11 impact; independent of other spell effects.
 	public float BindingTime = -1;              // FX 8: short visual cast, not a gameplay timer.
+	public float GmTeleportAuraTime = -1;       // FX 207: short static aura after GM teleport.
 	public bool BindingIsParalysis;
 	public bool SuppressNextSpellImpact;
 
