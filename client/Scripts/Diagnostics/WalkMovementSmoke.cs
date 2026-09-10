@@ -9,7 +9,7 @@ namespace ArgentumNextgen.Diagnostics;
 /// <summary>Exercises the real movement update offline, without a connection or character save.</summary>
 public static class WalkMovementSmoke
 {
-    public static void Run(GameData data)
+    public static void Run(GameData data, params int[] bodies)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var main = new Main(); // Deliberately outside the tree: do not run login/UI setup.
@@ -19,7 +19,7 @@ public static class WalkMovementSmoke
             var state = (GameState)typeof(Main).GetField("_state", flags)!.GetValue(main)!;
             var update = (Action<float>)typeof(Main).GetMethod("UpdateMovement", flags)!
                 .CreateDelegate(typeof(Action<float>), main);
-            foreach (int body in new[] { 1, 512, 513 })
+            foreach (int body in bodies.Length == 0 ? new[] { 1, 512, 513 } : bodies)
             foreach (int fps in new[] { 20, 30, 60, 144, 240 })
             {
                 var ch = new Character { CharIndex = 1, Body = body, PosX = 50, PosY = 50 };

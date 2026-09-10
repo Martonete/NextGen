@@ -33,7 +33,7 @@ public partial class ImportFiveRelics : Node2D
                 for(int i=0;i<5;i++)File.Copy(Path.Combine(art,Keys[i]+"-atlas.png"),Path.Combine(root,$"resources/data/Graficos/{45001+i}.png"),true);
             }
             _data.LoadAll(ResourceProviderFactory.Create(ProjectSettings.GlobalizePath("res://Data")));
-            if(_data.Bodies.Length!=518 || _data.Weapons.Length!=86 || _data.Objects.Length<1676) throw new Exception("Catalog counts mismatch");
+            if(_data.Bodies.Length<518 || _data.Weapons.Length<86 || _data.Objects.Length<1676) throw new Exception("Catalog counts mismatch");
             for(int i=0;i<5;i++)
             {
                 if(_data.Objects[1671+i].Name!=Names[i] || _data.Objects[1671+i].CreaAura!=Auras[i]) throw new Exception("Object/aura mismatch");

@@ -1,5 +1,5 @@
 [INIT]
-NumAuras=103
+NumAuras=104
 
 [AURA1]
 GrhIndex=27573
@@ -1240,6 +1240,24 @@ Verde=190
 Azul=255
 RojoF=235
 VerdeF=250
+AzulF=255
+Giratoria=0
+Offset=0
+
+[AURA104]
+Nombre=Vigilia Guarnieri
+GrhIndex=0
+ProceduralStyle=6
+Radius=24
+Height=52
+CycleMs=5200
+Details=5
+Opacity=78
+Rojo=145
+Verde=65
+Azul=235
+RojoF=230
+VerdeF=192
 AzulF=255
 Giratoria=0
 Offset=0
