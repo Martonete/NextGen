@@ -760,6 +760,44 @@ pub(super) async fn handle_reload_balance(state: &mut GameState, conn_id: Connec
     }
 }
 
+/// Remove every live NPC on a map and tell nearby clients to drop them, so a
+/// reloaded map can respawn from its new tile data without stacking duplicates.
+fn despawn_map_npcs(state: &mut GameState, map: i32) -> usize {
+    let indices: Vec<usize> = state
+        .active_npc_indices
+        .iter()
+        .copied()
+        .filter(|&i| {
+            state
+                .npcs
+                .get(i)
+                .and_then(|s| s.as_ref())
+                .is_some_and(|n| n.map == map)
+        })
+        .collect();
+
+    let mut removed = 0;
+    for idx in indices {
+        let pos = state.npcs[idx].as_ref().map(|n| (n.x, n.y, n.char_index));
+        if let Some((nx, ny, ci)) = pos {
+            if let Some(tile) = state.world.grid_mut(map).tile_mut(nx, ny) {
+                if tile.npc_index == idx as i32 {
+                    tile.npc_index = 0;
+                }
+            }
+            let packet = binary_packets::write_character_remove(ci.0 as i16);
+            state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &packet);
+        }
+        if let Some(npc) = state.npcs[idx].take() {
+            state.world.free_char_index(npc.char_index);
+        }
+        state.active_npc_indices.remove(&idx);
+        state.pending_respawn_npc_indices.remove(&idx);
+        removed += 1;
+    }
+    removed
+}
+
 /// /LOADMAP N — reload a specific map from disk.
 pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: ConnectionId, map_str: &str) {
     let name = match state.users.get(&conn_id) {
@@ -789,12 +827,27 @@ pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: Connection
             // Also update the world grid for this map
             state.world.reload_map(map_num, &state.game_data.maps);
 
+            // Reloading only swapped the tile data. Startup also spawns NPCs and static
+            // objects (main.rs), and without that a map edited in the world editor comes
+            // back with terrain but no NPCs at all. Drop the ones belonging to the old
+            // version first so a second /LOADMAP doesn't stack duplicates.
+            let removed = despawn_map_npcs(state, map_num as i32);
+            let npcs = state.spawn_map_npcs_filtered(Some(map_num));
+            let zone_npcs = state.spawn_zone_npcs_filtered(Some(map_num));
+            let objects = state.load_map_objects_filtered(Some(map_num));
+
             state.send_console(
                 conn_id,
-                &format!("Mapa {} recargado.", map_num),
+                &format!(
+                    "Mapa {} recargado: {} NPCs ({} de zonas), {} objetos. {} NPCs previos removidos.",
+                    map_num, npcs, zone_npcs, objects, removed
+                ),
                 font_index::INFO,
             );
-            info!("[GM] {} reloaded map {}", name, map_num);
+            info!(
+                "[GM] {} reloaded map {} ({} npcs, {} zone npcs, {} objects, {} despawned)",
+                name, map_num, npcs, zone_npcs, objects, removed
+            );
         }
         Err(e) => {
             state.send_console(
