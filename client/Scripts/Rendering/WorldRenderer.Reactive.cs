@@ -18,6 +18,7 @@ public partial class WorldRenderer
     {
         UpdateApocalypseEffects(delta);
         UpdateElectricDischargeEffects(delta);
+        UpdateLightningEffects(delta);
         UpdateBindingEffects(delta);
         UpdateWeaponImpacts(delta);
         if (_state?.MapData != _reactiveMap)
@@ -214,6 +215,7 @@ public partial class WorldRenderer
     {
         DrawApocalypseEffects(canvas, true);
         DrawElectricDischargeEffects(canvas);
+        DrawLightningEffects(canvas);
         DrawWeaponImpacts(canvas);
         DrawMeditationAscension(canvas);
         if (_state == null || !_state.Config.ShowReactiveEffects || !_state.Config.ShowParticles) return;
@@ -222,7 +224,7 @@ public partial class WorldRenderer
             if (p.Kind != ReactiveEffectKind.Spark && p.Kind != ReactiveEffectKind.Arcane) continue;
             if (p.Kind == ReactiveEffectKind.Arcane && !_state.Config.ShowAuras) continue;
             if (p.Kind == ReactiveEffectKind.Spark && _state.Characters.TryGetValue(p.Owner, out var hitOwner)
-                && hitOwner.ElectricDischargeTime >= 0) continue;
+                && (hitOwner.ElectricDischargeTime >= 0 || hitOwner.LightningTime >= 0)) continue;
             if (!ReactiveOwnerVisible(p.Owner)) continue;
             Vector2 pos = ReactiveToScreen(p.Position);
             if (!ReactiveOnScreen(pos)) continue;

@@ -119,6 +119,7 @@ public class Character
 	public uint HitEffectSequence;              // Cosmetic event counter; independent of frame timers
 	public float ApocalypseTime = -1;           // FX 13 impact; negative means inactive.
 	public float ElectricDischargeTime = -1;    // FX 11 impact; independent of other spell effects.
+	public float LightningTime = -1;            // FX 102 impact (Relampago); independent of other spell effects.
 	public float BindingTime = -1;              // FX 8: short visual cast, not a gameplay timer.
 	public float GmTeleportAuraTime = -1;       // FX 207: short static aura after GM teleport.
 	public bool BindingIsParalysis;

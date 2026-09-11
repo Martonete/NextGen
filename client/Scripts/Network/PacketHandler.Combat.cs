@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -186,7 +186,7 @@ public partial class PacketHandler
             return;
         }
 
-        ch.SuppressNextSpellImpact = (fxIndex == 11 || fxIndex == 8)
+        ch.SuppressNextSpellImpact = (fxIndex == 11 || fxIndex == 8 || fxIndex == 102)
             && _state.Config.ShowReactiveEffects && _state.Config.ShowParticles;
         // Hechizos.dat: Apocalipsis (25) uniquely uses FX 13. The procedural
         // impact replaces the sprite when enabled, without occupying an FX slot.
@@ -201,6 +201,12 @@ public partial class PacketHandler
             ch.ElectricDischargeTime = 0;
             if (_state.Config.ShowReactiveEffects && _state.Config.ShowParticles) return;
         }
+        // Relampago (HECHIZO12) uniquely uses FX 102.
+        if (fxIndex == 102)
+        {
+            ch.LightningTime = 0;
+            if (_state.Config.ShowReactiveEffects && _state.Config.ShowParticles) return;
+        }
         // FX 8: loop marker -24 distinguishes Inmovilizar from Paralizar.
         // Legacy clients clamp negative loops to one, preserving their classic FX.
         if (fxIndex == 8)
@@ -213,6 +219,7 @@ public partial class PacketHandler
         {
             ch.ApocalypseTime = -1;
             ch.ElectricDischargeTime = -1;
+            ch.LightningTime = -1;
             ch.BindingTime = -1;
             ch.GmTeleportAuraTime = -1;
             for (int i = 0; i < 3; i++)
