@@ -86,6 +86,17 @@ public class EditorState
     public bool InsertedMapSelection; // True when selection was created by Insert Map
     public int SelX1, SelY1, SelX2, SelY2;
 
+    /// <summary>
+    /// When a selection exists, brushes (paint/erase/block/trigger/particle/path/stamp)
+    /// only touch tiles inside it. Off = the old behaviour, brushes ignore the rect.
+    /// </summary>
+    public bool UseSelectionAsMask = true;
+
+    /// <summary>True if a brush may write this tile given the current selection mask.</summary>
+    public bool InSelectionMask(int x, int y)
+        => !UseSelectionAsMask || !HasSelection
+           || (x >= SelX1 && x <= SelX2 && y >= SelY1 && y <= SelY2);
+
     // Clipboard (copied tiles)
     public MapTile[,]? Clipboard;
     public int ClipWidth, ClipHeight;

@@ -2300,7 +2300,7 @@ public partial class MapViewport : Control
             {
                 int tx = baseX + px;
                 int ty = baseY + py;
-                if (!Map.InBounds(tx, ty)) continue;
+                if (!Map.InBounds(tx, ty) || !State.InSelectionMask(tx, ty)) continue;
                 var before = Map.Tiles[tx, ty];
                 int grhIdx = texRef.GrhIndex + (py * tw) + px;
                 SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)grhIdx);
@@ -3147,6 +3147,7 @@ public partial class MapViewport : Control
     private void PlaceParticleAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y) || State == null) return;
+        if (!State.InSelectionMask(x, y)) return;
         int key = y * 10000 + x;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
@@ -3400,6 +3401,7 @@ public partial class MapViewport : Control
     private void EraseParticleAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y)) return;
+        if (State != null && !State.InSelectionMask(x, y)) return;
         if (Map.Tiles[x, y].ParticleGroup == 0) return;
         var before = Map.Tiles[x, y];
         Map.Tiles[x, y].ParticleGroup = 0;
@@ -3414,6 +3416,7 @@ public partial class MapViewport : Control
     private void PaintTriggerAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y) || State == null) return;
+        if (!State.InSelectionMask(x, y)) return;
         long key = (long)x << 32 | (uint)y;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
@@ -3429,6 +3432,7 @@ public partial class MapViewport : Control
     private void EraseTriggerAt(int x, int y)
     {
         if (Map == null || !Map.InBounds(x, y)) return;
+        if (State != null && !State.InSelectionMask(x, y)) return;
         long key = (long)x << 32 | (uint)y;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
@@ -3537,6 +3541,7 @@ public partial class MapViewport : Control
     private void PaintTileAt(int tx, int ty)
     {
         if (Map == null || State == null) return;
+        if (!State.InSelectionMask(tx, ty)) return; // selection doubles as a brush mask
         long key = (long)tx << 32 | (uint)ty;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
@@ -3593,7 +3598,7 @@ public partial class MapViewport : Control
                 if (grhIdx <= 0) continue; // gap in the captured rectangle
 
                 int x = tx + rx, y = ty + ry;
-                if (!Map.InBounds(x, y)) continue;
+                if (!Map.InBounds(x, y) || !State.InSelectionMask(x, y)) continue;
 
                 // The anchor tile is already in the stroke set from PaintTileAt.
                 long key = (long)x << 32 | (uint)y;
@@ -3628,7 +3633,7 @@ public partial class MapViewport : Control
             {
                 int x = ox + dx, y = oy + dy;
                 if (x == tx && y == ty) continue;
-                if (!Map.InBounds(x, y)) continue;
+                if (!Map.InBounds(x, y) || !State.InSelectionMask(x, y)) continue;
                 if (Map.Tiles[x, y].Blocked) continue;
 
                 var before = Map.Tiles[x, y];
@@ -3871,6 +3876,7 @@ public partial class MapViewport : Control
     private void SetPathLayer1(int x, int y, int grh)
     {
         if (Map == null || grh <= 0) return;
+        if (State != null && !State.InSelectionMask(x, y)) return;
         var before = Map.Tiles[x, y];
         if (before.Layer1 == grh) return;
 
@@ -3902,6 +3908,7 @@ public partial class MapViewport : Control
     private void BlockTileAt(int tx, int ty)
     {
         if (Map == null) return;
+        if (State != null && !State.InSelectionMask(tx, ty)) return;
         long key = (long)tx << 32 | (uint)ty;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
@@ -3933,6 +3940,7 @@ public partial class MapViewport : Control
     private void EraseTileAt(int tx, int ty)
     {
         if (Map == null || State == null) return;
+        if (!State.InSelectionMask(tx, ty)) return; // selection doubles as a brush mask
         long key = (long)tx << 32 | (uint)ty;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
@@ -4103,6 +4111,30 @@ public partial class MapViewport : Control
     /// <summary>
     /// Pan the camera so that tile (tx, ty) is centered in the viewport.
     /// </summary>
+    /// <summary>
+    /// Set an absolute zoom, keeping the point under the viewport centre in place —
+    /// the keyboard equivalent of wheel-zooming about the cursor. Ignored in the
+    /// game view, which is pinned at 1:1.
+    /// </summary>
+    public void SetZoom(float zoom)
+    {
+        if (State == null || State.GameView) return;
+        zoom = Math.Clamp(zoom, 0.02f, 4f);
+        float oldZoom = State.Zoom;
+        if (Math.Abs(zoom - oldZoom) < 0.0001f) return;
+        var centre = Size / 2f;
+        State.Zoom = zoom;
+        State.CameraOffset = centre - (centre - State.CameraOffset) * (zoom / oldZoom);
+        QueueRedraw();
+    }
+
+    /// <summary>One wheel notch of zoom (×/÷1.15), about the viewport centre.</summary>
+    public void ZoomStep(bool inward)
+    {
+        if (State == null) return;
+        SetZoom(inward ? State.Zoom * 1.15f : State.Zoom / 1.15f);
+    }
+
     public void CenterOnTile(int tx, int ty)
     {
         if (State == null) return;

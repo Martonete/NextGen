@@ -87,6 +87,9 @@ public partial class EditorMain : Control
     private HBoxContainer? _statusBar;
     private Label? _statusLabel;
     private Label? _coordLabel;
+    private Button? _zoomBtn;
+    private AcceptDialog? _goToDialog;
+    private SpinBox? _goToX, _goToY;
     private Label? _fpsLabel;
     private float _fpsAccumTime;
     private int _fpsAccumFrames;
@@ -288,16 +291,20 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Particulas", 9);
         _viewMenu.AddCheckItem("Luces", 10);
         _viewMenu.AddCheckItem("GRH de tiles (F6)", 15);
+        _viewMenu.AddCheckItem("Selección como máscara de pincel", 18);
         _viewMenu.AddSeparator();
         _viewMenu.AddItem("Modo Caminata (F5)", 11);
         _viewMenu.AddItem("Panel de Partículas", 12);
         _viewMenu.AddItem("Encuadrar Mapa Completo (Home)", 13);
+        _viewMenu.AddItem("Zoom 1:1 (0)", 16);
+        _viewMenu.AddItem("Ir a X,Y... (Ctrl+G)", 17);
         _viewMenu.AddItem("Abrir Mapa de Consulta...", 14);
         for (int id = 0; id <= 10; id++)
         {
             int idx = _viewMenu.GetItemIndex(id);
             if (idx >= 0) _viewMenu.SetItemChecked(idx, true);
         }
+        _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(18), _state.UseSelectionAsMask);
         _viewMenu.IdPressed += OnViewMenuId;
         _menuBar.AddChild(_viewMenu);
 
@@ -876,6 +883,19 @@ public partial class EditorMain : Control
         // Coordinates (monospace-style)
         _coordLabel = EditorTheme.MakeLabel("(0, 0)", EditorTheme.TEXT_PRIMARY, EditorTheme.FONT_SM);
         _statusBar.AddChild(_coordLabel);
+
+        // "Ir a X,Y" — CenterOnTile existed but had no way to reach it from the UI.
+        var goToBtn = new Button { Text = "Ir a…", TooltipText = "Ir a una coordenada (Ctrl+G)", Flat = true, FocusMode = FocusModeEnum.None };
+        goToBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        goToBtn.Pressed += OpenGoToDialog;
+        _statusBar.AddChild(goToBtn);
+
+        // Zoom % — click to snap back to 1:1 (the game's real scale). Wheel zoom steps
+        // multiplicatively, so without this you'd never land exactly on 100% again.
+        _zoomBtn = new Button { Text = "100%", TooltipText = "Zoom actual — click para volver a 1:1 (tecla 0)", Flat = true, FocusMode = FocusModeEnum.None };
+        _zoomBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        _zoomBtn.Pressed += () => _viewport?.SetZoom(1f);
+        _statusBar.AddChild(_zoomBtn);
 
         // FPS indicator — averaged over the last ~0.5 s so the number
         // doesn't flicker frame-to-frame. Green when ≥55 FPS, yellow
@@ -2053,10 +2073,13 @@ public partial class EditorMain : Control
             case 9: _state.ShowParticles = !_state.ShowParticles; break;
             case 10: _state.ShowLights = !_state.ShowLights; break;
             case 15: _state.ShowGrhOverlay = !_state.ShowGrhOverlay; break;
+            case 18: _state.UseSelectionAsMask = !_state.UseSelectionAsMask; _lastRightSidebarHasSel = !_state.HasSelection; break; // force label refresh
             case 11: OpenWalkMode(); return; // not a checkbox — early return
             case 12: if (_sidebarTabs != null && _particlePalette != null) _sidebarTabs.CurrentTab = _particlePalette.GetIndex(); return;
             case 13: _viewport?.ZoomToFit(); return; // not a checkbox — early return
             case 14: OpenAuxMapWindow(); return; // not a checkbox — early return
+            case 16: _viewport?.SetZoom(1f); return;
+            case 17: OpenGoToDialog(); return;
         }
 
         if (_viewMenu != null)
@@ -2069,6 +2092,7 @@ public partial class EditorMain : Control
                 7 => _state.ShowNpcs, 8 => _state.ShowObjects,
                 9 => _state.ShowParticles, 10 => _state.ShowLights,
                 15 => _state.ShowGrhOverlay,
+                18 => _state.UseSelectionAsMask,
                 _ => false
             };
             int idx = _viewMenu.GetItemIndex((int)id);
@@ -2752,6 +2776,48 @@ public partial class EditorMain : Control
         }
         _gameViewBtn?.SetPressedNoSignal(on);
         _viewport.QueueRedraw();
+    }
+
+    /// <summary>Ctrl+G: jump the camera to a tile and highlight it. Built lazily, reused.</summary>
+    private void OpenGoToDialog()
+    {
+        if (_map == null) { SetStatus("Carga un mapa primero."); return; }
+
+        if (_goToDialog == null)
+        {
+            _goToDialog = new AcceptDialog { Title = "Ir a coordenada", Size = new Vector2I(260, 130), OkButtonText = "Ir" };
+            var row = new HBoxContainer();
+            row.AddThemeConstantOverride("separation", 8);
+            row.AddChild(new Label { Text = "X:" });
+            _goToX = new SpinBox { MinValue = 1, MaxValue = 9999, Step = 1, CustomMinimumSize = new Vector2(80, 0) };
+            row.AddChild(_goToX);
+            row.AddChild(new Label { Text = "Y:" });
+            _goToY = new SpinBox { MinValue = 1, MaxValue = 9999, Step = 1, CustomMinimumSize = new Vector2(80, 0) };
+            row.AddChild(_goToY);
+            _goToDialog.AddChild(row);
+            _goToDialog.Confirmed += () =>
+            {
+                if (_map == null || _viewport == null) return;
+                int x = Math.Clamp((int)_goToX!.Value, 1, _map.Width);
+                int y = Math.Clamp((int)_goToY!.Value, 1, _map.Height);
+                _viewport.CenterOnTile(x, y);
+                _state.SelectedTileX = x;
+                _state.SelectedTileY = y;
+                SetStatus($"Centrado en ({x}, {y})");
+            };
+            AddChild(_goToDialog);
+        }
+
+        _goToX!.MaxValue = _map.Width;
+        _goToY!.MaxValue = _map.Height;
+        // Start from where the mouse is, or the view centre — usually you want "near here".
+        var start = _state.HoverValid ? new Vector2I(_state.HoverX, _state.HoverY)
+            : (_viewport?.GetViewCenterTile() ?? new Vector2I(1, 1));
+        _goToX.Value = Math.Clamp(start.X, 1, _map.Width);
+        _goToY.Value = Math.Clamp(start.Y, 1, _map.Height);
+        _goToDialog.PopupCentered();
+        _goToX.GetLineEdit().GrabFocus();
+        _goToX.GetLineEdit().SelectAll();
     }
 
     private void SetPreviewActive(bool active)
@@ -3463,6 +3529,8 @@ public partial class EditorMain : Control
                 case Key.C: _state.CopySelection(_map!); SetStatus($"Copiado {_state.ClipWidth}x{_state.ClipHeight} tiles"); break;
                 case Key.V: PasteClipboard(); break;
                 case Key.I: InsertMap(); break;
+                case Key.G: OpenGoToDialog(); break;
+                case Key.Key0: case Key.Kp0: _viewport?.SetZoom(1f); break;
             }
         }
         else
@@ -3497,6 +3565,9 @@ public partial class EditorMain : Control
                     break;
                 case Key.F7: SetGameView(!_state.GameView); break;
                 case Key.Home: _viewport?.ZoomToFit(); break;
+                case Key.Key0: case Key.Kp0: _viewport?.SetZoom(1f); break;
+                case Key.Plus: case Key.Equal: case Key.KpAdd: _viewport?.ZoomStep(inward: true); break;
+                case Key.Minus: case Key.KpSubtract: _viewport?.ZoomStep(inward: false); break;
                 case Key.F12: ExportMapAsPng(); break;
                 case Key.Key1: ActivateLayer(1); break;
                 case Key.Key2: ActivateLayer(2); break;
@@ -3540,9 +3611,8 @@ public partial class EditorMain : Control
     {
         _state.ActiveTool = tool;
         _state.Pick.Clear();
-        // Keep selection when in Select or Move (Move requires an active selection)
-        if (tool != EditorTool.Select && tool != EditorTool.Move)
-            _state.ClearSelection();
+        // The selection survives tool switches on purpose: it doubles as a paint mask
+        // (see EditorState.InSelectionMask). Escape is the explicit way to drop it.
         SyncToolBar();
         UpdateLightSection();
         UpdateTriggerPanel();
@@ -4161,6 +4231,11 @@ public partial class EditorMain : Control
 
         // Update status bar
         _coordLabel!.Text = _state.HoverValid ? $"({_state.HoverX,3}, {_state.HoverY,3})" : "";
+        if (_zoomBtn != null)
+        {
+            string zoomText = $"{(int)MathF.Round(_state.Zoom * 100f)}%";
+            if (_zoomBtn.Text != zoomText) _zoomBtn.Text = zoomText;
+        }
         int toolIdx = (int)_state.ActiveTool;
         _toolLabel!.Text = toolIdx < ToolNames.Length ? ToolNames[toolIdx] : "?";
         int layer = _state.ActiveLayer;
@@ -4268,7 +4343,8 @@ public partial class EditorMain : Control
                 int w = _state.SelX2 - _state.SelX1 + 1;
                 int h = _state.SelY2 - _state.SelY1 + 1;
                 string prefix = _state.InsertedMapSelection ? "MAPA INSERTADO\n" : "";
-                _rightSelectionLabel.Text = $"{prefix}({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles";
+                string mask = _state.UseSelectionAsMask ? "\nLos pinceles solo pintan adentro" : "";
+                _rightSelectionLabel.Text = $"{prefix}({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles{mask}";
                 UpdateSelectionThumbnail();
             }
 
