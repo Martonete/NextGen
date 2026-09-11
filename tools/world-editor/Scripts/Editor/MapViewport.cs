@@ -3553,6 +3553,9 @@ public partial class MapViewport : Control
             var before = Map.Tiles[tx, ty];
             SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)grhIdx);
             Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+            AutoBlockIfLayer3(tx, ty);
+            // Catalog textures used to skip this, so big trees stayed walkable.
+            ReserveGrhFootprint(tx, ty, grhIdx);
         }
         else if (State.HasSheetMosaic)
         {
@@ -3568,6 +3571,7 @@ public partial class MapViewport : Control
             var before = Map.Tiles[tx, ty];
             SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)State.EyedropGrh);
             Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+            AutoBlockIfLayer3(tx, ty);
 
             // A sheet piece larger than one tile is a single GRH drawn from its
             // anchor tile. Without reserving the tiles it visually covers, the
@@ -3607,8 +3611,26 @@ public partial class MapViewport : Control
                 var before = Map.Tiles[x, y];
                 SetLayerGrh(ref Map.Tiles[x, y], State.ActiveLayer, grhIdx);
                 Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+                AutoBlockIfLayer3(x, y);
             }
         }
+    }
+
+    /// <summary>
+    /// Trees and objects on layer 3 are things you can't walk through, so painting
+    /// one blocks its tile — used to be a separate pass the mapper had to remember.
+    /// Off by choice for decorative L3 (flowers, cracks) via State.AutoBlockLayer3.
+    /// Records into whatever undo batch the stroke opened, so Ctrl+Z takes both.
+    /// </summary>
+    private void AutoBlockIfLayer3(int x, int y)
+    {
+        if (Map == null || State == null) return;
+        if (State.ActiveLayer != 3 || !State.AutoBlockLayer3) return;
+        if (!Map.InBounds(x, y) || Map.Tiles[x, y].Blocked || Map.Tiles[x, y].Layer3 == 0) return;
+
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].Blocked = true;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
     }
 
     /// <summary>

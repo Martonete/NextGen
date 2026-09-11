@@ -92,6 +92,9 @@ public class EditorState
     /// </summary>
     public bool UseSelectionAsMask = true;
 
+    /// <summary>Painting on layer 3 blocks the tile (trees/objects are solid). Turn off for decor.</summary>
+    public bool AutoBlockLayer3 = true;
+
     /// <summary>True if a brush may write this tile given the current selection mask.</summary>
     public bool InSelectionMask(int x, int y)
         => !UseSelectionAsMask || !HasSelection

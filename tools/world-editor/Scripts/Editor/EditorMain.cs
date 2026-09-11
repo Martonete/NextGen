@@ -273,6 +273,8 @@ public partial class EditorMain : Control
         editMenu.AddItem("Pegar (Ctrl+V)", 3);
         editMenu.AddSeparator();
         editMenu.AddItem("Eliminar (Supr)", 5);
+        editMenu.AddSeparator();
+        editMenu.AddItem("Bloquear tiles con capa 3 (selección o todo el mapa)", 6);
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
@@ -292,6 +294,7 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Luces", 10);
         _viewMenu.AddCheckItem("GRH de tiles (F6)", 15);
         _viewMenu.AddCheckItem("Selección como máscara de pincel", 18);
+        _viewMenu.AddCheckItem("Bloquear al pintar en capa 3", 19);
         _viewMenu.AddSeparator();
         _viewMenu.AddItem("Modo Caminata (F5)", 11);
         _viewMenu.AddItem("Panel de Partículas", 12);
@@ -305,6 +308,7 @@ public partial class EditorMain : Control
             if (idx >= 0) _viewMenu.SetItemChecked(idx, true);
         }
         _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(18), _state.UseSelectionAsMask);
+        _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(19), _state.AutoBlockLayer3);
         _viewMenu.IdPressed += OnViewMenuId;
         _menuBar.AddChild(_viewMenu);
 
@@ -680,6 +684,11 @@ public partial class EditorMain : Control
         var unblockAllBtn = EditorTheme.MakeButton("Desbloquear todos los tiles");
         unblockAllBtn.Pressed += () => BlockSelection(false);
         _rightSelectionSection.AddChild(unblockAllBtn);
+
+        var blockL3Btn = EditorTheme.MakeButton("Bloquear tiles con capa 3");
+        blockL3Btn.TooltipText = "Bloquea cada tile del área que tenga algo en capa 3 (árboles, objetos). Sin selección: todo el mapa.";
+        blockL3Btn.Pressed += BlockLayer3Tiles;
+        _rightSelectionSection.AddChild(blockL3Btn);
 
         var markWaterBtn = EditorTheme.MakeButton("Marcar como agua animada");
         markWaterBtn.Pressed += () => SetSelectionAnimatedWater(true);
@@ -2054,6 +2063,7 @@ public partial class EditorMain : Control
             case 3: PasteClipboard(); break;
             case 4: CutSelection(); break;
             case 5: DeleteSelection(); break;
+            case 6: BlockLayer3Tiles(); break;
         }
     }
 
@@ -2074,6 +2084,7 @@ public partial class EditorMain : Control
             case 10: _state.ShowLights = !_state.ShowLights; break;
             case 15: _state.ShowGrhOverlay = !_state.ShowGrhOverlay; break;
             case 18: _state.UseSelectionAsMask = !_state.UseSelectionAsMask; _lastRightSidebarHasSel = !_state.HasSelection; break; // force label refresh
+            case 19: _state.AutoBlockLayer3 = !_state.AutoBlockLayer3; break;
             case 11: OpenWalkMode(); return; // not a checkbox — early return
             case 12: if (_sidebarTabs != null && _particlePalette != null) _sidebarTabs.CurrentTab = _particlePalette.GetIndex(); return;
             case 13: _viewport?.ZoomToFit(); return; // not a checkbox — early return
@@ -2093,6 +2104,7 @@ public partial class EditorMain : Control
                 9 => _state.ShowParticles, 10 => _state.ShowLights,
                 15 => _state.ShowGrhOverlay,
                 18 => _state.UseSelectionAsMask,
+                19 => _state.AutoBlockLayer3,
                 _ => false
             };
             int idx = _viewMenu.GetItemIndex((int)id);
@@ -3718,6 +3730,40 @@ public partial class EditorMain : Control
         _undo.EndBatch();
         _viewport?.MarkLightmapDirty();
         _viewport?.QueueRedraw();
+    }
+
+    /// <summary>
+    /// Block every tile carrying layer 3 — the retroactive version of AutoBlockLayer3
+    /// for maps painted before it existed. Selection if there is one, else the whole
+    /// map. One undo batch; skips tiles already blocked so the history stays small.
+    /// </summary>
+    private void BlockLayer3Tiles()
+    {
+        if (_map == null) return;
+        bool useSel = _state.HasSelection;
+        int x1 = useSel ? _state.SelX1 : 1, y1 = useSel ? _state.SelY1 : 1;
+        int x2 = useSel ? _state.SelX2 : _map.Width, y2 = useSel ? _state.SelY2 : _map.Height;
+
+        _undo.BeginBatch("Bloquear capa 3");
+        int changed = 0;
+        for (int y = y1; y <= y2; y++)
+            for (int x = x1; x <= x2; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                if (before.Layer3 == 0 || before.Blocked) continue;
+                _map.Tiles[x, y].Blocked = true;
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+                changed++;
+            }
+        _undo.EndBatch();
+
+        if (changed > 0) _state.MarkDirty();
+        _viewport?.MarkLightmapDirty();
+        _viewport?.QueueRedraw();
+        SetStatus(changed > 0
+            ? $"{changed} tiles con capa 3 bloqueados{(useSel ? " en la selección" : " en todo el mapa")}"
+            : "No había tiles con capa 3 sin bloquear");
     }
 
     private void SetSelectionAnimatedWater(bool animatedWater)
