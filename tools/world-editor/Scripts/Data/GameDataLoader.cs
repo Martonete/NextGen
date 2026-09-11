@@ -112,7 +112,7 @@ public static class GameDataLoader
     /// format stored GRHs as 16-bit, capping the catalogue at 65535; the wide
     /// one uses Int32 so terrain can be indexed cell by cell.
     /// </summary>
-    private static (int count, bool wide) ReadTableHeader(BinaryReader reader)
+    internal static (int count, bool wide) ReadTableHeader(BinaryReader reader)
     {
         reader.BaseStream.Seek(263, SeekOrigin.Begin); // MiCabecera
         if (reader.ReadInt32() == WideFormatMagic)
@@ -122,7 +122,7 @@ public static class GameDataLoader
         return (reader.ReadInt16(), false);
     }
 
-    private static int ReadGrh(BinaryReader reader, bool wide)
+    internal static int ReadGrh(BinaryReader reader, bool wide)
         => wide ? reader.ReadInt32() : reader.ReadUInt16();
 
     private static (int[] grhs, int[] headOfsX, int[] headOfsY) ParseBodyData(byte[] data)

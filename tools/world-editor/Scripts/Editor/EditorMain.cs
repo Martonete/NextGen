@@ -76,6 +76,10 @@ public partial class EditorMain : Control
     private WalkModePanel? _walkPanel;
     private BodyAnimData[]? _walkBodies;
     private HeadAnimData[]? _walkHeads;
+
+    // In-viewport character preview (toolbar toggle + J key) and game-view toggle (F7)
+    private Button? _previewBtn;
+    private Button? _gameViewBtn;
     private Dictionary<int, DoorInfo>? _doorData;
 
     // Status bar
@@ -426,6 +430,23 @@ public partial class EditorMain : Control
         }
         layerGroup.AddChild(layerGroupH);
         _toolBar.AddChild(layerGroup);
+
+        _toolBar.AddChild(EditorTheme.ToolBarGroupSeparator());
+
+        // -- Group 6: in-viewport player preview. --
+        // A ghost character you walk around with the arrow keys while every other
+        // tool keeps working — the way to judge how big an area really is in-game.
+        var previewGroup = EditorTheme.ToolBarGroup();
+        var previewGroupH = new HBoxContainer();
+        previewGroupH.AddThemeConstantOverride("separation", 6);
+        _previewBtn = EditorTheme.ToolToggleCompact("☺", "Personaje de prueba (J) — flechas para caminar, Shift+J para quitar", "Personaje");
+        _previewBtn.Pressed += () => SetPreviewActive(_previewBtn.ButtonPressed);
+        previewGroupH.AddChild(_previewBtn);
+        _gameViewBtn = EditorTheme.ToolToggleCompact("▶", "Vista de juego (F7) — sin overlays, zoom 1:1, como lo ve el jugador", "Vista juego");
+        _gameViewBtn.Pressed += () => SetGameView(_gameViewBtn.ButtonPressed);
+        previewGroupH.AddChild(_gameViewBtn);
+        previewGroup.AddChild(previewGroupH);
+        _toolBar.AddChild(previewGroup);
 
         AddChild(_toolBar);
         SyncToolBar();
@@ -1756,6 +1777,11 @@ public partial class EditorMain : Control
         string cabezasInd = Path.Combine(dataPath, "INIT", "Cabezas.ind");
         _headGrhs = GameDataLoader.LoadHeadGrhs(cabezasInd);
 
+        // Full four-heading tables: Modo Caminata and the in-viewport character preview
+        // both need them, so load once here instead of lazily on F5.
+        _walkBodies = WalkModeData.LoadBodies(personajesInd);
+        _walkHeads = WalkModeData.LoadHeads(cabezasInd);
+
         // Load object and NPC data from server dat/
         if (_serverDatDir.Length > 0 && Directory.Exists(_serverDatDir))
         {
@@ -1971,6 +1997,8 @@ public partial class EditorMain : Control
         _viewport.NpcHeadOfsY = _npcHeadOfsY;
         _viewport.HeadGrhs = _headGrhs;
         _viewport.NpcDb = _npcDb;
+        _viewport.Bodies = _walkBodies;
+        _viewport.Heads = _walkHeads;
         // Let the LightRenderer rebuild its polygon cache against the
         // (possibly freshly-loaded) GRH table + texture manager.
         _viewport.SyncLightRendererGraphics();
@@ -2659,6 +2687,89 @@ public partial class EditorMain : Control
         _propsWindow.Position = new Vector2I(x, 60);
     }
 
+    /// <summary>J: drop the preview character on the hovered tile (or toggle it if the
+    /// mouse is off the map). It is deliberately NOT cleared by Escape — Escape already
+    /// means "clear selection"; Shift+J removes the character.</summary>
+    private void PlaceOrTogglePreview()
+    {
+        if (_map == null) { SetStatus("Carga un mapa primero."); return; }
+        if (_walkBodies == null || _walkBodies.Length <= 1)
+        {
+            SetStatus("No se cargaron cuerpos (Personajes.ind) — no hay personaje para mostrar.");
+            return;
+        }
+        var p = _state.Preview;
+        if (_state.HoverValid)
+        {
+            p.PlaceAt(_state.HoverX, _state.HoverY);
+            SetPreviewActive(true);
+            SetStatus($"Personaje en ({p.X},{p.Y}) — flechas para caminar, Shift+J para quitar");
+        }
+        else
+        {
+            SetPreviewActive(!p.Active);
+        }
+    }
+
+    /// <summary>
+    /// F7: see the map the way a player would. Hides every editor overlay, locks the
+    /// camera at 1:1 on the preview character (placing one at the view centre if none
+    /// is out) and switches the viewport to its game-faithful draw path. Turning it
+    /// off restores the zoom and camera you had.
+    /// </summary>
+    private void SetGameView(bool on)
+    {
+        if (_map == null || _viewport == null)
+        {
+            _gameViewBtn?.SetPressedNoSignal(false);
+            if (_map == null) SetStatus("Carga un mapa primero.");
+            return;
+        }
+        if (on == _state.GameView) { _gameViewBtn?.SetPressedNoSignal(on); return; }
+
+        if (on)
+        {
+            if (!_state.Preview.Active)
+            {
+                var c = _viewport.GetViewCenterTile();
+                _state.Preview.PlaceAt(
+                    Math.Clamp(c.X, 1, _map.Width), Math.Clamp(c.Y, 1, _map.Height));
+                SetPreviewActive(true);
+            }
+            _state.GameViewSavedZoom = _state.Zoom;
+            _state.GameViewSavedCamera = _state.CameraOffset;
+            _state.GameView = true;
+            _viewport.OnGameViewChanged();
+            SetStatus("Vista de juego — flechas para caminar, F7 para volver al editor");
+        }
+        else
+        {
+            _state.GameView = false;
+            _state.Zoom = _state.GameViewSavedZoom;
+            _state.CameraOffset = _state.GameViewSavedCamera;
+            _viewport.OnGameViewChanged();
+            SetStatus("Vista de editor");
+        }
+        _gameViewBtn?.SetPressedNoSignal(on);
+        _viewport.QueueRedraw();
+    }
+
+    private void SetPreviewActive(bool active)
+    {
+        // The game view is locked onto the character; removing it means leaving the view.
+        if (!active && _state.GameView) SetGameView(false);
+
+        var p = _state.Preview;
+        if (active && _map != null && !_map.InBounds(p.X, p.Y))
+            p.PlaceAt(Math.Clamp(p.X, 1, _map.Width), Math.Clamp(p.Y, 1, _map.Height));
+        p.Active = active;
+        p.ClearKeys();
+        _viewport?.OnPreviewActiveChanged();
+        _previewBtn?.SetPressedNoSignal(active);
+        _viewport?.QueueRedraw();
+        if (!active) SetStatus("Personaje de prueba quitado");
+    }
+
     private void OpenWalkMode()
     {
         if (_map == null)
@@ -2667,13 +2778,7 @@ public partial class EditorMain : Control
             return;
         }
 
-        // Load body/head data once
-        if (_walkBodies == null && _dataPath.Length > 0)
-        {
-            string initDir = Path.Combine(_dataPath, "INIT");
-            _walkBodies = WalkModeData.LoadBodies(Path.Combine(initDir, "Personajes.ind"));
-            _walkHeads = WalkModeData.LoadHeads(Path.Combine(initDir, "Cabezas.ind"));
-        }
+        // Body/head tables are loaded up-front in LoadDataPath (shared with the viewport preview).
 
         // Create window if needed
         if (_walkWindow == null)
@@ -3386,6 +3491,11 @@ public partial class EditorMain : Control
                 case Key.F6: ToggleGrhOverlay(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.F5: OpenWalkMode(); break;
+                case Key.J:
+                    if (key.ShiftPressed) SetPreviewActive(false);
+                    else PlaceOrTogglePreview();
+                    break;
+                case Key.F7: SetGameView(!_state.GameView); break;
                 case Key.Home: _viewport?.ZoomToFit(); break;
                 case Key.F12: ExportMapAsPng(); break;
                 case Key.Key1: ActivateLayer(1); break;

@@ -164,6 +164,16 @@ public class EditorState
     // Pick tool state
     public readonly PickState Pick = new();
 
+    // Player character preview walked around the viewport (J to place, arrows to move).
+    public readonly CharPreview Preview = new();
+    public bool ShowPreviewFrame = true;
+
+    // "Vista de juego": no editor overlays, zoom 1:1 locked on the preview character,
+    // game-faithful ambient/roof/tree rendering. Saved zoom/camera come back on exit.
+    public bool GameView;
+    public float GameViewSavedZoom = 1f;
+    public Vector2 GameViewSavedCamera = Vector2.Zero;
+
     // View
     public float Zoom = 1.0f;
     public Vector2 CameraOffset = Vector2.Zero;

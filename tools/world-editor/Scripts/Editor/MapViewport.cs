@@ -55,6 +55,9 @@ public partial class MapViewport : Control
     public int[]? NpcHeadOfsY;
     public int[]? HeadGrhs;
     public NpcDatabase? NpcDb;
+    // Full four-heading body/head tables for the in-viewport character preview.
+    public BodyAnimData[]? Bodies;
+    public HeadAnimData[]? Heads;
 
     // Interaction state
     private bool _isPainting;
@@ -166,6 +169,230 @@ public partial class MapViewport : Control
     public void MarkLightmapDirty()
     {
         _cpuLightsDirty = true;
+        _roofRegions.Invalidate(); // tiles changed: roof connectivity may have too
+    }
+
+    /// <summary>
+    /// The arrow keys switch owner when the preview character comes and goes; drop any
+    /// held pan key so the camera doesn't keep sliding after the character takes over.
+    /// </summary>
+    public void OnPreviewActiveChanged()
+    {
+        _keyUp = _keyDown = _keyLeft = _keyRight = false;
+        QueueRedraw();
+    }
+
+    // "Vista de juego" support: roof regions are rebuilt whenever the map object
+    // changes or is edited (see MarkLightmapDirty), and the camera is re-locked on
+    // the character every frame while the view is on.
+    private readonly RoofRegions _roofRegions = new();
+    private MapData? _roofRegionsMap;
+
+    public void OnGameViewChanged()
+    {
+        _keyUp = _keyDown = _keyLeft = _keyRight = false;
+        if (State != null && State.GameView)
+        {
+            State.Zoom = 1f;
+            EnsureRoofRegions();
+            CenterOnPreview();
+        }
+        QueueRedraw();
+    }
+
+    private void EnsureRoofRegions()
+    {
+        if (Map == null) { _roofRegions.Invalidate(); _roofRegionsMap = null; return; }
+        if (_roofRegions.IsBuilt && ReferenceEquals(_roofRegionsMap, Map)) return;
+        _roofRegions.Build(Map);
+        _roofRegionsMap = Map;
+    }
+
+    /// <summary>Camera locked on the character's tile centre, following it mid-step like the client does.</summary>
+    private void CenterOnPreview()
+    {
+        if (State == null) return;
+        var p = State.Preview;
+        float cx = (p.X + 0.5f) * TileSize + p.MoveOffsetX;
+        float cy = (p.Y + 0.5f) * TileSize + p.MoveOffsetY;
+        State.CameraOffset = new Vector2(Size.X / 2f - cx * State.Zoom, Size.Y / 2f - cy * State.Zoom);
+    }
+
+    /// <summary>
+    /// For an animated GRH, the GRH of one specific frame; single-frame GRHs return
+    /// themselves. Lets the walk cycle pick its frame from pixels travelled instead of
+    /// the global animation clock DrawTileGrhOffset would use.
+    /// </summary>
+    private int ResolveFrameGrh(int grhIndex, int frame)
+    {
+        if (Grhs == null || grhIndex <= 0 || grhIndex >= Grhs.Length) return 0;
+        var grh = Grhs[grhIndex];
+        if (grh.NumFrames <= 1 || grh.Frames == null || grh.Frames.Length == 0) return grhIndex;
+        int idx = grh.Frames[Math.Clamp(frame, 0, grh.Frames.Length - 1)];
+        return idx > 0 && idx < Grhs.Length ? idx : grhIndex;
+    }
+
+    // ── Vista de juego ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Per-tile modulate for the game view. _cpuLights already bakes map/zone ambient
+    /// into its tile colour, so it's only multiplied by the day-part tint on top; when
+    /// lights are off, the raw map/zone ambient is used instead. Maps with advanced
+    /// lights get no extra tint at all — the LightRenderer shader overlay applies both
+    /// ambient and day/night itself and would otherwise be doubled.
+    /// </summary>
+    private Color GameViewTint(int x, int y, float scale = 1f)
+    {
+        if (State == null || Map == null) return Colors.White;
+
+        Color c;
+        if (State.ShowLights)
+        {
+            c = _cpuLights.GetTileLight(x, y);
+            if (_cpuLights.ShaderHandlesEverything)
+                return new Color(c.R * scale, c.G * scale, c.B * scale, 1f);
+        }
+        else
+        {
+            float r = Map.AmbientR, g = Map.AmbientG, b = Map.AmbientB;
+            var zone = ZoneData?.GetZoneAt(x, y);
+            if (zone != null && (zone.AmbientR > 0 || zone.AmbientG > 0 || zone.AmbientB > 0))
+            { r = zone.AmbientR; g = zone.AmbientG; b = zone.AmbientB; }
+            c = new Color(r / 255f, g / 255f, b / 255f);
+        }
+
+        Color tod = State.LightPreview switch
+        {
+            LightPreviewMode.Evening => new Color(0.75f, 0.62f, 0.55f),
+            LightPreviewMode.Night => new Color(0.4f, 0.4f, 0.5f),
+            _ => Colors.White,
+        };
+        return new Color(c.R * tod.R * scale, c.G * tod.G * scale, c.B * tod.B * scale, 1f);
+    }
+
+    /// <summary>One NPC (body + head, south-facing frame 0) at a tile — shared by both draw paths.</summary>
+    private void DrawNpcAt(int x, int y, Color? modulate)
+    {
+        if (Map == null || NpcBodies == null || NpcBodyGrhs == null) return;
+        int npcIdx = Map.Tiles[x, y].NpcIndex;
+        if (npcIdx <= 0 || npcIdx >= NpcBodies.Length) return;
+        int bodyIdx = NpcBodies[npcIdx];
+        if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) return;
+
+        int bodyGrh = NpcBodyGrhs[bodyIdx];
+        if (bodyGrh > 0)
+            DrawTileGrh(bodyGrh, x, y, center: true, modulate: modulate, animate: false);
+
+        if (NpcHeads == null || HeadGrhs == null || NpcHeadOfsX == null || NpcHeadOfsY == null
+            || npcIdx >= NpcHeads.Length) return;
+        int headIdx = NpcHeads[npcIdx];
+        if (headIdx <= 0 || headIdx >= HeadGrhs.Length) return;
+        int headGrh = HeadGrhs[headIdx];
+        if (headGrh <= 0) return;
+        int ofsX = bodyIdx < NpcHeadOfsX.Length ? NpcHeadOfsX[bodyIdx] : 0;
+        int ofsY = bodyIdx < NpcHeadOfsY.Length ? NpcHeadOfsY[bodyIdx] : 0;
+        DrawTileGrhOffset(headGrh, x, y, ofsX, ofsY, animate: false, modulate: modulate);
+    }
+
+    /// <summary>
+    /// Canopy fade for an L3 sprite, mirroring the client's GetTreeOpacity: only
+    /// multi-tile sprites in FRONT of the character (later in draw order) fade, and
+    /// only as the character walks under them.
+    /// </summary>
+    private float TreeOpacityAt(int grhIndex, int x, int y, float playerPx, float playerPy, CharPreview p)
+    {
+        if (Grhs == null || grhIndex <= 0 || grhIndex >= Grhs.Length) return 1f;
+        var grh = Grhs[grhIndex];
+        if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+        {
+            int idx = grh.Frames[0];
+            if (idx > 0 && idx < Grhs.Length) grh = Grhs[idx];
+        }
+        if (grh.TileHeight <= 1f && grh.TileWidth <= 1f) return 1f; // single-tile decor never fades
+
+        float left = x * TileSize - (grh.TileWidth != 1f && grh.TileWidth > 0 ? (int)(grh.TileWidth * 16) - 16 : 0);
+        float top = y * TileSize - (grh.TileHeight != 1f && grh.TileHeight > 0 ? (int)(grh.TileHeight * 32) - 32 : 0);
+        bool foreground = y > p.Y || (y == p.Y && x >= p.X);
+        return SceneryMath.TreeOpacity(left, top, grh.PixelWidth, grh.PixelHeight,
+            playerPx, playerPy, foreground, 0.47f);
+    }
+
+    /// <summary>
+    /// Game-faithful draw of everything above L2. Row-major interleave (object →
+    /// character → NPC → L3 per tile) is what makes a tree in front of the character
+    /// cover it, the way the client's DrawContent does; L4 fades per roof region.
+    /// </summary>
+    private void DrawGameView(int minX, int minY, int maxX, int maxY)
+    {
+        if (State == null || Map == null) return;
+        var p = State.Preview;
+        const float sceneryTint = 220f / 255f; // client draws objects/L3 at 220/255
+        float playerPx = p.X * TileSize + p.MoveOffsetX + 16f;
+        float playerPy = p.Y * TileSize + p.MoveOffsetY - 8f;
+
+        for (int y = minY; y <= maxY; y++)
+            for (int x = minX; x <= maxX; x++)
+            {
+                ref var tile = ref Map.Tiles[x, y];
+
+                if (State.ShowObjects && ObjGrhs != null
+                    && tile.ObjIndex > 0 && tile.ObjIndex < ObjGrhs.Length && ObjGrhs[tile.ObjIndex] > 0)
+                    DrawTileGrh(ObjGrhs[tile.ObjIndex], x, y, center: true, modulate: GameViewTint(x, y, sceneryTint));
+
+                if (p.Active && x == p.X && y == p.Y)
+                    DrawCharPreview(GameViewTint(x, y));
+
+                if (State.ShowNpcs)
+                    DrawNpcAt(x, y, GameViewTint(x, y));
+
+                if (State.ShowLayer3 && tile.Layer3 != 0)
+                {
+                    var c = GameViewTint(x, y, sceneryTint);
+                    c.A = p.Active ? TreeOpacityAt(tile.Layer3, x, y, playerPx, playerPy, p) : 1f;
+                    DrawTileGrh(tile.Layer3, x, y, center: true, modulate: c);
+                }
+            }
+
+        if (State.ShowLayer4)
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
+                    if (Map.Tiles[x, y].Layer4 != 0)
+                    {
+                        var c = GameViewTint(x, y);
+                        c.A = _roofRegions.GetOpacity(_roofRegions.RegionAt(x, y));
+                        DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true, modulate: c);
+                    }
+    }
+
+    /// <summary>
+    /// Draw the walked preview character: body facing its heading, walk frame from
+    /// pixels travelled (VB6 cycle), head at the body's head offset. Uses the same
+    /// center-anchored GRH draw as NPCs, so it lines up with the game exactly.
+    /// </summary>
+    private void DrawCharPreview(Color? light)
+    {
+        if (State == null || Bodies == null || Heads == null) return;
+        var p = State.Preview;
+        if (p.BodyIndex <= 0 || p.BodyIndex >= Bodies.Length) return;
+
+        var body = Bodies[p.BodyIndex];
+        int heading = Math.Clamp(p.Heading, 1, 4);
+        int animGrh = body.Walk[heading];
+        if (animGrh <= 0 || Grhs == null || animGrh >= Grhs.Length) return;
+
+        int frameCount = Math.Max(1, (int)Grhs[animGrh].NumFrames);
+        int bodyGrh = ResolveFrameGrh(animGrh, p.WalkFrame(frameCount));
+        int ofsX = (int)MathF.Round(p.MoveOffsetX);
+        int ofsY = (int)MathF.Round(p.MoveOffsetY);
+        DrawTileGrhOffset(bodyGrh, p.X, p.Y, ofsX, ofsY, animate: false, modulate: light);
+
+        if (p.HeadIndex > 0 && p.HeadIndex < Heads.Length)
+        {
+            int headGrh = ResolveFrameGrh(Heads[p.HeadIndex].Head[heading], 0);
+            if (headGrh > 0)
+                DrawTileGrhOffset(headGrh, p.X, p.Y, ofsX + body.HeadOffsetX, ofsY + body.HeadOffsetY,
+                    animate: false, modulate: light);
+        }
     }
 
     /// <summary>Additive blend material for particle overlays — matches game client exactly.</summary>
@@ -285,9 +512,14 @@ public partial class MapViewport : Control
             var worldSize = Size / z;
             // Character occluder at feet in DrawTileGrh coordinates:
             // center X = (tileX + 0.5) * 32, bottom Y = (tileY + 1) * 32.
-            Vector2? charPx = State.HoverValid && Map != null && Map.InBounds(State.HoverX, State.HoverY)
-                ? new Vector2((State.HoverX + 0.5f) * 32f, (State.HoverY + 1f) * 32f)
-                : (Vector2?)null;
+            // The walked preview character is the real player stand-in when it's out;
+            // otherwise the hovered tile keeps standing in for it.
+            var pv = State.Preview;
+            Vector2? charPx = pv.Active
+                ? new Vector2((pv.X + 0.5f) * 32f + pv.MoveOffsetX, (pv.Y + 1f) * 32f + pv.MoveOffsetY)
+                : State.HoverValid && Map != null && Map.InBounds(State.HoverX, State.HoverY)
+                    ? new Vector2((State.HoverX + 0.5f) * 32f, (State.HoverY + 1f) * 32f)
+                    : (Vector2?)null;
             _lightRenderer.SetAmbient(State.LightPreview switch
             {
                 LightPreviewMode.Day => Colors.White,
@@ -300,6 +532,25 @@ public partial class MapViewport : Control
         else
         {
             _lightRenderer.SetVisible(false);
+        }
+
+        // Player preview: while it's out, the arrow keys walk it instead of panning.
+        if (State != null && State.Preview.Active && Map != null)
+        {
+            State.Preview.Tick(Map, (float)delta);
+            if (State.Preview.IsMoving || State.Preview.AnyKey) QueueRedraw();
+
+            if (State.GameView)
+            {
+                // Camera stays glued to the character; only the roof region under them fades.
+                CenterOnPreview();
+                EnsureRoofRegions();
+                var p = State.Preview;
+                int active = Map.InBounds(p.X, p.Y) && RoofRegions.IsRoofTrigger(Map.Tiles[p.X, p.Y].Trigger)
+                    ? _roofRegions.RegionAt(p.X, p.Y) : 0;
+                _roofRegions.Update(active, (float)delta);
+                QueueRedraw();
+            }
         }
 
         // Keyboard panning (WASD / Arrow keys)
@@ -349,7 +600,8 @@ public partial class MapViewport : Control
             || (State != null && (State.HasSelection || _isSelecting))
             || _isPainting || _isPanning || _isDragging || _isMovingSelection
             || _isResizingSelection || _pendingDrag || _mosaicHandleDrag
-            || _keyUp || _keyDown || _keyLeft || _keyRight;
+            || _keyUp || _keyDown || _keyLeft || _keyRight
+            || (State != null && State.Preview.Active && State.Preview.IsMoving);
         if (needsContinuousRedraw)
         {
             if (!hasParticles)
@@ -407,7 +659,8 @@ public partial class MapViewport : Control
             for (int y = minY; y <= maxY; y += step)
                 for (int x = minX; x <= maxX; x += step)
                 {
-                    Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                    Color? tl = State.GameView ? GameViewTint(x, y)
+                        : State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
                     DrawTileGrh(Map.Tiles[x, y].Layer1, x, y, modulate: tl);
                 }
 
@@ -417,10 +670,20 @@ public partial class MapViewport : Control
                 for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer2 != 0)
                     {
-                        Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
+                        Color? tl = State.GameView ? GameViewTint(x, y)
+                            : State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
                         DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true, modulate: tl);
                     }
 
+        if (State.GameView)
+        {
+            // Everything above L2 goes through the game-faithful path: row-major
+            // interleave, canopy fade, per-region roof fade. The editor passes below
+            // are untouched so normal editing never changes its draw order.
+            DrawGameView(minX, minY, maxX, maxY);
+        }
+        else
+        {
         // Layer 3: Objects/trees
         if (State.ShowLayer3)
             for (int y = minY; y <= maxY; y += step)
@@ -449,31 +712,15 @@ public partial class MapViewport : Control
             for (int y = minY; y <= maxY; y++)
                 for (int x = minX; x <= maxX; x++)
                 {
-                    int npcIdx = Map.Tiles[x, y].NpcIndex;
-                    if (npcIdx <= 0 || npcIdx >= NpcBodies.Length) continue;
-                    int bodyIdx = NpcBodies[npcIdx];
-                    if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) continue;
-                    int bodyGrh = NpcBodyGrhs[bodyIdx];
-                    Color? tl = State.ShowLights ? _cpuLights.GetTileLight(x, y) : null;
-                    if (bodyGrh > 0)
-                        DrawTileGrh(bodyGrh, x, y, center: true, modulate: tl, animate: false);
-                    if (NpcHeads != null && HeadGrhs != null &&
-                        NpcHeadOfsX != null && NpcHeadOfsY != null &&
-                        npcIdx < NpcHeads.Length)
-                    {
-                        int headIdx = NpcHeads[npcIdx];
-                        if (headIdx > 0 && headIdx < HeadGrhs.Length)
-                        {
-                            int headGrh = HeadGrhs[headIdx];
-                            if (headGrh > 0)
-                            {
-                                int ofsX = bodyIdx < NpcHeadOfsX.Length ? NpcHeadOfsX[bodyIdx] : 0;
-                                int ofsY = bodyIdx < NpcHeadOfsY.Length ? NpcHeadOfsY[bodyIdx] : 0;
-                                DrawTileGrhOffset(headGrh, x, y, ofsX, ofsY, animate: false, modulate: tl);
-                            }
-                        }
-                    }
+                    if (Map.Tiles[x, y].NpcIndex <= 0) continue;
+                    DrawNpcAt(x, y, State.ShowLights ? _cpuLights.GetTileLight(x, y) : null);
                 }
+
+        // Player preview character — after NPCs, under the roof, same as a real player.
+        if (State.Preview.Active)
+            DrawCharPreview(State.ShowLights
+                ? _cpuLights.GetTileLight(State.Preview.X, State.Preview.Y)
+                : (Color?)null);
 
         // Layer 4: Roof
         if (State.ShowLayer4)
@@ -486,15 +733,19 @@ public partial class MapViewport : Control
                             : new Color(1, 1, 1, 0.7f);
                         DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true, modulate: roofMod);
                     }
+        } // !GameView
 
-        // Paint tool: ghost preview at cursor position (Sims-style)
-        DrawPaintPreview();
+        if (!State.GameView)
+        {
+            // Paint tool: ghost preview at cursor position (Sims-style)
+            DrawPaintPreview();
 
-        // NPC/Object tool: ghost preview at cursor
-        DrawEntityPreview();
+            // NPC/Object tool: ghost preview at cursor
+            DrawEntityPreview();
 
-        // Pending placement: floating preview with accept/cancel buttons
-        DrawPendingPlacement();
+            // Pending placement: floating preview with accept/cancel buttons
+            DrawPendingPlacement();
+        }
 
         // Overlays
         DrawOverlays(mapW, mapH);
@@ -511,7 +762,7 @@ public partial class MapViewport : Control
         }
 
         // Pick tool: highlight source + ghost at drag position
-        DrawPickOverlay();
+        if (!State.GameView) DrawPickOverlay();
 
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
@@ -1069,9 +1320,41 @@ public partial class MapViewport : Control
         }
     }
 
+    private void DrawPreviewViewFrame()
+    {
+        if (State == null) return;
+        var p = State.Preview;
+        float z = Math.Max(State.Zoom, 0.01f);
+        // Tile origin (x*32, y*32); the frame slides with the character mid-step.
+        float left = (p.X - CharPreview.HalfViewTilesX) * TileSize + p.MoveOffsetX;
+        float top = (p.Y - CharPreview.HalfViewTilesY) * TileSize + p.MoveOffsetY;
+        int tilesW = CharPreview.HalfViewTilesX * 2 + 1;
+        int tilesH = CharPreview.HalfViewTilesY * 2 + 1;
+        var rect = new Rect2(left, top, tilesW * TileSize, tilesH * TileSize);
+
+        var frameColor = new Color(0.35f, 0.9f, 1f, 0.9f);
+        DrawRect(rect, new Color(frameColor, 0.06f), filled: true);
+        DrawRect(rect, frameColor, filled: false, width: 2f / z);
+
+        // Label above the frame, kept at a constant screen size.
+        var font = ThemeDB.FallbackFont;
+        int fontSize = Math.Max(10, (int)(13f / z));
+        DrawString(font, new Vector2(left + 4f / z, top - 6f / z),
+            $"{tilesW}x{tilesH} tiles — vista del jugador (800x600)",
+            HorizontalAlignment.Left, -1, fontSize, frameColor);
+    }
+
     private void DrawOverlays(int mapW, int mapH)
     {
         if (State == null || Map == null) return;
+
+        // Game view: the player sees no editor chrome — only the view frame stays, and
+        // only because it's what the preview is for.
+        if (State.GameView)
+        {
+            if (State.Preview.Active && State.ShowPreviewFrame) DrawPreviewViewFrame();
+            return;
+        }
 
         // Viewport culling bounds (same as tile rendering)
         float invZoom = 1f / Math.Max(State.Zoom, 0.01f);
@@ -1094,6 +1377,12 @@ public partial class MapViewport : Control
             EditorTheme.OVERLAY_MAP_BOUNDS,
             filled: false,
             width: 2f / Math.Max(State.Zoom, 0.01f));
+
+        // ── Player view frame: the 17x13 tiles a player at the preview character's
+        // spot actually sees at 800x600. This is the whole point of the preview —
+        // judging how big an area reads in-game, not in the editor's zoomed-out view.
+        if (State.Preview.Active && State.ShowPreviewFrame)
+            DrawPreviewViewFrame();
 
         // ── Zone overlays (semi-transparent colored rectangles) ──
         if (ZoneData != null)
@@ -1849,12 +2138,27 @@ public partial class MapViewport : Control
                 && GetViewport().GuiGetFocusOwner() is not LineEdit and not TextEdit;
             if (!ek.Pressed || canPanPress)
             {
-                switch (ek.Keycode)
+                // With the preview character out, these keys walk it instead of panning.
+                if (State != null && State.Preview.Active)
                 {
-                    case Key.W: case Key.Up:    _keyUp    = ek.Pressed; break;
-                    case Key.S: case Key.Down:  _keyDown  = ek.Pressed; break;
-                    case Key.A: case Key.Left:  _keyLeft  = ek.Pressed; break;
-                    case Key.D: case Key.Right: _keyRight = ek.Pressed; break;
+                    var p = State.Preview;
+                    switch (ek.Keycode)
+                    {
+                        case Key.W: case Key.Up:    p.KeyUp    = ek.Pressed; break;
+                        case Key.S: case Key.Down:  p.KeyDown  = ek.Pressed; break;
+                        case Key.A: case Key.Left:  p.KeyLeft  = ek.Pressed; break;
+                        case Key.D: case Key.Right: p.KeyRight = ek.Pressed; break;
+                    }
+                }
+                else
+                {
+                    switch (ek.Keycode)
+                    {
+                        case Key.W: case Key.Up:    _keyUp    = ek.Pressed; break;
+                        case Key.S: case Key.Down:  _keyDown  = ek.Pressed; break;
+                        case Key.A: case Key.Left:  _keyLeft  = ek.Pressed; break;
+                        case Key.D: case Key.Right: _keyRight = ek.Pressed; break;
+                    }
                 }
             }
         }
@@ -2041,7 +2345,8 @@ public partial class MapViewport : Control
         // Zoom towards cursor
         if (mb.ButtonIndex == MouseButton.WheelUp || mb.ButtonIndex == MouseButton.WheelDown)
         {
-            float oldZoom = State!.Zoom;
+            if (State!.GameView) return; // the game view is pinned at 1:1
+            float oldZoom = State.Zoom;
             if (mb.ButtonIndex == MouseButton.WheelUp)
                 State.Zoom = Math.Min(State.Zoom * 1.15f, 4f);
             else
