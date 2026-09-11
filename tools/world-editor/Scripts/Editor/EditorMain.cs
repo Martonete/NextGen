@@ -288,6 +288,7 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Grilla (G)", 0);
         _viewMenu.AddCheckItem("Bloqueados", 1);
         _viewMenu.AddCheckItem("Salidas", 2);
+        _viewMenu.AddCheckItem("Triggers", 21);
         _viewMenu.AddSeparator();
         _viewMenu.AddCheckItem("Capa 1", 3);
         _viewMenu.AddCheckItem("Capa 2", 4);
@@ -314,6 +315,8 @@ public partial class EditorMain : Control
             int idx = _viewMenu.GetItemIndex(id);
             if (idx >= 0) _viewMenu.SetItemChecked(idx, true);
         }
+        int trigIdx = _viewMenu.GetItemIndex(21);
+        if (trigIdx >= 0) _viewMenu.SetItemChecked(trigIdx, _state.ShowTriggers);
         _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(18), _state.UseSelectionAsMask);
         _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(19), _state.AutoBlockLayer3);
         _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(20), _state.ShowServerMargin);
@@ -2084,6 +2087,7 @@ public partial class EditorMain : Control
             case 0: _state.ShowGrid = !_state.ShowGrid; break;
             case 1: _state.ShowBlocked = !_state.ShowBlocked; break;
             case 2: _state.ShowExits = !_state.ShowExits; break;
+            case 21: _state.ShowTriggers = !_state.ShowTriggers; break;
             case 3: _state.ShowLayer1 = !_state.ShowLayer1; break;
             case 4: _state.ShowLayer2 = !_state.ShowLayer2; break;
             case 5: _state.ShowLayer3 = !_state.ShowLayer3; break;
@@ -2109,6 +2113,7 @@ public partial class EditorMain : Control
             bool val = id switch
             {
                 0 => _state.ShowGrid, 1 => _state.ShowBlocked, 2 => _state.ShowExits,
+                21 => _state.ShowTriggers,
                 3 => _state.ShowLayer1, 4 => _state.ShowLayer2,
                 5 => _state.ShowLayer3, 6 => _state.ShowLayer4,
                 7 => _state.ShowNpcs, 8 => _state.ShowObjects,

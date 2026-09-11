@@ -120,6 +120,7 @@ public class EditorState
     public bool ShowGrid = true;
     public bool ShowBlocked = true;
     public bool ShowExits = true;
+    public bool ShowTriggers = true;
     public bool ShowLayer1 = true;
     public bool ShowLayer2 = true;
     public bool ShowLayer3 = true;

@@ -1741,26 +1741,29 @@ public partial class MapViewport : Control
             }
 
         // ── Triggers (subtle fill + pill label) ──
-        for (int y = ovMinY; y <= ovMaxY; y++)
-            for (int x = ovMinX; x <= ovMaxX; x++)
-                if (Map.Tiles[x, y].Trigger > 0)
-                {
-                    short trig = Map.Tiles[x, y].Trigger;
-                    var (trigColor, trigName) = trig switch
+        if (State.ShowTriggers && !skipDetailedOverlays)
+        {
+            for (int y = ovMinY; y <= ovMaxY; y++)
+                for (int x = ovMinX; x <= ovMaxX; x++)
+                    if (Map.Tiles[x, y].Trigger > 0)
                     {
-                        1 => (new Color(0.5f, 0.5f, 0.5f, 0.25f), "Indoor"),
-                        3 => (new Color(0.8f, 0.2f, 0.2f, 0.25f), "InvPos"),
-                        4 => (new Color(0, 0.7f, 1, 0.25f), "Safe"),
-                        5 => (new Color(0.8f, 0.8f, 0, 0.25f), "AntiBl"),
-                        6 => (new Color(1, 0, 0, 0.2f), "Combat"),
-                        _ => (new Color(1, 1, 0, 0.2f), $"T{trig}"),
-                    };
-                    DrawRect(new Rect2(x * TileSize + 1, y * TileSize + 1,
-                        TileSize - 2, TileSize - 2), trigColor);
-                    DrawOverlayPill(x * TileSize + 1, y * TileSize + 1,
-                        trigName, trigColor with { A = 0.7f },
-                        new Color(trigColor.R, trigColor.G, trigColor.B, 0.9f), 6);
-                }
+                        short trig = Map.Tiles[x, y].Trigger;
+                        var (trigColor, trigName) = trig switch
+                        {
+                            1 => (new Color(0.5f, 0.5f, 0.5f, 0.25f), "Indoor"),
+                            3 => (new Color(0.8f, 0.2f, 0.2f, 0.25f), "InvPos"),
+                            4 => (new Color(0, 0.7f, 1, 0.25f), "Safe"),
+                            5 => (new Color(0.8f, 0.8f, 0, 0.25f), "AntiBl"),
+                            6 => (new Color(1, 0, 0, 0.2f), "Combat"),
+                            _ => (new Color(1, 1, 0, 0.2f), $"T{trig}"),
+                        };
+                        DrawRect(new Rect2(x * TileSize + 1, y * TileSize + 1,
+                            TileSize - 2, TileSize - 2), trigColor);
+                        DrawOverlayPill(x * TileSize + 1, y * TileSize + 1,
+                            trigName, trigColor with { A = 0.7f },
+                            new Color(trigColor.R, trigColor.G, trigColor.B, 0.9f), 6);
+                    }
+        }
 
         // ── Selected tile highlight (Hand tool click) ──
         DrawGrhOverlay(ovMinX, ovMinY, ovMaxX, ovMaxY, skipDetailedOverlays);
