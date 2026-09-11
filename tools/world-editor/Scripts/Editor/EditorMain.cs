@@ -90,6 +90,11 @@ public partial class EditorMain : Control
     private Button? _zoomBtn;
     private AcceptDialog? _goToDialog;
     private SpinBox? _goToX, _goToY;
+
+    // "Revisar mapa" (F8) results window
+    private Window? _lintWindow;
+    private Label? _lintSummary;
+    private ItemList? _lintList;
     private Label? _fpsLabel;
     private float _fpsAccumTime;
     private int _fpsAccumFrames;
@@ -275,6 +280,7 @@ public partial class EditorMain : Control
         editMenu.AddItem("Eliminar (Supr)", 5);
         editMenu.AddSeparator();
         editMenu.AddItem("Bloquear tiles con capa 3 (selección o todo el mapa)", 6);
+        editMenu.AddItem("Revisar mapa (F8)", 7);
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
@@ -295,6 +301,7 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("GRH de tiles (F6)", 15);
         _viewMenu.AddCheckItem("Selección como máscara de pincel", 18);
         _viewMenu.AddCheckItem("Bloquear al pintar en capa 3", 19);
+        _viewMenu.AddCheckItem("Borde del server (zona no caminable)", 20);
         _viewMenu.AddSeparator();
         _viewMenu.AddItem("Modo Caminata (F5)", 11);
         _viewMenu.AddItem("Panel de Partículas", 12);
@@ -309,6 +316,7 @@ public partial class EditorMain : Control
         }
         _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(18), _state.UseSelectionAsMask);
         _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(19), _state.AutoBlockLayer3);
+        _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(20), _state.ShowServerMargin);
         _viewMenu.IdPressed += OnViewMenuId;
         _menuBar.AddChild(_viewMenu);
 
@@ -456,6 +464,7 @@ public partial class EditorMain : Control
         _gameViewBtn = EditorTheme.ToolToggleCompact("▶", "Vista de juego (F7) — sin overlays, zoom 1:1, como lo ve el jugador", "Vista juego");
         _gameViewBtn.Pressed += () => SetGameView(_gameViewBtn.ButtonPressed);
         previewGroupH.AddChild(_gameViewBtn);
+        previewGroupH.AddChild(EditorTheme.ActionButtonCompact("✔", "Revisar mapa (F8) — NPCs sobre bloqueado, salidas rotas, huecos, techos sin trigger", RunMapLint, "Revisar"));
         previewGroup.AddChild(previewGroupH);
         _toolBar.AddChild(previewGroup);
 
@@ -2064,6 +2073,7 @@ public partial class EditorMain : Control
             case 4: CutSelection(); break;
             case 5: DeleteSelection(); break;
             case 6: BlockLayer3Tiles(); break;
+            case 7: RunMapLint(); break;
         }
     }
 
@@ -2085,6 +2095,7 @@ public partial class EditorMain : Control
             case 15: _state.ShowGrhOverlay = !_state.ShowGrhOverlay; break;
             case 18: _state.UseSelectionAsMask = !_state.UseSelectionAsMask; _lastRightSidebarHasSel = !_state.HasSelection; break; // force label refresh
             case 19: _state.AutoBlockLayer3 = !_state.AutoBlockLayer3; break;
+            case 20: _state.ShowServerMargin = !_state.ShowServerMargin; break;
             case 11: OpenWalkMode(); return; // not a checkbox — early return
             case 12: if (_sidebarTabs != null && _particlePalette != null) _sidebarTabs.CurrentTab = _particlePalette.GetIndex(); return;
             case 13: _viewport?.ZoomToFit(); return; // not a checkbox — early return
@@ -2105,6 +2116,7 @@ public partial class EditorMain : Control
                 15 => _state.ShowGrhOverlay,
                 18 => _state.UseSelectionAsMask,
                 19 => _state.AutoBlockLayer3,
+                20 => _state.ShowServerMargin,
                 _ => false
             };
             int idx = _viewMenu.GetItemIndex((int)id);
@@ -2788,6 +2800,103 @@ public partial class EditorMain : Control
         }
         _gameViewBtn?.SetPressedNoSignal(on);
         _viewport.QueueRedraw();
+    }
+
+    /// <summary>
+    /// F8: run MapLint and show the findings in a window. Clicking a row centres the
+    /// camera on the tile; the flagged tiles stay marked on the map while the window is
+    /// open. Everything the lint needs is loaded read-only, so it never dirties the map.
+    /// </summary>
+    private void RunMapLint()
+    {
+        if (_map == null) { SetStatus("Carga un mapa primero."); return; }
+
+        if (_lintWindow == null)
+        {
+            _lintWindow = new Window
+            {
+                Title = "Revisar mapa",
+                Size = new Vector2I(560, 380),
+                Visible = false,
+                Exclusive = false,
+                AlwaysOnTop = true,
+            };
+            _lintWindow.CloseRequested += () =>
+            {
+                _lintWindow.Visible = false;
+                _state.ShowLintMarkers = false;
+                _viewport?.QueueRedraw();
+            };
+
+            var root = new VBoxContainer();
+            root.AddThemeConstantOverride("separation", 6);
+            root.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+            root.OffsetLeft = 8; root.OffsetTop = 8; root.OffsetRight = -8; root.OffsetBottom = -8;
+
+            _lintSummary = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+            _lintSummary.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            root.AddChild(_lintSummary);
+
+            _lintList = new ItemList { SizeFlagsVertical = SizeFlags.ExpandFill, SelectMode = ItemList.SelectModeEnum.Single };
+            _lintList.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+            _lintList.ItemSelected += index =>
+            {
+                if (index < 0 || index >= _state.LintIssues.Count || _viewport == null) return;
+                var issue = _state.LintIssues[(int)index];
+                _viewport.CenterOnTile(issue.X, issue.Y);
+                _state.SelectedTileX = issue.X;
+                _state.SelectedTileY = issue.Y;
+                _viewport.QueueRedraw();
+            };
+            root.AddChild(_lintList);
+
+            var buttons = new HBoxContainer();
+            buttons.AddThemeConstantOverride("separation", 8);
+            var again = EditorTheme.MakeButton("Revisar de nuevo");
+            again.Pressed += RunMapLint;
+            buttons.AddChild(again);
+            var close = EditorTheme.MakeButton("Cerrar");
+            close.Pressed += () => _lintWindow!.EmitSignal(Window.SignalName.CloseRequested);
+            buttons.AddChild(close);
+            root.AddChild(buttons);
+
+            _lintWindow.AddChild(root);
+            AddChild(_lintWindow);
+        }
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _state.LintIssues = MapLint.Run(_map, _state.MapDir, _state.AvailableMaps);
+        sw.Stop();
+        _state.ShowLintMarkers = true;
+
+        _lintList!.Clear();
+        var counts = new Dictionary<LintKind, int>();
+        foreach (var issue in _state.LintIssues)
+        {
+            counts[issue.Kind] = counts.GetValueOrDefault(issue.Kind) + 1;
+            _lintList.AddItem($"({issue.X,3},{issue.Y,3})  {MapLint.Label(issue.Kind)} — {issue.Message}");
+        }
+
+        if (_state.LintIssues.Count == 0)
+        {
+            _lintSummary!.Text = $"Sin problemas en el mapa {_map.MapNumber}. ({sw.ElapsedMilliseconds} ms)";
+        }
+        else
+        {
+            var parts = new List<string>();
+            foreach (var (kind, n) in counts) parts.Add($"{n} × {MapLint.Label(kind)}");
+            _lintSummary!.Text = $"{_state.LintIssues.Count} problema(s) en el mapa {_map.MapNumber} — click en una fila para ir al tile.\n"
+                + string.Join("  ·  ", parts) + $"   ({sw.ElapsedMilliseconds} ms)";
+        }
+
+        if (!_lintWindow.Visible)
+        {
+            _lintWindow.Position = new Vector2I(
+                (int)(GetViewport().GetVisibleRect().Size.X - _lintWindow.Size.X - 40), 120);
+            _lintWindow.Visible = true;
+        }
+        _viewport?.QueueRedraw();
+        SetStatus(_state.LintIssues.Count == 0 ? "Revisar mapa: sin problemas" : $"Revisar mapa: {_state.LintIssues.Count} problema(s)");
     }
 
     /// <summary>Ctrl+G: jump the camera to a tile and highlight it. Built lazily, reused.</summary>
@@ -3576,6 +3685,7 @@ public partial class EditorMain : Control
                     else PlaceOrTogglePreview();
                     break;
                 case Key.F7: SetGameView(!_state.GameView); break;
+                case Key.F8: RunMapLint(); break;
                 case Key.Home: _viewport?.ZoomToFit(); break;
                 case Key.Key0: case Key.Kp0: _viewport?.SetZoom(1f); break;
                 case Key.Plus: case Key.Equal: case Key.KpAdd: _viewport?.ZoomStep(inward: true); break;

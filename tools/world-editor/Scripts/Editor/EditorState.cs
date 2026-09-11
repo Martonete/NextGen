@@ -182,6 +182,14 @@ public class EditorState
     public readonly CharPreview Preview = new();
     public bool ShowPreviewFrame = true;
 
+    // Orange frame for the outer band the server never lets a player walk on
+    // (EdgeStitcher margins). Hidden in the game view.
+    public bool ShowServerMargin = true;
+
+    // Tiles flagged by the last "Revisar mapa" run; drawn as markers while the panel is open.
+    public List<LintIssue> LintIssues = new();
+    public bool ShowLintMarkers;
+
     // "Vista de juego": no editor overlays, zoom 1:1 locked on the preview character,
     // game-faithful ambient/roof/tree rendering. Saved zoom/camera come back on exit.
     public bool GameView;

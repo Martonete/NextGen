@@ -1320,6 +1320,47 @@ public partial class MapViewport : Control
         }
     }
 
+    private void DrawServerMargin(int mapW, int mapH)
+    {
+        if (State == null) return;
+        float z = Math.Max(State.Zoom, 0.01f);
+        // Walkable frame in tile coords (inclusive), then to world pixels (tile x starts at x*32).
+        int x1 = EdgeStitcher.MarginLeft + 1, y1 = EdgeStitcher.MarginTop + 1;
+        int x2 = mapW - EdgeStitcher.MarginRight, y2 = mapH - EdgeStitcher.MarginBottom;
+        if (x2 < x1 || y2 < y1) return;
+
+        float left = TileSize, top = TileSize;
+        float right = (mapW + 1) * TileSize, bottom = (mapH + 1) * TileSize;
+        float wl = x1 * TileSize, wt = y1 * TileSize;
+        float wr = (x2 + 1) * TileSize, wb = (y2 + 1) * TileSize;
+
+        // Translucent wash over the four dead bands, then the walkable rect outline.
+        var band = new Color(1f, 0.55f, 0.1f, 0.10f);
+        DrawRect(new Rect2(left, top, right - left, wt - top), band);                 // top band
+        DrawRect(new Rect2(left, wb, right - left, bottom - wb), band);               // bottom band
+        DrawRect(new Rect2(left, wt, wl - left, wb - wt), band);                      // left band
+        DrawRect(new Rect2(wr, wt, right - wr, wb - wt), band);                       // right band
+        DrawRect(new Rect2(wl, wt, wr - wl, wb - wt), new Color(1f, 0.6f, 0.15f, 0.85f),
+            filled: false, width: 1.5f / z);
+    }
+
+    private void DrawLintMarkers()
+    {
+        if (State == null) return;
+        float z = Math.Max(State.Zoom, 0.01f);
+        var fill = new Color(1f, 0.2f, 0.2f, 0.35f);
+        var edge = new Color(1f, 0.25f, 0.25f, 0.95f);
+        foreach (var issue in State.LintIssues)
+        {
+            var r = new Rect2(issue.X * TileSize, issue.Y * TileSize, TileSize, TileSize);
+            DrawRect(r, fill);
+            DrawRect(r, edge, filled: false, width: 2f / z);
+            // Small warning triangle in the top-left corner so it reads even over busy art.
+            var a = r.Position + new Vector2(3, 3);
+            DrawPolygon(new[] { a + new Vector2(5, 0), a + new Vector2(10, 9), a + new Vector2(0, 9) }, new[] { edge });
+        }
+    }
+
     private void DrawPreviewViewFrame()
     {
         if (State == null) return;
@@ -1378,11 +1419,21 @@ public partial class MapViewport : Control
             filled: false,
             width: 2f / Math.Max(State.Zoom, 0.01f));
 
+        // ── Server walk margin: the outer band (L9/R8/T7/B6, EdgeStitcher) the server
+        // never lets a player step on. Anything built there is invisible in-game, and
+        // until now the editor gave no hint of where that line was.
+        if (State.ShowServerMargin)
+            DrawServerMargin(mapW, mapH);
+
         // ── Player view frame: the 17x13 tiles a player at the preview character's
         // spot actually sees at 800x600. This is the whole point of the preview —
         // judging how big an area reads in-game, not in the editor's zoomed-out view.
         if (State.Preview.Active && State.ShowPreviewFrame)
             DrawPreviewViewFrame();
+
+        // ── Lint markers: tiles flagged by "Revisar mapa", while its panel is open.
+        if (State.ShowLintMarkers && State.LintIssues.Count > 0)
+            DrawLintMarkers();
 
         // ── Zone overlays (semi-transparent colored rectangles) ──
         if (ZoneData != null)
