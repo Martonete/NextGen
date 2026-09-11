@@ -3560,6 +3560,40 @@ public partial class EditorMain : Control
         SetStatus(animatedWater ? "Area marcada como agua animada" : "Marca de agua quitada del area");
     }
 
+    /// <summary>
+    /// Apply the selected trigger to every tile at once. Marking a whole map safe or
+    /// unsafe is the one case where the per-tile brush is useless — this does it in a
+    /// single undo batch, and skips tiles that already carry the trigger.
+    /// </summary>
+    private void ApplyTriggerToWholeMap()
+    {
+        if (_map == null) return;
+
+        short trigger = _state.SelectedTriggerType;
+        string name = TriggerTypeDefs.FirstOrDefault(t => t.Id == trigger).Label
+            ?? trigger.ToString();
+
+        _undo.BeginBatch($"Trigger {trigger} en todo el mapa");
+        int changed = 0;
+        for (int y = 1; y <= _map.Height; y++)
+            for (int x = 1; x <= _map.Width; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                if (before.Trigger == trigger) continue;
+                _map.Tiles[x, y].Trigger = trigger;
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+                changed++;
+            }
+        _undo.EndBatch();
+
+        if (changed > 0) _state.MarkDirty();
+        _viewport?.QueueRedraw();
+        SetStatus(changed > 0
+            ? $"\"{name}\" aplicado a {changed} tiles de todo el mapa"
+            : $"Todo el mapa ya tenia \"{name}\"");
+    }
+
     private void ClearSelectionTiles_Confirm1()
     {
         if (_map == null || !_state.HasSelection) return;
@@ -4309,6 +4343,22 @@ public partial class EditorMain : Control
             vbox.AddChild(btn);
             _triggerTypeButtons[i] = btn;
         }
+
+        // Whole-map shortcut: painting 10.000 tiles by hand just to make a map safe
+        // (trigger 4) or unsafe again (trigger 0) is the case the brush can't cover.
+        vbox.AddChild(new HSeparator());
+        vbox.AddChild(EditorTheme.SectionLabel("TODO EL MAPA"));
+
+        var applyHint = EditorTheme.MakeLabel(
+            "Aplica el tipo elegido arriba a todos los tiles.\nSe deshace con Ctrl+Z en un solo paso.",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        applyHint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        vbox.AddChild(applyHint);
+
+        var applyAll = new Button { Text = "Aplicar a TODO el mapa", ClipText = false };
+        applyAll.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        applyAll.Pressed += ApplyTriggerToWholeMap;
+        vbox.AddChild(applyAll);
 
         _triggerPanel.AddChild(vbox);
         AddChild(_triggerPanel);
