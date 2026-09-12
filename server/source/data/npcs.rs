@@ -127,6 +127,7 @@ pub struct NpcData {
 
     // Status effects
     pub veneno: bool, // Poisons on hit (VB6: Npclist.Veneno)
+    pub afecta_paralisis: bool, // Immune to Paralizar/Inmovilizar (VB6: flags.AfectaParalisis)
 
     // Spells
     pub lanza_spells: i32, // Number of spells (0 = can't cast)
@@ -203,6 +204,7 @@ impl Default for NpcData {
             agua_valida: false,
             tierra_invalida: false,
             veneno: false,
+            afecta_paralisis: false,
             lanza_spells: 0,
             spells: Vec::new(),
             snd1: 0,
@@ -294,6 +296,7 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
         agua_valida: get_bool("AguaValida"),
         tierra_invalida: get_bool("TierraInvalida"),
         veneno: get_bool("Veneno"),
+        afecta_paralisis: get_bool("AfectaParalisis"),
         lanza_spells: get_int("LanzaSpells"),
         spells: {
             let nro = get_int("LanzaSpells") as usize;
@@ -411,6 +414,19 @@ pub fn load_npcs(base: &Path) -> Result<NpcDatabase, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Paralizar/Inmovilizar consult this flag (VB6 flags.AfectaParalisis); a wolf
+    /// must be affected while NPC 582 (flagged in NPCs-HOSTILES.dat) is immune.
+    #[test]
+    fn afecta_paralisis_flag_is_loaded() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
+        if !base.join("dat").join("NPCs.dat").exists() {
+            return;
+        }
+        let db = load_npcs(&base).unwrap();
+        assert!(!db.get(501).unwrap().afecta_paralisis, "Lobo must be paralyzable");
+        assert!(db.get(582).unwrap().afecta_paralisis, "NPC 582 is flagged immune");
+    }
 
     #[tokio::test]
     async fn vigilia_map_spawns_exits_and_respawn() {
