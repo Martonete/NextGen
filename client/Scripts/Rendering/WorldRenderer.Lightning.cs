@@ -13,8 +13,8 @@ public partial class WorldRenderer
     private const float LightningMainStroke = 0.05f;
     private const float LightningRestrike1 = 0.21f;
     private const float LightningRestrike2 = 0.36f;
-    private const float LightningChannelHeight = 62f;    // px above the head (about 2 tiles)
-    private const int LightningSegments = 7;
+    private const float LightningChannelHeight = 42f;    // px above the head
+    private const int LightningSegments = 6;
 
     private void UpdateLightningEffects(float delta)
     {
