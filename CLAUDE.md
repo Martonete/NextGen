@@ -16,7 +16,9 @@ manteniendo **paridad de comportamiento con la versión VB6 13.3**.
 - Upstream: `https://github.com/cyphercr0w/argentum-nextgen`. Este repo tiene trabajo propio
   adicional encima (no es un clon limpio).
 - Paridad VB6: ver `docs/DISCREPANCIAS-VB6-13.3.md` — auditoría de 50 discrepancias, marcada
-  como resuelta al 2026-07-06.
+  como resuelta al 2026-07-06. **Excepción (2026-09-12):** caminata, input, velocidades,
+  intervalos y fórmulas de combate replican **Argentum 20** (`docs/PARIDAD-AO20.md`, fuente
+  local `C:AO20`).
 - Licencia: AGPL-3.0.
 
 ---

@@ -60,24 +60,6 @@ pub async fn tick_intervals(state: &mut GameState) {
         if !user.logged {
             continue;
         }
-        if user.interval_golpe > 0 {
-            user.interval_golpe -= 1;
-        }
-        if user.interval_flechas > 0 {
-            user.interval_flechas -= 1;
-        }
-        if user.interval_casteo > 0 {
-            user.interval_casteo -= 1;
-        }
-        if user.interval_poteo > 0 {
-            user.interval_poteo -= 1;
-        }
-        if user.interval_click > 0 {
-            user.interval_click -= 1;
-        }
-        if user.interval_trabajar > 0 {
-            user.interval_trabajar -= 1;
-        }
         if user.interval_pu > 0 {
             user.interval_pu -= 1;
         }

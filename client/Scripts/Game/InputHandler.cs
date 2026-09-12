@@ -37,18 +37,26 @@ public class InputHandler
 	private const int BorderMarginTop = 7;
 	private const int BorderMarginBottom = 6;
 
-	// VB6 attack cooldown: tAt = 1000ms (timestamp-based, frame-rate independent)
-	private const long AttackCooldownMs = 1000;
-	private long _attackUntilMs;
+	// AO20 ModUtils.bas: client-only intervals.
+	private const long ConstIntervaloHeading = 120; // CONST_INTERVALO_HEADING
+	private const long ConstIntervaloClick = 200;   // CONST_INTERVALO_CLICK
+	private long _intervaloHeadingMs;
+	private long _intervaloClickMs;
 
-	// VB6 position refresh cooldown
-	private float _refreshTimer;
-	private const float RefreshCooldownMs = 2000f;
+	// AO20 Protocol_Writes rate limiter: last tick an action packet was sent.
+	private long _lastAttackSentMs;
+	private long _lastWalkSentMs;
 
-	// Generic key repeat cooldown (VB6 CheckKeys runs at ~32ms tick rate)
-	// Prevent rapid-fire sends when holding a key at 60fps.
-	private const long KeyCooldownMs = 300;
-	private long _keyCooldownUntilMs;
+	// AO20 General.bas keysMovementPressedQueue: movement keys currently held, in the
+	// order they were pressed. The LAST one wins (GetLastItem).
+	private readonly List<Key> _movementQueue = new();
+
+	// AO20 UserAvisado: while resting, the first walk attempt sends WriteRest once.
+	private bool _userAvisado;
+
+	// KeyUp edge detection for action keys (AO20 dispatches Accionar from Form_KeyUp).
+	private readonly Dictionary<GameAction, bool> _wasPressed = new();
+	private bool _kpSubtractWasPressed;
 
 	// Track Ctrl state for release detection (both left and right Ctrl)
 	private bool _ctrlWasPressed;
@@ -80,223 +88,260 @@ public class InputHandler
 		bool lineEditFocused = focused is LineEdit;
 		if (lineEditFocused && _state.Config.BlockWalkOnChat) return;
 
-		float deltaMs = (float)delta * 1000f;
-		long nowMs = System.Environment.TickCount64;
+		if (!_state.Resting) _userAvisado = false;
 
-		// Advance refresh timer (still delta-based, non-critical)
-		if (_refreshTimer > 0) _refreshTimer -= deltaMs;
+		// ── AO20 Check_Keys: only while the screen is not scrolling ──
+		bool inputFocus = _state.ChatActive || lineEditFocused;
+		if (!_state.UserMoving && !(inputFocus && _state.Config.BlockWalkOnChat)
+			&& System.Environment.TickCount64 >= _state.PtCooldownUntilMs)
+		{
+			AddMovementToKeysMovementPressedQueue(inputFocus);
+			int heading = HeadingForKey(_movementQueue.Count > 0 ? _movementQueue[^1] : Key.None);
+			if (heading != 0) MoveTo(heading);
+		}
 
 		// Detect Ctrl release by polling (supports both left and right Ctrl reliably)
 		if (_keys.GetKey(GameAction.Attack) == Key.Ctrl)
 		{
 			bool ctrlNow = Input.IsKeyPressed(Key.Ctrl);
 			if (_ctrlWasPressed && !ctrlNow && !_state.ChatActive)
-			{
-				if (nowMs >= _attackUntilMs && !_state.Resting && !_state.Meditating && !_state.Dead)
-				{
-					_tcp.SendPacket(ClientPackets.WriteAttack());
-					_attackUntilMs = nowMs + AttackCooldownMs;
-				}
-			}
+				AttackKeyUp();
 			_ctrlWasPressed = ctrlNow;
 		}
 
-		// VB6: paralyzed users can attack and cast spells, only movement is blocked
-		if (!_state.UserParalyzed)
-		{
-			// Time-based PT correction cooldown (blocks moves after server rejected one)
-			if (System.Environment.TickCount64 < _state.PtCooldownUntilMs)
-			{
-				// Still in cooldown — skip movement
-			}
-			else if (!_state.UserMoving)
-			{
-				// When BlockWalkOnChat is enabled, block all movement while chatting
-				bool blockMovement = _state.ChatActive && _state.Config.BlockWalkOnChat;
-				if (!blockMovement)
-				{
-				// Reading order copied from the reference client's _CheckKeys: it
-				// iterates ui_left, ui_right, ui_up, ui_down and moves on the first
-				// key it finds held, so West wins over North when both are down.
-				// Arrow keys: always available (hardcoded, not rebindable — VB6 same)
-				if (Input.IsKeyPressed(Key.Left))
-					TryMove(4); // West
-				else if (Input.IsKeyPressed(Key.Right))
-					TryMove(2); // East
-				else if (Input.IsKeyPressed(Key.Up))
-					TryMove(1); // North
-				else if (Input.IsKeyPressed(Key.Down))
-					TryMove(3); // South
-				// Configurable movement keys (default WASD): only when chat is NOT active
-				else if (!_state.ChatActive)
-				{
-					if (_keys.IsActionPressed(GameAction.MoveLeft))
-						TryMove(4);
-					else if (_keys.IsActionPressed(GameAction.MoveRight))
-						TryMove(2);
-					else if (_keys.IsActionPressed(GameAction.MoveUp))
-						TryMove(1);
-					else if (_keys.IsActionPressed(GameAction.MoveDown))
-						TryMove(3);
-				}
-				}
-			}
-		}
-
 		// Everything below is blocked when chat is active (letter keys would type into chat)
-		if (_state.ChatActive) return;
-		if (lineEditFocused) return;
-
-		// Attack is handled in HandleInputEvent() on key RELEASE (VB6 Form_KeyUp parity)
-
-		// All action keys below share a cooldown to prevent rapid-fire when held.
-		if (nowMs < _keyCooldownUntilMs) return;
-
-		// Pick up item (VB6: AG)
-		if (_keys.IsActionPressed(GameAction.PickUp))
+		if (_state.ChatActive || lineEditFocused)
 		{
+			_wasPressed.Clear();
+			_kpSubtractWasPressed = false;
+			return;
+		}
+
+		// AO20 Accionar runs from Form_KeyUp: every action fires once, on release.
+		if (Released(GameAction.PickUp))
 			_tcp.SendPacket(ClientPackets.WritePickUp());
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
-		}
-		// Use item from selected inventory slot
-		else if (_keys.IsActionPressed(GameAction.UseItem))
-		{
-			int slot = _state.SelectedInvSlot;
-			if (slot >= 0 && slot < _state.MaxInventorySlots)
-			{
-				_tcp.SendPacket(ClientPackets.WriteUseItem((byte)(slot + 1)));
-				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
-			}
-		}
-		// Equip item from selected inventory slot
-		else if (_keys.IsActionPressed(GameAction.EquipItem))
-		{
-			int slot = _state.SelectedInvSlot;
-			if (slot >= 0 && slot < _state.MaxInventorySlots)
-			{
-				_tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
-				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
-			}
-		}
-		// Drop item from selected inventory slot
-		else if (_keys.IsActionPressed(GameAction.Drop))
-		{
-			int slot = _state.SelectedInvSlot;
-			if (slot >= 0 && slot < _state.MaxInventorySlots && _state.Inventory[slot].ObjIndex > 0)
-			{
-				if (_state.Inventory[slot].Amount == 1)
-				{
-					_tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), 1));
-				}
-				else if (_state.Inventory[slot].Amount > 1)
-				{
-					_state.DropDialogSlot = slot;
-					_state.DropDialogOpen = true;
-				}
-			}
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
-		}
-		// Toggle names display (client-side only)
-		else if (_keys.IsActionPressed(GameAction.ShowNames))
+		if (Released(GameAction.UseItem))
+			UseItemKey();
+		if (Released(GameAction.EquipItem))
+			EquipSelectedItem();
+		if (Released(GameAction.Drop))
+			DropSelectedItem();
+		if (Released(GameAction.ShowNames))
 		{
 			_state.ShowNames = !_state.ShowNames;
 			_state.Config.ShowNames = _state.ShowNames;
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
-		// Toggle music
-		else if (_keys.IsActionPressed(GameAction.ToggleMusic))
-		{
+		if (Released(GameAction.ToggleMusic))
 			OnToggleMusic?.Invoke();
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
-		}
-		// Steal (VB6: UK12 — eSkill.Robar)
-		else if (_keys.IsActionPressed(GameAction.Steal))
+		if (Released(GameAction.Steal))
 		{
-			_tcp.SendPacket(ClientPackets.WriteUseSkill(12));
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
+			if (!_state.Dead) _tcp.SendPacket(ClientPackets.WriteUseSkill(12));
 		}
-		// Hide/Stealth (VB6: UK9 — eSkill.Ocultarse)
-		else if (_keys.IsActionPressed(GameAction.Hide))
+		if (Released(GameAction.Hide))
 		{
-			_tcp.SendPacket(ClientPackets.WriteUseSkill(8));
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
+			if (!_state.Dead) _tcp.SendPacket(ClientPackets.WriteUseSkill(8));
 		}
-		// Refresh position (VB6: RPU)
-		else if (_keys.IsActionPressed(GameAction.RefreshPos))
+		if (Released(GameAction.RefreshPos))
 		{
-			if (_refreshTimer <= 0)
-			{
+			if (_state.MainTimer.Check(TimersIndex.SendRPU))
 				_tcp.SendPacket(ClientPackets.WriteRequestPos());
-				_refreshTimer = RefreshCooldownMs;
-			}
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
-		// Screenshot
-		else if (_keys.IsActionPressed(GameAction.Screenshot))
+		if (Released(GameAction.Screenshot))
 		{
 			string? path = ScreenshotManager.CaptureScreenshot();
 			if (path != null)
-			{
-				_state.EnqueueChat(new ChatMessage
-				{
-					Text = "Captura de pantalla guardada.",
-					Color = "00FF00"
-				});
-			}
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
+				_state.EnqueueChat(new ChatMessage { Text = "Captura de pantalla guardada.", Color = "00FF00" });
 		}
-		// Meditate (VB6: /MEDITAR)
-		else if (_keys.IsActionPressed(GameAction.Meditate))
+		if (Released(GameAction.Meditate))
 		{
-			_tcp.SendPacket(ClientPackets.WriteMeditate());
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
+			if (!_state.Dead) _tcp.SendPacket(ClientPackets.WriteMeditate());
 		}
-		// Rest (VB6: /DESCANSAR)
-		else if (_keys.IsActionPressed(GameAction.Rest))
-		{
+		if (Released(GameAction.Rest))
 			_tcp.SendPacket(ClientPackets.WriteTalk("/DESCANSAR"));
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
-		}
-		// PvP safety toggle (VB6: /SEG)
-		else if (_keys.IsActionPressed(GameAction.SafetyToggle))
-		{
+		if (Released(GameAction.SafetyToggle))
 			_tcp.SendPacket(ClientPackets.WriteSafeToggle());
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
-		}
-		// Resurrection safety toggle (VB6: /SEGR) — accepts both keyboard minus and numpad minus
-		else if (_keys.IsActionPressed(GameAction.ResSafety) || Input.IsKeyPressed(Key.KpSubtract))
-		{
+		bool kpSubtractNow = Input.IsKeyPressed(Key.KpSubtract);
+		bool resSafetyReleased = Released(GameAction.ResSafety) || (_kpSubtractWasPressed && !kpSubtractNow);
+		_kpSubtractWasPressed = kpSubtractNow;
+		if (resSafetyReleased)
 			_tcp.SendPacket(ClientPackets.WriteTalk("/SEGR"));
-			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
-		}
-		// Macro keys: 1-9, 0 (hardcoded — these are always number keys, not rebindable)
-		else if (!_state.MacroPanelOpen)
-		{
-			int macroIdx = -1;
-			if (Input.IsKeyPressed(Key.Key1)) macroIdx = 0;
-			else if (Input.IsKeyPressed(Key.Key2)) macroIdx = 1;
-			else if (Input.IsKeyPressed(Key.Key3)) macroIdx = 2;
-			else if (Input.IsKeyPressed(Key.Key4)) macroIdx = 3;
-			else if (Input.IsKeyPressed(Key.Key5)) macroIdx = 4;
-			else if (Input.IsKeyPressed(Key.Key6)) macroIdx = 5;
-			else if (Input.IsKeyPressed(Key.Key7)) macroIdx = 6;
-			else if (Input.IsKeyPressed(Key.Key8)) macroIdx = 7;
-			else if (Input.IsKeyPressed(Key.Key9)) macroIdx = 8;
-			else if (Input.IsKeyPressed(Key.Key0)) macroIdx = 9;
 
-			if (macroIdx >= 0 && !_state.QuickbarKeys.Contains(macroIdx == 9 ? Key.Key0 : (Key)((long)Key.Key1 + macroIdx)))
+		// Macro keys: 1-9, 0 (hardcoded — these are always number keys, not rebindable)
+		if (!_state.MacroPanelOpen)
+		{
+			for (int i = 0; i < 10; i++)
 			{
-				ExecuteMacro(macroIdx);
-				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
+				var key = i == 9 ? Key.Key0 : (Key)((long)Key.Key1 + i);
+				if (_state.QuickbarKeys.Contains(key)) continue;
+				if (ReleasedKey(key)) ExecuteMacro(i);
 			}
 		}
 	}
 
+	/// <summary>KeyUp edge for a bound action: true on the frame the key is released.</summary>
+	private bool Released(GameAction action)
+	{
+		bool now = _keys.IsActionPressed(action);
+		bool was = _wasPressed.TryGetValue(action, out var w) && w;
+		_wasPressed[action] = now;
+		return was && !now;
+	}
+
+	private readonly Dictionary<Key, bool> _wasKeyPressed = new();
+	private bool ReleasedKey(Key key)
+	{
+		bool now = Input.IsKeyPressed(key);
+		bool was = _wasKeyPressed.TryGetValue(key, out var w) && w;
+		_wasKeyPressed[key] = now;
+		return was && !now;
+	}
+
+	// ── AO20 General.bas: movement key queue ──
+
+	private static readonly Key[] ArrowKeys = { Key.Up, Key.Down, Key.Left, Key.Right };
+
+	/// <summary>AO20 AddMovementToKeysMovementPressedQueue: add held movement keys (once,
+	/// in press order) and drop released ones. Arrow keys are always valid; the
+	/// configurable WASD binds only when no text input has focus.</summary>
+	private void AddMovementToKeysMovementPressedQueue(bool inputFocus)
+	{
+		void Track(Key key)
+		{
+			if (key == Key.None) return;
+			bool down = Input.IsKeyPressed(key);
+			if (down) { if (!_movementQueue.Contains(key)) _movementQueue.Add(key); }
+			else _movementQueue.Remove(key);
+		}
+		foreach (var k in ArrowKeys) Track(k);
+		foreach (var action in new[] { GameAction.MoveUp, GameAction.MoveDown, GameAction.MoveLeft, GameAction.MoveRight })
+		{
+			var key = _keys.GetKey(action);
+			if (Array.IndexOf(ArrowKeys, key) >= 0) continue;
+			if (inputFocus) _movementQueue.Remove(key);
+			else Track(key);
+		}
+	}
+
+	/// <summary>Heading (1 N, 2 E, 3 S, 4 W) for a movement key, 0 if it is not one.</summary>
+	private int HeadingForKey(Key key)
+	{
+		if (key == Key.None) return 0;
+		if (key == Key.Up || key == _keys.GetKey(GameAction.MoveUp)) return 1;
+		if (key == Key.Right || key == _keys.GetKey(GameAction.MoveRight)) return 2;
+		if (key == Key.Down || key == _keys.GetKey(GameAction.MoveDown)) return 3;
+		if (key == Key.Left || key == _keys.GetKey(GameAction.MoveLeft)) return 4;
+		return 0;
+	}
+
+	/// <summary>AO20 Declares.bas CanMove.</summary>
+	private bool CanMove() => !_state.UserParalyzed && !_state.UserImmobilized && !_state.UserStunned;
+
+	// ── AO20 modBindKeys.Accionar / ModGameplayUI: actions ──
+
+	/// <summary>AO20 Accionar case BindKeys(1): attack on key release.
+	/// Check(CastAttack,False) → WriteAttack (rate-limited by gIntervals.Hit) → Restart(AttackSpell).</summary>
+	private void AttackKeyUp()
+	{
+		if (_state.Dead)
+		{
+			_state.EnqueueChat(new ChatMessage { Text = "¡¡Estás muerto!!", Color = "FFFF00" });
+			return;
+		}
+		if (_state.Resting) return;
+		if (!_state.MainTimer.Check(TimersIndex.CastAttack, false)) return;
+		if (WriteAttack())
+			_state.MainTimer.Restart(TimersIndex.AttackSpell);
+	}
+
+	/// <summary>AO20 Protocol_Writes.WriteAttack: ShouldBlockAction(ActionAttack) uses gIntervals.Hit.</summary>
+	private bool WriteAttack()
+	{
+		long now = System.Environment.TickCount64;
+		if (_lastAttackSentMs != 0 && now - _lastAttackSentMs < _state.Intervals.Hit) return false;
+		_tcp.SendPacket(ClientPackets.WriteAttack());
+		_lastAttackSentMs = now;
+		return true;
+	}
+
+	/// <summary>AO20 UseItemKey (BindKeys(4)): gated by UseItemWithU.</summary>
+	private void UseItemKey()
+	{
+		int slot = _state.SelectedInvSlot;
+		if (slot < 0 || slot >= _state.MaxInventorySlots) return;
+		if (!_state.MainTimer.Check(TimersIndex.UseItemWithU)) return;
+		_tcp.SendPacket(ClientPackets.WriteUseItem((byte)(slot + 1)));
+	}
+
+	/// <summary>AO20 frmMain.frm:3221 — equip shares the UseItemWithU timer.</summary>
+	private void EquipSelectedItem()
+	{
+		if (_state.Dead) return;
+		int slot = _state.SelectedInvSlot;
+		if (slot < 0 || slot >= _state.MaxInventorySlots) return;
+		if (!_state.MainTimer.Check(TimersIndex.UseItemWithU)) return;
+		_tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
+	}
+
+	/// <summary>AO20 TirarItem / frmCantidad: gated by the Drop timer.</summary>
+	private void DropSelectedItem()
+	{
+		if (_state.Dead) return;
+		int slot = _state.SelectedInvSlot;
+		if (slot < 0 || slot >= _state.MaxInventorySlots || _state.Inventory[slot].ObjIndex <= 0) return;
+		if (_state.Inventory[slot].Amount == 1)
+		{
+			if (!_state.MainTimer.Check(TimersIndex.Drop)) return;
+			_tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), 1));
+		}
+		else if (_state.Inventory[slot].Amount > 1)
+		{
+			_state.DropDialogSlot = slot;
+			_state.DropDialogOpen = true;
+		}
+	}
+
+	/// <summary>AO20 IntervaloPermiteClick (CONST_INTERVALO_CLICK = 200 ms).</summary>
+	public bool IntervaloPermiteClick(bool actualizar = true)
+	{
+		long now = System.Environment.TickCount64;
+		if (now - _intervaloClickMs >= ConstIntervaloClick)
+		{
+			if (actualizar) _intervaloClickMs = now;
+			return true;
+		}
+		return false;
+	}
+
+	/// <summary>AO20 IntervaloPermiteHeading (CONST_INTERVALO_HEADING = 120 ms).</summary>
+	private bool IntervaloPermiteHeading(bool actualizar = true)
+	{
+		long now = System.Environment.TickCount64;
+		if (now - _intervaloHeadingMs >= ConstIntervaloHeading)
+		{
+			if (actualizar) _intervaloHeadingMs = now;
+			return true;
+		}
+		return false;
+	}
+
+	/// <summary>AO20 Protocol_Writes.WriteWalk rate limiter: gIntervals.Walk / Speeding.</summary>
+	private bool WriteWalk(int heading)
+	{
+		long now = System.Environment.TickCount64;
+		float speeding = _state.UserSpeeding > 0 ? _state.UserSpeeding : 1f;
+		long interval = (long)(_state.Intervals.Walk / speeding);
+		if (_lastWalkSentMs != 0 && now - _lastWalkSentMs < interval) return false;
+		_tcp.SendPacket(ClientPackets.WriteWalk((byte)heading));
+		_lastWalkSentMs = now;
+		return true;
+	}
+
 	/// <summary>
-	/// Attempt to move in given direction with client-side prediction.
-	/// VB6: CheckKeys → MoveTo → Char_Move_by_Head + Engine_MoveScreen
+	/// AO20 General.bas MoveTo: LegalPos + CanMove → WriteWalk → Char_Move_by_Head +
+	/// MoveScreen. Blocked: ChangeHeading only if it changes and 120 ms passed.
+	/// Resting: one WriteRest, no step.
 	/// </summary>
-	private void TryMove(int heading)
+	private void MoveTo(int heading)
 	{
 		// Direction deltas: 1=N(0,-1), 2=E(1,0), 3=S(0,1), 4=W(-1,0)
 		int dx = 0, dy = 0;
@@ -314,8 +359,19 @@ public class InputHandler
 		int newX = ch.PosX + dx;
 		int newY = ch.PosY + dy;
 
-		if (LegalPos(newX, newY))
+		if (LegalPos(newX, newY) && CanMove())
 		{
+			if (_state.Resting)
+			{
+				// AO20: "Stop resting (we do NOT have the 1 step enforcing anymore)"
+				if (!_userAvisado)
+				{
+					_tcp.SendPacket(ClientPackets.WriteTalk("/DESCANSAR"));
+					_userAvisado = true;
+				}
+				return;
+			}
+
 			// Stop work/spell macros on movement (VB6: tmrTrabajo stops on move)
 			_state.WorkMacro.Stop();
 			_state.SpellMacro.Stop();
@@ -331,11 +387,11 @@ public class InputHandler
 				}
 			}
 
-			// Send movement packet to server (binary: Walk + heading byte)
-			_tcp.SendPacket(ClientPackets.WriteWalk((byte)heading));
+			if (!WriteWalk(heading)) return;
 			_state.PendingMoves++;
+			_state.MainTimer.Restart(TimersIndex.Walk);
 
-			// VB6 Char_Move_by_Head: update logical position + start animation
+			// AO20 Char_Move_by_Head: update logical position + start animation
 			ch.Heading = heading;
 			ch.MoveOffsetX = -(dx * 32);
 			ch.MoveOffsetY = -(dy * 32);
@@ -345,7 +401,7 @@ public class InputHandler
 			ch.PosX = newX;
 			ch.PosY = newY;
 
-			// VB6 Engine_MoveScreen: start camera scroll
+			// AO20 MoveScreen: start camera scroll
 			_state.AddToUserPosX = dx;
 			_state.AddToUserPosY = dy;
 			_state.UserPosX = newX;
@@ -354,8 +410,7 @@ public class InputHandler
 			_state.ScreenOffsetX = 0;
 			_state.ScreenOffsetY = 0;
 
-			// VB6: DoPasosFx — footstep sound for own character
-			// VB6: no sound for priv 1,2,3,5,25 (admin types)
+			// DoPasosFx — footstep sound for own character (no sound for admin privs)
 			if (!ch.Dead && ch.Privileges != 1 && ch.Privileges != 2
 				&& ch.Privileges != 3 && ch.Privileges != 5 && ch.Privileges != 25)
 			{
@@ -373,8 +428,8 @@ public class InputHandler
 		}
 		else
 		{
-			// Blocked tile: just turn, don't move (VB6: only send CHEA if heading changed)
-			if (ch.Heading != heading)
+			// Blocked (or can't move): just turn, only if the heading changes and 120 ms passed.
+			if (ch.Heading != heading && IntervaloPermiteHeading(true))
 			{
 				_tcp.SendPacket(ClientPackets.WriteChangeHeading((byte)heading));
 				ch.Heading = heading;
@@ -440,7 +495,6 @@ public class InputHandler
 		if (!_state.IsLogged || _state.Paused) return;
 		if (_state.AnyFormOpen) return;
 		if (_state.ChatActive) return;
-		long nowMs = System.Environment.TickCount64;
 
 		if (@event is InputEventKey keyEvent && !keyEvent.Pressed && !keyEvent.Echo)
 		{
@@ -448,13 +502,7 @@ public class InputHandler
 			// Note: Ctrl attack is handled in Process() via polling for left+right Ctrl support
 			var key = keyEvent.Keycode;
 			if (key == _keys.GetKey(GameAction.Attack) || key == Key.Space)
-			{
-				if (nowMs >= _attackUntilMs && !_state.Resting && !_state.Meditating && !_state.Dead)
-				{
-					_tcp.SendPacket(ClientPackets.WriteAttack());
-					_attackUntilMs = nowMs + AttackCooldownMs;
-				}
-			}
+				AttackKeyUp();
 		}
 	}
 
@@ -478,6 +526,8 @@ public class InputHandler
 	public void HandleLeftClick(Vector2 viewportPos)
 	{
 		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
+		// AO20 ModGameplayUI: plain clicks are throttled by CONST_INTERVALO_CLICK (200 ms).
+		if (!IntervaloPermiteClick(true)) return;
 		var (tileX, tileY) = ViewportToTile(viewportPos);
 		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY, _state.CoordCipher));
@@ -491,16 +541,103 @@ public class InputHandler
 			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY, _state.CoordCipher));
 	}
 
+	private const int SkillMagia = 2, SkillRobar = 3, SkillDomar = 18, SkillProyectiles = 19;
+	private const int ModoBloqueoSoltar = 0, ModoBloqueoLanzar = 1, ModoSinBloqueo = 2;
+
+	/// <summary>
+	/// AO20 ModGameplayUI.bas:120-238 — the click that resolves a pending skill
+	/// (UsingSkill). Spells and arrows go through the MainTimer combo gates according to
+	/// ModoHechizos; steal/tame use CastSpell; everything else is sent as is.
+	/// </summary>
 	public void HandleSpellClick(Vector2 viewportPos)
 	{
 		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos);
-		if (IsInMapBounds(tileX, tileY))
+		if (!IsInMapBounds(tileX, tileY)) return;
+
+		var timer = _state.MainTimer;
+		int mode = _state.Config.SpellCastMode;
+		int skill = _state.UsingSkill;
+		bool sendSkill = false;
+
+		if (skill == SkillMagia)
 		{
-			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((short)tileX, (short)tileY, (byte)_state.UsingSkill, _state.CoordCipher));
-			_state.UsingSkill = 0;
+			if (mode == ModoBloqueoLanzar)
+			{
+				sendSkill = true;
+				timer.Restart(TimersIndex.CastAttack);
+				timer.Restart(TimersIndex.CastSpell);
+			}
+			else if (timer.Check(TimersIndex.AttackSpell, false))
+			{
+				if (timer.Check(TimersIndex.CastSpell))
+				{
+					sendSkill = true;
+					timer.Restart(TimersIndex.CastAttack);
+				}
+				else if (mode == ModoSinBloqueo)
+				{
+					sendSkill = true;
+					_state.EnqueueChat(new ChatMessage { Text = "No puedes lanzar hechizos tan rápido.", Color = "FFFF00" });
+				}
+				else return;
+			}
+			else if (mode == ModoSinBloqueo)
+			{
+				sendSkill = true;
+				_state.EnqueueChat(new ChatMessage { Text = "No puedes lanzar tan rápido después de un golpe.", Color = "FFFF00" });
+			}
+			else return;
 		}
+		else if (skill == SkillProyectiles)
+		{
+			if (mode == ModoBloqueoLanzar)
+			{
+				sendSkill = true;
+				timer.Restart(TimersIndex.Attack);    // flecha-golpe
+				timer.Restart(TimersIndex.CastSpell); // flecha-hechizo
+				timer.Restart(TimersIndex.Arrows);
+			}
+			else if (timer.Check(TimersIndex.AttackSpell, false))
+			{
+				if (timer.Check(TimersIndex.CastAttack, false))
+				{
+					if (timer.Check(TimersIndex.Arrows, false))
+					{
+						sendSkill = true;
+						timer.Restart(TimersIndex.Attack);
+						timer.Restart(TimersIndex.CastSpell);
+						timer.Restart(TimersIndex.Arrows);
+					}
+					else if (mode == ModoSinBloqueo)
+					{
+						sendSkill = true;
+						_state.EnqueueChat(new ChatMessage { Text = "No puedes lanzar flechas tan rápido.", Color = "FFFF00" });
+					}
+					else return;
+				}
+				else if (mode == ModoSinBloqueo) sendSkill = true;
+				else return;
+			}
+			else if (mode == ModoSinBloqueo) sendSkill = true;
+			else return;
+		}
+		else if (skill == SkillRobar || skill == SkillDomar)
+		{
+			if (timer.Check(TimersIndex.CastSpell)) sendSkill = true;
+		}
+		else
+		{
+			// Work skills (talar, minería, pesca, fundir...) and the rest: no combo gate.
+			sendSkill = true;
+		}
+
+		if (sendSkill)
+			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((short)tileX, (short)tileY, (byte)skill, _state.CoordCipher));
+		// UsaLanzar = False / UsingSkill = 0 — the cursor is reset by the caller.
+		_state.UsingSkill = 0;
 	}
+
 
 	public void HandleGmTeleport(Vector2 viewportPos, int currentMap)
 	{

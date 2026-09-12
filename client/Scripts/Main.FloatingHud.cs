@@ -18,9 +18,9 @@ public partial class Main
 
     private void SetupFloatingHud()
     {
-        FloatingHudWindow Window(string caption, Vector2 size)
+        FloatingHudWindow Window(string caption, Vector2 size, bool chromeless = false)
         {
-            var window = new FloatingHudWindow { Caption = caption, Size = size, ZIndex = 2 };
+            var window = new FloatingHudWindow { Caption = caption, Size = size, ZIndex = 2, Chromeless = chromeless };
             _gameUI!.AddChild(window);
             window.LayoutChanged = SaveHudLayout;
             return window;
@@ -28,7 +28,8 @@ public partial class Main
         float scale = ResolutionManager.UIScale;
         _inventoryWindow = Window("Inventario y hechizos", new Vector2(240 * scale, 254 * scale + 44));
         _statusWindow = Window("Estado y menú", new Vector2(240 * scale, 190 * scale + 44));
-        _quickWindow = Window("Accesos rápidos · click para configurar", new Vector2(580, 98));
+        // Macro bar: just the carved frame and the ten slots, no caption or chrome.
+        _quickWindow = Window("Macros", new Vector2(Quickbar.BarWidth, Quickbar.BarHeight), chromeless: true);
         foreach (var control in InventoryControls) if (control != null) { control.SetAnchorsPreset(Control.LayoutPreset.TopLeft); control.Reparent(_inventoryWindow.Content, false); }
         foreach (var control in StatusControls) if (control != null) { control.SetAnchorsPreset(Control.LayoutPreset.TopLeft); control.Reparent(_statusWindow.Content, false); }
         _statBarOverlay?.Reparent(_statusWindow.Content, false);
@@ -46,7 +47,7 @@ public partial class Main
                 _tcp.SendPacket(ClientPackets.WriteCastSpell((byte)(index + 1)));
                 _state.UsingSkill = 2;
             }
-            else
+            else if (_state.MainTimer.Check(TimersIndex.UseItemWithDblClick))
                 // Same opcode as double-clicking the item in the backpack: the server
                 // decides whether to equip/unequip or consume, depending on the item.
                 _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(index + 1)));
@@ -76,7 +77,7 @@ public partial class Main
             window.Visible = (bool)cfg.GetValue(id, "visible", true);
             // Only a size the player actually dragged is restored — otherwise the
             // window keeps auto-fitting to its content on every resolution change.
-            if ((bool)cfg.GetValue(id, "resized", false))
+            if (!window.Chromeless && (bool)cfg.GetValue(id, "resized", false))
                 window.ApplySavedSize((Vector2)cfg.GetValue(id, "size", window.Size));
             window.ClampToScreen();
         }
@@ -111,7 +112,7 @@ public partial class Main
         _statusWindow.FitToContent();
         if (_quickWindow != null && !_quickWindow.UserResized)
         {
-            float barScale = Math.Min(1.3f, (ResolutionManager.WindowWidth - S(240) - S(72)) / 580f);
+            float barScale = Math.Min(1.3f, (ResolutionManager.WindowWidth - S(240) - S(72)) / (float)Quickbar.BarWidth);
             _quickWindow.Scale = Vector2.One * Math.Max(0.7f, barScale);
         }
         foreach (var window in HudWindows()) if (window != null) window.ClampToScreen();

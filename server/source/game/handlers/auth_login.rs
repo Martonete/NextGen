@@ -1190,6 +1190,12 @@ pub(crate) async fn connect_user(
     }
     state.send_bytes(conn_id, &binary_packets::write_logged(0, coord_seed));
 
+    // AO20 HandleIntervals right after login: the client builds its MainTimer from these.
+    let intervals_pkt = binary_packets::write_intervals(&state.intervals);
+    state.send_bytes(conn_id, &intervals_pkt);
+    // AO20 ActualizarVelocidadDeUsuario on login → VelocidadToggle (+ SpeedingACT to the area).
+    crate::game::handlers::actualizar_velocidad_de_usuario(state, conn_id);
+
     // --- PHASE 8: Equipment hitbox stats (VB6 line 1701) ---
     let anm = build_anm_packet(state, conn_id);
     // build_anm_packet returns "ANM<csv>" — strip the 3-char "ANM" prefix for the binary builder

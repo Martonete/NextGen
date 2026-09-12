@@ -628,7 +628,9 @@ public partial class Main
 		_dialogManager.OnWindowModeChosen = (windowed) => OnWindowModeChosen(windowed);
 		_dialogManager.OnDropItem = (slot, qty) =>
 		{
-			_tcp?.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), (short)qty));
+			// AO20 frmCantidad: MainTimer.Check(TimersIndex.Drop)
+			if (_state.MainTimer.Check(TimersIndex.Drop))
+				_tcp?.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), (short)qty));
 		};
 
 		// Panel state synchronizer

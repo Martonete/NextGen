@@ -290,7 +290,8 @@ public class InventoryUI
         }
         else
         {
-            SendPacket?.Invoke(ClientPackets.WriteDropItem(slot1, (short)item.Amount));
+            if (_state.MainTimer.Check(TimersIndex.Drop))
+                SendPacket?.Invoke(ClientPackets.WriteDropItem(slot1, (short)item.Amount));
         }
     }
 }

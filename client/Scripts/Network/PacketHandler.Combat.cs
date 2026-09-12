@@ -761,4 +761,52 @@ public partial class PacketHandler
         _state.ShowCharInfo = true;
     }
 
+
+    /// <summary>AO20 HandleIntervals: 16 Int32 (ms) → gIntervals + MainTimer intervals.</summary>
+    private void HandleBinIntervals(ByteQueue bq)
+    {
+        var iv = _state.Intervals;
+        iv.Hit = bq.ReadLong();
+        iv.Bow = bq.ReadLong();
+        iv.Magic = bq.ReadLong();
+        iv.ExtractWork = bq.ReadLong();
+        iv.BuildWork = bq.ReadLong();
+        iv.Walk = bq.ReadLong();
+        iv.DropItem = bq.ReadLong();
+        iv.UseItemKey = bq.ReadLong();
+        iv.UseItemClick = bq.ReadLong();
+        iv.HitMagic = bq.ReadLong();
+        iv.MagicHit = bq.ReadLong();
+        iv.HitUseItem = bq.ReadLong();
+        iv.Hide = bq.ReadLong();
+        iv.Talk = bq.ReadLong();
+        iv.LeftClick = bq.ReadLong();
+        iv.Meditate = bq.ReadLong();
+        _state.MainTimer.ApplyIntervals(iv);
+        _state.MainTimer.ApplyWalkSpeed(iv.Walk, _state.UserSpeeding);
+    }
+
+    /// <summary>AO20 HandleVelocidadToggle: own Speeding (Single) + walk timer rescale.</summary>
+    private void HandleBinVelocidadToggle(ByteQueue bq)
+    {
+        float speeding = bq.ReadSingle();
+        _state.UserSpeeding = speeding;
+        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var self))
+            self.Speeding = speeding;
+        _state.MainTimer.ApplyWalkSpeed(_state.Intervals.Walk, speeding);
+    }
+
+    /// <summary>AO20 HandleSpeedingACT: Speeding of any char in the area.</summary>
+    private void HandleBinSpeedingAct(ByteQueue bq)
+    {
+        int charIndex = bq.ReadInteger();
+        float speeding = bq.ReadSingle();
+        if (_state.Characters.TryGetValue(charIndex, out var ch))
+            ch.Speeding = speeding;
+        if (charIndex == _state.UserCharIndex)
+        {
+            _state.UserSpeeding = speeding;
+            _state.MainTimer.ApplyWalkSpeed(_state.Intervals.Walk, speeding);
+        }
+    }
 }

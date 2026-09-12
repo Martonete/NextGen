@@ -379,7 +379,9 @@ public partial class InventoryPanel : Control
 
                             _selectedSlot = slot;
                             _state.SelectedInvSlot = slot;
-                            _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
+                            // AO20 UserItemClick: gated by UseItemWithDblClick (gIntervals.UseItemClick)
+                            if (_state.MainTimer.Check(TimersIndex.UseItemWithDblClick))
+                                _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
                         }
                         else
                         {
@@ -416,7 +418,8 @@ public partial class InventoryPanel : Control
                     {
                         _selectedSlot = slot;
                         _state.SelectedInvSlot = slot;
-                        _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
+                        if (_state.MainTimer.Check(TimersIndex.UseItemWithDblClick))
+                            _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
                     }
                     else
                     {
@@ -435,7 +438,9 @@ public partial class InventoryPanel : Control
         {
             if (key.Keycode == Key.E && _selectedSlot >= 0)
             {
-                _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(_selectedSlot + 1)));
+                // AO20 frmMain.frm:3221: equip shares the UseItemWithU timer
+                if (_state.MainTimer.Check(TimersIndex.UseItemWithU))
+                    _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(_selectedSlot + 1)));
                 AcceptEvent();
             }
         }

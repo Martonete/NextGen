@@ -1398,11 +1398,13 @@ public partial class Main : Control
 			_worldRenderer?.MarkLightmapDirty();
 		}
 
+		// AO20 engine.Start order: render (ShowNextFrame advances the scroll) and THEN
+		// Check_Keys — so a step that finishes this frame is followed by the next one
+		// before anything is drawn, with no idle frame in between.
+		UpdateMovement((float)delta);
+
 		if (_state.CurrentScreen == Screen.Game)
 		{
-			// VB6 order: CheckKeys BEFORE ShowNextFrame.
-			// Input runs first so there's a 1-frame gap between scroll completion
-			// and the next move — matching VB6's timer tick behavior.
 			_inputHandler?.Process(delta);
 
 			// Update work/spell macros (auto-repeat timers)
@@ -1419,8 +1421,6 @@ public partial class Main : Control
 			_panelSync?.Update((float)delta);
 		}
 
-		// Movement update AFTER input (VB6: ShowNextFrame after CheckKeys)
-		UpdateMovement((float)delta);
 	}
 
 	/// <summary>

@@ -167,6 +167,11 @@ pub(crate) async fn handle_drop_item(
         return;
     }
 
+    // AO20 HandleDrop (Protocol.bas:2089): IntervaloTirar.
+    if !intervalo_permite_tirar(state, conn_id, true) {
+        return;
+    }
+
     // slot must be 1..=max_slots (FLAGORO=-1 gold drops are handled by caller)
     let max_slots = state
         .users

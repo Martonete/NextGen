@@ -531,6 +531,11 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au);
         }
     }
+    // AO20 EquiparObjeto/Desequipar (armor branch) → ActualizarVelocidadDeUsuario:
+    // an armor with Velocidad≠1 changes the walking speed.
+    if obj_data.obj_type == ObjType::Armor {
+        crate::game::handlers::actualizar_velocidad_de_usuario(state, conn_id);
+    }
 }
 
 /// Unequip an item from a specific inventory slot.

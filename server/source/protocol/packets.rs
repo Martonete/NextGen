@@ -358,6 +358,11 @@ pub enum ServerPacketID {
     GuildBankSlotResp = 248,
     GuildBankGoldResp = 249,
 
+    // AO20 timing/speed (Protocol.bas HandleIntervals / HandleVelocidadToggle / HandleSpeedingACT)
+    Intervals = 235,
+    VelocidadToggle = 236,
+    SpeedingAct = 253,
+
     // Ping
     Ping = 250,
     TravelsOpen = 251,

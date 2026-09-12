@@ -665,6 +665,11 @@ pub(super) fn random_number(min: i32, max: i32) -> i32 {
     rand_range(min, max)
 }
 
+/// VB6 `Rnd`: uniform in [0, 1).
+pub(crate) fn rand_unit() -> f64 {
+    (rand_simple_u32() & 0x00FF_FFFF) as f64 / 16_777_216.0
+}
+
 // =====================================================================
 // INI helpers
 // =====================================================================
@@ -698,120 +703,198 @@ pub(super) fn update_map_user_counts(state: &mut GameState) {
 }
 
 // =====================================================================
-// Cooldown checks (anti-cheat interval validation)
+// Action gates — AO20 modNuevoTimer.bas, ported timer by timer including the
+// cross-resets (a melee hit also stamps golpe→magia and golpe→usar; a bow shot
+// also stamps melee and spell; magia→golpe reads the *spell* stamp).
+// `actualizar=false` only peeks, exactly like the VB6 `Actualizar` argument.
 // =====================================================================
 
-pub fn puede_pegar(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_golpe > 0 {
-        return false;
+use std::time::Instant;
+
+fn elapsed_ms(stamp: Option<Instant>, now: Instant) -> u64 {
+    match stamp {
+        Some(t) => now.saturating_duration_since(t).as_millis() as u64,
+        None => u64::MAX, // never fired → always allowed
     }
-    let golpe = state.intervals.golpe;
-    let flechas = state.intervals.flechas;
-    let poteo = state.intervals.poteo_u;
-    let golpe_magia = state.intervals.golpe_magia;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_golpe = golpe;
-        u.interval_flechas = flechas;
-        // VB6: IntervaloPermiteAtacar also resets potion timer (TimerGolpeUsar = TActual)
-        u.interval_poteo = poteo;
-        // VB6: IntervaloGolpeMagia — melee sets spell cross-cooldown
-        u.interval_casteo = u.interval_casteo.max(golpe_magia);
-    }
-    true
 }
 
-pub fn puede_flechear(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_flechas > 0 {
-        return false;
+/// IntervaloPermiteLanzarSpell: TimerLanzarSpell ≥ IntervaloLanzaHechizo; stamps
+/// TimerLanzarSpell and TimerMagiaGolpe.
+pub fn intervalo_permite_lanzar_spell(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.lanza_hechizo;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_lanzar_spell, now) >= limit {
+        if actualizar {
+            u.timer_lanzar_spell = Some(now);
+            u.timer_magia_golpe = Some(now);
+        }
+        return true;
     }
-    let flechas = state.intervals.flechas;
-    let golpe = state.intervals.golpe;
-    let poteo = state.intervals.poteo_u;
-    let golpe_magia = state.intervals.golpe_magia;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_flechas = flechas;
-        u.interval_golpe = golpe;
-        // VB6: Also resets potion timer and spell cross-cooldown
-        u.interval_poteo = poteo;
-        u.interval_casteo = u.interval_casteo.max(golpe_magia);
-    }
-    true
+    false
 }
 
-pub fn puede_castear(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_casteo > 0 {
-        return false;
+/// IntervaloPermiteAtacar: TimerPuedeAtacar ≥ IntervaloUserPuedeAtacar; stamps
+/// TimerPuedeAtacar, TimerGolpeMagia and TimerGolpeUsar.
+pub fn intervalo_permite_atacar(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.user_puede_atacar;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_puede_atacar, now) >= limit {
+        if actualizar {
+            u.timer_puede_atacar = Some(now);
+            u.timer_golpe_magia = Some(now);
+            u.timer_golpe_usar = Some(now);
+        }
+        return true;
     }
-    let hechizo = state.intervals.lanzar_hechizo;
-    let magia_golpe = state.intervals.magia_golpe;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_casteo = hechizo;
-        // VB6: IntervaloMagiaGolpe — spell sets melee cross-cooldown
-        u.interval_golpe = u.interval_golpe.max(magia_golpe);
-        u.interval_flechas = u.interval_flechas.max(magia_golpe);
-        // VB6: Also resets potion timer
-        u.interval_poteo = u.interval_poteo.max(0);
-    }
-    true
+    false
 }
 
-pub fn puede_potear(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_poteo > 0 {
-        return false;
+/// IntervaloPermiteTirar: TimerTirar ≥ IntervaloTirar.
+pub fn intervalo_permite_tirar(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.tirar;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_tirar, now) >= limit {
+        if actualizar {
+            u.timer_tirar = Some(now);
+        }
+        return true;
     }
-    let poteo = state.intervals.poteo_u;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_poteo = poteo;
-    }
-    true
+    false
 }
 
-pub fn puede_trabajar(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_trabajar > 0 {
-        return false;
+/// IntervaloPermiteMagiaGolpe: reads **TimerLanzarSpell** ≥ IntervaloMagiaGolpe
+/// (sic, AO20 reads the spell stamp here); stamps TimerMagiaGolpe.
+pub fn intervalo_permite_magia_golpe(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.magia_golpe;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_lanzar_spell, now) >= limit {
+        if actualizar {
+            u.timer_magia_golpe = Some(now);
+        }
+        return true;
     }
-    let work = state.intervals.work;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_trabajar = work;
-    }
-    true
+    false
 }
 
-pub fn puede_clickear(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_click > 0 {
-        return false;
+/// IntervaloPermiteGolpeMagia: TimerGolpeMagia ≥ IntervaloGolpeMagia.
+pub fn intervalo_permite_golpe_magia(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.golpe_magia;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_golpe_magia, now) >= limit {
+        if actualizar {
+            u.timer_golpe_magia = Some(now);
+        }
+        return true;
     }
-    let click = state.intervals.poteo_click;
-    let poteo = state.intervals.poteo_u;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_click = click;
-        u.interval_poteo = poteo;
+    false
+}
+
+/// IntervaloPermiteGolpeUsar: TimerGolpeUsar ≥ IntervaloGolpeUsar.
+pub fn intervalo_permite_golpe_usar(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.golpe_usar;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_golpe_usar, now) >= limit {
+        if actualizar {
+            u.timer_golpe_usar = Some(now);
+        }
+        return true;
     }
-    true
+    false
+}
+
+/// IntervaloPermiteTrabajarExtraer / Construir: TimerPuedeTrabajar ≥ interval.
+pub fn intervalo_permite_trabajar(state: &mut GameState, conn_id: ConnectionId, construir: bool, actualizar: bool) -> bool {
+    let limit = if construir { state.intervals.trabajar_construir } else { state.intervals.trabajar_extraer };
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_puede_trabajar, now) >= limit {
+        if actualizar {
+            u.timer_puede_trabajar = Some(now);
+        }
+        return true;
+    }
+    false
+}
+
+/// IntervaloPermiteUsar: TimerUsar ≥ IntervaloUserPuedeUsarU.
+pub fn intervalo_permite_usar(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.usar_u;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_usar, now) >= limit {
+        if actualizar {
+            u.timer_usar = Some(now);
+        }
+        return true;
+    }
+    false
+}
+
+/// IntervaloPermiteUsarClick: TimerUsarClick ≥ IntervaloUserPuedeUsarClic.
+pub fn intervalo_permite_usar_click(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.usar_click;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_usar_click, now) >= limit {
+        if actualizar {
+            u.timer_usar_click = Some(now);
+        }
+        return true;
+    }
+    false
+}
+
+/// IntervaloPermiteUsarArcos: TimerPuedeUsarArco ≥ IntervaloFlechasCazadores; stamps
+/// the bow, melee and spell timers.
+pub fn intervalo_permite_usar_arcos(state: &mut GameState, conn_id: ConnectionId, actualizar: bool) -> bool {
+    let limit = state.intervals.flechas;
+    let now = Instant::now();
+    let Some(u) = state.users.get_mut(&conn_id) else { return false };
+    if elapsed_ms(u.timer_puede_usar_arco, now) >= limit {
+        if actualizar {
+            u.timer_puede_usar_arco = Some(now);
+            u.timer_puede_atacar = Some(now);
+            u.timer_lanzar_spell = Some(now);
+        }
+        return true;
+    }
+    false
+}
+
+/// True while the user is inside a work cooldown (used as the "Trabajando" proxy).
+pub fn esta_trabajando(state: &GameState, conn_id: ConnectionId) -> bool {
+    let limit = state.intervals.trabajar_extraer;
+    state
+        .users
+        .get(&conn_id)
+        .map(|u| elapsed_ms(u.timer_puede_trabajar, Instant::now()) < limit)
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod interval_tests {
+    use super::*;
+
+    fn stamp(ms_ago: u64) -> Option<Instant> {
+        Some(Instant::now() - std::time::Duration::from_millis(ms_ago))
+    }
+
+    #[test]
+    fn never_fired_is_always_allowed() {
+        assert_eq!(elapsed_ms(None, Instant::now()), u64::MAX);
+    }
+
+    #[test]
+    fn elapsed_counts_milliseconds() {
+        let e = elapsed_ms(stamp(799), Instant::now());
+        assert!((799..805).contains(&e), "elapsed={e}");
+    }
 }
 
 // =====================================================================
@@ -1186,6 +1269,8 @@ pub(super) async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
 
     send_stats_hp(state, conn_id).await;
     send_stats_mana(state, conn_id).await;
+    // AO20 RevivirUsuario → ActualizarVelocidadDeUsuario (back to normal speed).
+    crate::game::handlers::actualizar_velocidad_de_usuario(state, conn_id);
 }
 
 // =====================================================================

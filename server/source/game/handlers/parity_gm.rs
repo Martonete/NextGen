@@ -19,9 +19,11 @@ pub(super) async fn handle_slash_trabajando(state: &mut GameState, conn_id: Conn
     }
 
     // VB6: checks Counters.Trabajando > 0 — we check interval_trabajar > 0 as proxy
+    let limit = state.intervals.trabajar_extraer as u128;
     let mut names = Vec::new();
     for u in state.users.values() {
-        if u.logged && u.interval_trabajar > 0 {
+        let trabajando = u.timer_puede_trabajar.map(|t| t.elapsed().as_millis() < limit).unwrap_or(false);
+        if u.logged && trabajando {
             names.push(u.char_name.clone());
         }
     }

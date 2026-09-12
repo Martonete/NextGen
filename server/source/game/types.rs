@@ -143,6 +143,8 @@ pub struct UserState {
     pub dead: bool,
     pub hidden: bool,
     pub paralyzed: bool,
+    /// AO20 flags.UltimoMensaje = MSG_NO_PARALYZED: the "paralizado" walk warning fires once.
+    pub paralysis_walk_warned: bool,
     pub immobilized: bool, // VB6 flags.Inmovilizado — separate from paralyzed
     pub meditating: bool,
     pub poisoned: bool,
@@ -161,6 +163,8 @@ pub struct UserState {
     pub safe_toggle: bool,  // PvP safety (SEG)
     pub criminal: bool,
     pub navigating: bool,  // On a boat
+    /// AO20 Char.speeding — movement speed multiplier (1 normal, 1.4 dead, ship/mount Velocidad).
+    pub speeding: f32,
     pub gender: i32,       // 1=Male, 2=Female (from charfile Genero)
     pub comerciando: bool, // In NPC commerce window
     pub target_npc: usize, // NPC runtime index for commerce/interaction
@@ -275,13 +279,18 @@ pub struct UserState {
     pub area_min_x: i32, // Left edge of current 27-wide area
     pub area_min_y: i32, // Top edge of current 27-tall area
 
-    // Anti-cheat cooldown counters (decremented each tick, 0 = action allowed)
-    pub interval_golpe: i32,    // Melee attack cooldown
-    pub interval_flechas: i32,  // Arrow shot cooldown
-    pub interval_casteo: i32,   // Spell cast cooldown
-    pub interval_poteo: i32,    // Potion use cooldown
-    pub interval_click: i32,    // Click action cooldown
-    pub interval_trabajar: i32, // Work/skill cooldown
+    // AO20 action timers (modNuevoTimer.bas) — wall-clock stamps of the last time
+    // each gate was passed; `None` = never. All intervals are milliseconds.
+    pub timer_lanzar_spell: Option<std::time::Instant>,
+    pub timer_puede_atacar: Option<std::time::Instant>,
+    pub timer_golpe_magia: Option<std::time::Instant>,
+    pub timer_magia_golpe: Option<std::time::Instant>,
+    pub timer_golpe_usar: Option<std::time::Instant>,
+    pub timer_usar: Option<std::time::Instant>,
+    pub timer_usar_click: Option<std::time::Instant>,
+    pub timer_puede_usar_arco: Option<std::time::Instant>,
+    pub timer_tirar: Option<std::time::Instant>,
+    pub timer_puede_trabajar: Option<std::time::Instant>,
     pub interval_pu: i32,       // Position update cooldown
 
     // Admin / moderation flags
@@ -314,6 +323,7 @@ pub struct UserState {
     // Montado (mounted)
     pub montado: bool,     // Is currently mounted
     pub montado_body: i32, // Original body before mounting
+    pub montado_obj: i32,  // Saddle/mount obj index while mounted (AO20 EquippedSaddleObjIndex)
     pub levitando: bool,   // Flying mount levitation
 
     // Description
@@ -449,6 +459,7 @@ impl UserState {
             dead: false,
             hidden: false,
             paralyzed: false,
+            paralysis_walk_warned: false,
             immobilized: false,
             meditating: false,
             poisoned: false,
@@ -464,6 +475,7 @@ impl UserState {
             safe_toggle: true, // Safety ON by default
             criminal: false,
             navigating: false,
+            speeding: 1.0,
             gender: 1,
             comerciando: false,
             target_npc: 0,
@@ -552,12 +564,16 @@ impl UserState {
             area_id: 0,
             area_min_x: 0,
             area_min_y: 0,
-            interval_golpe: 0,
-            interval_flechas: 0,
-            interval_casteo: 0,
-            interval_poteo: 0,
-            interval_click: 0,
-            interval_trabajar: 0,
+            timer_lanzar_spell: None,
+            timer_puede_atacar: None,
+            timer_golpe_magia: None,
+            timer_magia_golpe: None,
+            timer_golpe_usar: None,
+            timer_usar: None,
+            timer_usar_click: None,
+            timer_puede_usar_arco: None,
+            timer_tirar: None,
+            timer_puede_trabajar: None,
             interval_pu: 0,
             admin_invisible: false,
             gm_show_name: false,
@@ -577,6 +593,7 @@ impl UserState {
             msj_privados: true,
             montado: false,
             montado_body: 0,
+            montado_obj: 0,
             levitando: false,
             desc: String::new(),
             pareja: String::new(),
@@ -634,6 +651,7 @@ impl UserState {
             &display_name,
             nick_color,
             self.privileges as u8,
+            self.speeding,
         )
     }
 }
@@ -698,28 +716,35 @@ pub mod privilege_level {
     pub const ADMINISTRADOR: i32 = 12;
 }
 
-/// Anti-cheat interval settings loaded from Intervalos.ini.
-/// Values are in game ticks (1 tick = 40ms).
-/// VB6 reference (ms): Melee=1500, Arrows=1400, Spells=1400, Potions=1200, Work=700.
+/// Server intervals loaded from dat/Intervalos.ini — AO20 format and values
+/// (Argentum Server/intervalos.ini). Everything is in milliseconds and gated with
+/// wall-clock timestamps (modNuevoTimer.bas), not game ticks.
 #[derive(Debug, Clone)]
-/// All interval settings loaded from dat/Intervalos.ini.
-/// Configured in milliseconds, converted to ticks (/40, rounded) at load time.
 pub struct IntervalSettings {
-    // Status effect durations (ticks)
+    // Status effect durations (ticks of 40ms — unchanged, not part of the AO20 port)
     pub paralizado: i32, // Paralysis duration
     pub invisible: i32,  // Spell invisibility duration
     pub oculto: i32,     // Hide duration base
     pub npc_ai_ms: u64,  // NPC AI tick interval (ms, used directly)
 
-    // Anti-cheat cooldowns (ticks)
-    pub golpe: i32,          // Melee attack cooldown
-    pub flechas: i32,        // Arrow shot cooldown
-    pub lanzar_hechizo: i32, // Spell cast cooldown
-    pub magia_golpe: i32,    // Delay after spell before melee
-    pub golpe_magia: i32,    // Delay after melee before spell
-    pub poteo_u: i32,        // Potion use cooldown
-    pub poteo_click: i32,    // Click action cooldown
-    pub work: i32,           // Work/skill cooldown
+    // Action gates (ms) — modNuevoTimer.bas
+    pub caminar: u64,             // IntervaloCaminar
+    pub user_puede_atacar: u64,   // IntervaloUserPuedeAtacar
+    pub lanza_hechizo: u64,       // IntervaloLanzaHechizo (IntervaloUserPuedeCastear)
+    pub magia_golpe: u64,         // IntervaloMagiaGolpe — spell → melee
+    pub golpe_magia: u64,         // IntervaloGolpeMagia — melee → spell
+    pub golpe_usar: u64,          // IntervaloGolpeUsar — melee → potion
+    pub usar_click: u64,          // IntervaloUserPuedeUsarClic
+    pub usar_u: u64,              // IntervaloUserPuedeUsarU
+    pub flechas: u64,             // IntervaloFlechasCazadores
+    pub tirar: u64,               // IntervaloTirar
+    pub trabajar_extraer: u64,    // IntervaloTrabajarExtraer
+    pub trabajar_construir: u64,  // IntervaloTrabajarConstruir
+    pub meditar: u64,             // IntervaloMeditar
+    pub ocultarse: u64,           // client-side Hide gate (packet only)
+    pub hablar: u64,              // client-side Talk gate (packet only)
+    pub click_izquierdo: u64,     // client-side LeftClick gate (packet only)
+    pub en_combate_s: i32,        // IntervaloEnCombate (seconds)
 }
 
 impl Default for IntervalSettings {
@@ -729,14 +754,23 @@ impl Default for IntervalSettings {
             invisible: 500,  // 20000ms / 40
             oculto: 500,     // 20000ms / 40
             npc_ai_ms: 1300,
-            golpe: 38,          // 1520ms / 40
-            flechas: 35,        // 1400ms / 40
-            lanzar_hechizo: 35, // 1400ms / 40
-            magia_golpe: 50,    // 2000ms / 40
-            golpe_magia: 50,    // 2000ms / 40
-            poteo_u: 30,        // 1200ms / 40
-            poteo_click: 6,     //  240ms / 40
-            work: 18,           //  720ms / 40
+            caminar: 210,
+            user_puede_atacar: 1165,
+            lanza_hechizo: 1230,
+            magia_golpe: 800,
+            golpe_magia: 800,
+            golpe_usar: 800,
+            usar_click: 276,
+            usar_u: 380,
+            flechas: 1200,
+            tirar: 400,
+            trabajar_extraer: 4000,
+            trabajar_construir: 500,
+            meditar: 10,
+            ocultarse: 500,
+            hablar: 300,
+            click_izquierdo: 80,
+            en_combate_s: 10,
         }
     }
 }
@@ -1556,6 +1590,8 @@ impl GameState {
 
         let char_index = self.world.alloc_char_index();
         let mut npc = NpcState::from_data(npc_idx, &data, char_index, map, x, y);
+        // AO20 UpdateNpcSpeed: the client glides the tile over the NPC's move interval.
+        npc.speeding = crate::game::handlers::npc_speeding(self.intervals.npc_ai_ms);
 
         // Initialize NPC area tracking (VB6: ArgegarNpc + CheckUpdateNeededNpc(USER_NUEVO))
         npc.area_id = (x / 9 + 1) * (y / 9 + 1);
@@ -1843,8 +1879,8 @@ fn rand_simple() -> u32 {
     seed.wrapping_mul(1103515245).wrapping_add(12345) % 1000
 }
 
-/// Load anti-cheat interval settings from dat/Intervalos.ini.
-/// Convert milliseconds to game ticks (1 tick = 40ms), rounded.
+/// Load server intervals from dat/Intervalos.ini (AO20 keys, milliseconds).
+/// Status durations keep the legacy 40ms-tick conversion.
 fn ms_to_ticks(ms: i32) -> i32 {
     ((ms as f64) / 40.0).round() as i32
 }
@@ -1853,46 +1889,59 @@ fn load_intervals(base: &std::path::Path) -> IntervalSettings {
     let path = base.join("dat").join("Intervalos.ini");
     match crate::config::IniFile::load(&path) {
         Ok(ini) => {
-            // Values in INI are milliseconds — convert to ticks (/40, rounded)
+            let d = IntervalSettings::default();
             let get_ms = |key: &str, default_ms: i32| -> i32 {
                 let ms: i32 = ini
                     .get("INTERVALOS", key)
-                    .and_then(|s| s.parse().ok())
+                    .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(default_ms);
                 ms_to_ticks(ms)
             };
-            let npc_ai_ms: u64 = ini
-                .get("INTERVALOS", "IntervaloNpcAI")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(1300);
+            let get = |key: &str, default: u64| -> u64 {
+                ini.get("INTERVALOS", key)
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(default)
+            };
             let settings = IntervalSettings {
                 paralizado: get_ms("IntervaloParalizado", 20000),
                 invisible: get_ms("IntervaloInvisible", 20000),
                 oculto: get_ms("IntervaloOculto", 20000),
-                npc_ai_ms,
-                golpe: get_ms("Golpe", 1520),
-                flechas: get_ms("Flechas", 1400),
-                lanzar_hechizo: get_ms("LanzarHechizo", 1400),
-                poteo_u: get_ms("PoteoU", 1200),
-                poteo_click: get_ms("PoteoClick", 240),
-                work: get_ms("Work", 720),
-                magia_golpe: get_ms("MagiaGolpe", 2000),
-                golpe_magia: get_ms("GolpeMagia", 2000),
+                npc_ai_ms: get("IntervaloNpcAI", d.npc_ai_ms),
+                caminar: get("IntervaloCaminar", d.caminar),
+                user_puede_atacar: get("IntervaloUserPuedeAtacar", d.user_puede_atacar),
+                lanza_hechizo: get("IntervaloLanzaHechizo", d.lanza_hechizo),
+                magia_golpe: get("IntervaloMagiaGolpe", d.magia_golpe),
+                golpe_magia: get("IntervaloGolpeMagia", d.golpe_magia),
+                golpe_usar: get("IntervaloGolpeUsar", d.golpe_usar),
+                usar_click: get("IntervaloUserPuedeUsarClic", d.usar_click),
+                usar_u: get("IntervaloUserPuedeUsarU", d.usar_u),
+                flechas: get("IntervaloFlechasCazadores", d.flechas),
+                tirar: get("IntervaloTirar", d.tirar),
+                trabajar_extraer: get("IntervaloTrabajarExtraer", d.trabajar_extraer),
+                trabajar_construir: get("IntervaloTrabajarConstruir", d.trabajar_construir),
+                meditar: get("IntervaloMeditar", d.meditar),
+                ocultarse: get("IntervaloOcultarse", d.ocultarse),
+                hablar: get("IntervaloHablar", d.hablar),
+                click_izquierdo: get("IntervaloClickIzquierdo", d.click_izquierdo),
+                en_combate_s: get("IntervaloEnCombate", d.en_combate_s as u64) as i32,
             };
             tracing::info!(
-                "Intervals loaded (ms→ticks): paralizado={}, invisible={}, oculto={}, npc_ai={}ms, golpe={}, flechas={}, hechizo={}",
-                settings.paralizado,
-                settings.invisible,
-                settings.oculto,
-                settings.npc_ai_ms,
-                settings.golpe,
+                "Intervals (AO20, ms): caminar={} atacar={} hechizo={} golpe<->magia={}/{} golpe->usar={} usarClick={} usarU={} flechas={} tirar={}",
+                settings.caminar,
+                settings.user_puede_atacar,
+                settings.lanza_hechizo,
+                settings.golpe_magia,
+                settings.magia_golpe,
+                settings.golpe_usar,
+                settings.usar_click,
+                settings.usar_u,
                 settings.flechas,
-                settings.lanzar_hechizo
+                settings.tirar
             );
             settings
         }
         Err(_) => {
-            tracing::warn!("Intervalos.ini not found, using defaults");
+            tracing::warn!("Intervalos.ini not found, using AO20 defaults");
             IntervalSettings::default()
         }
     }

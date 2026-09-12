@@ -639,4 +639,15 @@ public static class ServerPacketId
     /// ArenaData — arena duel list (MAR). ID 254.
     public const byte ArenaData = 254;
 
+    /// Intervals — AO20 HandleIntervals: 16 Int32 (ms) — Hit, Bow, Magic, ExtractWork,
+    /// BuildWork, Walk, DropItem, UseItemKey, UseItemClick, HitMagic, MagicHit, HitUseItem,
+    /// Hide, Talk, LeftClick, Meditate. ID 235.
+    public const byte Intervals = 235;
+
+    /// VelocidadToggle — own speed multiplier (AO20 Speeding, Single). ID 236.
+    public const byte VelocidadToggle = 236;
+
+    /// SpeedingAct — speed multiplier of a char in the area (charindex + Single). ID 253.
+    public const byte SpeedingAct = 253;
+
 }

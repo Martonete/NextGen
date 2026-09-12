@@ -72,6 +72,9 @@ public class GameConfig
 	public bool MouseRightClick = true;     // VB6: MouseActions_RClick
 	public bool MouseContextMenu = true;    // VB6: MouseActions_Activate
 	public bool BlockWalkOnChat = true;     // Block movement while chat input is open
+	/// <summary>AO20 eModoHechizos: 0 BloqueoSoltar (default, client gates casts), 1 BloqueoLanzar
+	/// (no client gate, timers restart), 2 SinBloqueo (send anyway, warn in console).</summary>
+	public int SpellCastMode = 0;
 	public bool DragWindowEnabled = true;   // Allow dragging the borderless window
 	public bool ShowItemTooltip = true;     // Show tooltip on inventory hover
 
@@ -147,6 +150,7 @@ public class GameConfig
 		MouseRightClick = other.MouseRightClick;
 		MouseContextMenu = other.MouseContextMenu;
 		BlockWalkOnChat = other.BlockWalkOnChat;
+		SpellCastMode = other.SpellCastMode;
 		DragWindowEnabled = other.DragWindowEnabled;
 		ShowItemTooltip = other.ShowItemTooltip;
 
@@ -257,6 +261,7 @@ public class GameConfig
 					case "MouseRightClick": cfg.MouseRightClick = val == "1"; break;
 					case "MouseContextMenu": cfg.MouseContextMenu = val == "1"; break;
 					case "BlockWalkOnChat": cfg.BlockWalkOnChat = val == "1"; break;
+					case "SpellCastMode": if (int.TryParse(val, out int scm)) cfg.SpellCastMode = Math.Clamp(scm, 0, 2); break;
 					case "DragWindowEnabled": cfg.DragWindowEnabled = val == "1"; break;
 					case "ShowItemTooltip": cfg.ShowItemTooltip = val == "1"; break;
 
@@ -349,6 +354,7 @@ public class GameConfig
 			sb.AppendLine($"MouseRightClick={(MouseRightClick ? "1" : "0")}");
 			sb.AppendLine($"MouseContextMenu={(MouseContextMenu ? "1" : "0")}");
 			sb.AppendLine($"BlockWalkOnChat={(BlockWalkOnChat ? "1" : "0")}");
+			sb.AppendLine($"SpellCastMode={SpellCastMode}");
 			sb.AppendLine($"DragWindowEnabled={(DragWindowEnabled ? "1" : "0")}");
 			sb.AppendLine($"ShowItemTooltip={(ShowItemTooltip ? "1" : "0")}");
 

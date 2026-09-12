@@ -30,10 +30,13 @@ public static class WalkMovementSmoke
                 state.UserPosY = 50;
                 float delta = 1f / fps;
                 float frameMs = delta * 1000f;
-                // Reference client: 32 px at 120 px/s, integrated on a 60 Hz tick.
-                const float StepMs = 32f / 120f * 1000f;
-                const float TickMs = 1000f / 60f;
-                int maxFrames = (int)Math.Ceiling((StepMs + TickMs) / frameMs) + 1;
+                // AO20 engine.bas: 8.5 px * (frameMs * 0.018) per frame, done at >= 32 px.
+                // The overshoot of the last frame is dropped, so a step takes
+                // ceil(32 / (0.153 * frameMs)) frames: 209 ms at best, 209 + frameMs at worst.
+                const float PxPerMs = 8.5f * 0.018f;
+                const float StepMs = 32f / PxPerMs;
+                int expectedFrames = (int)Math.Ceiling(32f / (PxPerMs * frameMs) - 1e-4f);
+                int maxFrames = expectedFrames + 1;
                 for (int step = 0; step < 40; step++)
                 {
                     // Same start state as TryMove; walk a closed loop, including turns.
@@ -63,16 +66,16 @@ public static class WalkMovementSmoke
                         Require(ch.WalkPoseActive, "Idle pose flashed at a tile boundary");
                         Require(frames <= maxFrames, "Movement failed to complete");
                     } while (state.UserMoving);
-                    // The tick carries its remainder across steps, so a single step
-                    // lands within one frame and one tick of the reference duration.
-                    Require(Math.Abs(frames * frameMs - StepMs) <= frameMs + TickMs,
-                        "Step duration changed");
+                    Require(frames == expectedFrames || frames == expectedFrames + 1,
+                        $"Step took {frames} frames at {fps} FPS, expected {expectedFrames}");
+                    Require(frames * frameMs >= StepMs - frameMs - 0.01f && frames * frameMs <= StepMs + frameMs + 0.01f,
+                        "Step duration outside AO20 cadence");
                     Require(state.PendingMoves == 0, "Pending movement did not clear");
                 }
                 Require(ch.PosX == 50 && ch.PosY == 50, "Turn path changed");
                 for (int i = 0; i < fps; i++) update(delta);
                 Require(!ch.WalkPoseActive && !ch.Moving, "Stop did not restore idle");
-                GD.Print($"[WALK-SMOKE] PASS body {body}, {fps} FPS: 40 steps, 266.7 ms each, stable camera, turns and stop");
+                GD.Print($"[WALK-SMOKE] PASS body {body}, {fps} FPS: 40 steps of {expectedFrames} frames (AO20 8.5 px * ticks), stable camera, turns and stop");
             }
         }
         finally { main.Free(); }

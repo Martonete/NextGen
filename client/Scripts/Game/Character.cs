@@ -58,9 +58,10 @@ public class Character
 		else
 			_walkIdleMs += Math.Max(0f, deltaMs);
 
-		// Keep the last pose briefly, not an extra moving/animated step. This
-		// covers a boundary frame even at 20 FPS; a real stop returns to idle.
-		if (_walkIdleMs >= 65f)
+		// AO20 Char_Render: the frame the step ends without a new one (Idle=True) the walk
+		// series is frozen (started=0) — static pose at once. Consecutive steps never hit
+		// this because movement is advanced before input reads the keys (engine.Start).
+		if (_walkIdleMs > 0f)
 		{
 			WalkFrame = 0f;
 			WalkFrameHeading = 0;

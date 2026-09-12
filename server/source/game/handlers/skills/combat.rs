@@ -1,14 +1,10 @@
 //! Combat-related skills: taming, ranged attacks.
 
-use super::{skill_id, try_level_skill, try_level_skill_with_hit};
+use super::{skill_id, try_level_skill_with_hit};
 use crate::game::handlers::common::*;
-use crate::game::handlers::{
-    calc_armor_absorption, calc_attack_power_with_balance, check_user_level, poder_evasion,
-    poder_evasion_escudo, send_inventory_slot, user_die,
-};
+use crate::game::handlers::send_inventory_slot;
 use crate::game::types::{GameState, MAX_INVENTORY_SLOTS, SendTarget};
 use crate::net::ConnectionId;
-use crate::protocol::packets::MultiMessageID;
 use crate::protocol::{binary_packets, font_index};
 
 pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
@@ -179,8 +175,14 @@ pub(crate) async fn do_ranged_attack(
     tx: i32,
     ty: i32,
 ) {
-    // Anti-cheat: check arrow cooldown
-    if !puede_flechear(state, conn_id) {
+    // AO20 HandleWorkLeftClick/Proyectiles: spell→melee (peek), melee→spell (peek), bow interval.
+    if !intervalo_permite_magia_golpe(state, conn_id, false) {
+        return;
+    }
+    if !intervalo_permite_golpe_magia(state, conn_id, false) {
+        return;
+    }
+    if !intervalo_permite_usar_arcos(state, conn_id, true) {
         return;
     }
 
@@ -430,346 +432,56 @@ pub(crate) async fn do_ranged_attack(
 /// Resolve ranged attack against NPC.
 /// VB6: SistemaCombate.bas UsuarioAtacaNpc — uses Proyectiles skill + projectile class modifiers.
 /// arrow_min/max add to bow weapon damage (VB6: DañoArma += RandomNumber(Ammo.MinHIT, Ammo.MaxHIT)).
+/// Ranged attack against an NPC — AO20 `UsuarioAtacaNpc(.., Ranged)`: the very same
+/// resolution as a melee hit (`user_attack_npc`), only the attack power skill differs
+/// because the equipped weapon is a bow.
 async fn resolve_ranged_attack_npc(
     state: &mut GameState,
     conn_id: ConnectionId,
     npc_idx: usize,
-    arrow_min_hit: i32,
-    arrow_max_hit: i32,
+    _arrow_min_hit: i32,
+    _arrow_max_hit: i32,
 ) {
-    let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged && !u.dead => (
-            u.pos_map,
-            u.pos_x,
-            u.pos_y,
-            u.char_index,
-            u.level,
-            u.attributes[0],
-            u.attributes[1],
-            u.min_hit,
-            u.max_hit,
-            u.skills[19],
-            u.char_name.clone(),
-            u.class,
-        ),
-        _ => return,
-    };
-    let (
-        map,
-        x,
-        y,
-        _char_index,
-        level,
-        strength,
-        agility,
-        min_hit,
-        max_hit,
-        skill_proyectiles,
-        _attacker_name,
-        class,
-    ) = user_data;
-
-    let npc_data = match state.get_npc(npc_idx) {
-        Some(n) if n.active && n.attackable => (
-            n.char_index,
-            n.def,
-            n.poder_evasion,
-            n.min_hp,
-            n.max_hp,
-            n.give_exp,
-            n.npc_number,
-            n.name.clone(),
-        ),
-        _ => return,
-    };
-    let (npc_char, npc_def, npc_evasion, _npc_hp, _npc_max_hp, npc_exp, _npc_number, _npc_name) =
-        npc_data;
-
-    // Hit check — VB6: PoderAtaqueProyectil uses Proyectiles skill + ModClase.AtaqueProyectiles
-    let atk_mod = state
-        .game_data
-        .balance
-        .class_mod_ataque_proyectiles_e(class);
-    let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod);
-    let hit_prob = ((50.0 + (attack_power - npc_evasion as f64) * 0.4) as i32).clamp(10, 90);
-
-    if rand_range(1, 100) > hit_prob {
-        let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
-        state.send_bytes(conn_id, &pkt);
-        state.send_chat_over_head_to(
-            SendTarget::ToArea { map, x, y },
-            "\u{00A1}Fallo!",
-            npc_char.0 as i16,
-            255,
-        );
-        // VB6: Level Proyectiles skill even on miss
-        if let Some(u) = state.users.get_mut(&conn_id) {
-            try_level_skill(u, 19);
-        }
-        return;
-    }
-
-    // VB6 CalcularDaño: DañoArma = Rand(Bow.MinHIT, Bow.MaxHIT) + Rand(Arrow.MinHIT, Arrow.MaxHIT)
-    let bow_dmg = rand_range(min_hit.max(1), max_hit.max(1));
-    let ammo_dmg = if arrow_max_hit > 0 {
-        rand_range(arrow_min_hit.max(0), arrow_max_hit.max(1))
-    } else {
-        0
-    };
-    let weapon_dmg = bow_dmg + ammo_dmg;
-
-    // VB6: StrBonus uses only bow's MaxHIT (not arrow), matching VB6's commented-out line
-    let str_bonus = ((max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
-    let user_dmg = rand_range(min_hit, max_hit);
-    let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
-
-    // VB6: ModClase.DañoProyectiles (not DañoArmas)
-    let dmg_mod = state.game_data.balance.class_mod_dano_proyectiles_e(class) as f64;
-    let mut damage = (base_dmg as f64 * dmg_mod) as i32;
-    damage = (damage - npc_def).max(1);
-
-    // Apply damage
-    let new_hp = if let Some(npc) = state.get_npc_mut(npc_idx) {
-        npc.min_hp -= damage;
-        npc.min_hp
-    } else {
-        return;
-    };
-
-    let u2_pkt = binary_packets::write_multi_user_hit_npc(damage as i32);
-    crate::game::handlers::weapon_visuals::confirmed_hit(state, conn_id, npc_char.0 as i16, false, true);
-    state.send_bytes(conn_id, &u2_pkt);
-    state.send_chat_over_head_to(
-        SendTarget::ToArea { map, x, y },
-        &format!("-{}", damage),
-        npc_char.0 as i16,
-        65535,
-    );
-
-    // Level Proyectiles skill on hit
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        try_level_skill(u, 19);
-    }
-
-    if new_hp <= 0 {
-        if let Some(u) = state.users.get_mut(&conn_id) {
-            u.exp += npc_exp as i64;
-        }
-        send_stats_exp(state, conn_id).await;
-        check_user_level(state, conn_id).await;
-
-        let npc_ci = state.get_npc(npc_idx).map(|n| n.char_index.0).unwrap_or(0);
-        let bp_pkt = binary_packets::write_character_remove(npc_ci as i16);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt);
-
-        state.kill_npc(npc_idx);
-    }
+    let (map, x, y, level, strength, agility, min_hit, max_hit, skill_armas, name, class) =
+        match state.users.get(&conn_id) {
+            Some(u) if u.logged && !u.dead => (
+                u.pos_map,
+                u.pos_x,
+                u.pos_y,
+                u.level,
+                u.attributes[0],
+                u.attributes[1],
+                u.min_hit,
+                u.max_hit,
+                u.skills[(skill_id::ARMAS - 1) as usize],
+                u.char_name.clone(),
+                u.class,
+            ),
+            _ => return,
+        };
+    crate::game::handlers::user_attack_npc(
+        state, conn_id, npc_idx, map, x, y, strength, agility, level, min_hit, max_hit, skill_armas, &name, class,
+    )
+    .await;
 }
 
-/// Resolve ranged attack against user — VB6: SistemaCombate.bas UsuarioAtacaUsuario (ranged path).
-/// Uses Proyectiles skill + projectile class modifiers + arrow poison application.
+/// Ranged attack against a user — AO20 `UsuarioAtacaUsuario(.., Ranged)`: `PuedeAtacar`
+/// and then the shared resolution (`UsuarioImpacto` → `UserDamageToUser`).
 async fn resolve_ranged_attack_user(
     state: &mut GameState,
     conn_id: ConnectionId,
     victim_id: ConnectionId,
-    arrow_min_hit: i32,
-    arrow_max_hit: i32,
-    arrow_envenena: bool,
+    _arrow_min_hit: i32,
+    _arrow_max_hit: i32,
+    _arrow_envenena: bool,
 ) {
-    let att_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged && !u.dead => (
-            u.pos_map,
-            u.pos_x,
-            u.pos_y,
-            u.char_index,
-            u.level,
-            u.attributes[0],
-            u.attributes[1],
-            u.min_hit,
-            u.max_hit,
-            u.skills[19],
-            u.char_name.clone(),
-            u.class,
-            u.safe_toggle,
-        ),
-        _ => return,
-    };
-    let (
-        map,
-        x,
-        y,
-        _char_index,
-        level,
-        strength,
-        agility,
-        min_hit,
-        max_hit,
-        skill_proyectiles,
-        attacker_name,
-        class,
-        safe_on,
-    ) = att_data;
-
-    if safe_on {
-        state.send_msg_id(conn_id, 207, "");
-        return;
-    }
-
-    let victim_data = match state.users.get(&victim_id) {
-        Some(v) if v.logged && !v.dead => (
-            v.level,
-            v.attributes[1],
-            v.skills[3],
-            v.skills[4],
-            v.char_name.clone(),
-            v.privileges,
-            v.char_index,
-            v.class,
-            v.equip.shield > 0 && v.equip.shield <= MAX_INVENTORY_SLOTS,
-            v.meditating,
-        ),
-        _ => return,
-    };
-    let (
-        v_level,
-        v_agility,
-        v_tacticas,
-        v_defensa,
-        victim_name,
-        v_privs,
-        v_char_index,
-        v_class,
-        v_has_shield,
-        v_meditating,
-    ) = victim_data;
-
-    if v_privs > 0 {
-        return;
-    }
-
-    // Hit check — VB6: PoderAtaqueProyectil + ModClase.AtaqueProyectiles
-    let atk_mod = state
-        .game_data
-        .balance
-        .class_mod_ataque_proyectiles_e(class);
-    let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod);
-    // VB6: victim evasion includes shield bonus (same as melee PvP)
-    let v_evasion_mod = state.game_data.balance.class_mod_evasion_e(v_class);
-    let mut victim_evasion = poder_evasion(v_tacticas, v_agility, v_level, v_evasion_mod) as f64;
-    if v_has_shield {
-        let shield_mod = state.game_data.balance.class_mod_escudo_e(v_class);
-        victim_evasion += poder_evasion_escudo(v_defensa, shield_mod) as f64;
-    }
-    let mut prob = (50.0 + (attack_power - victim_evasion) * 0.4) as i32;
-    prob = prob.clamp(10, 90);
-
-    // VB6: Meditation reduces evasion by 25%
-    if v_meditating {
-        let prob_evadir = ((100 - prob) as f64 * 0.75) as i32;
-        prob = (100 - prob_evadir).min(90);
-    }
-
-    if rand_range(1, 100) > prob {
-        let pkt = binary_packets::write_multi_user_attacked_swing(_char_index.0 as i16);
-        state.send_bytes(victim_id, &pkt);
-        let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
-        state.send_bytes(conn_id, &pkt);
-        state.send_chat_over_head_to(
-            SendTarget::ToArea { map, x, y },
-            "\u{00A1}Fallo!",
-            v_char_index.0 as i16,
-            255,
-        );
-        // VB6: Level Proyectiles skill even on miss
-        if let Some(u) = state.users.get_mut(&conn_id) {
-            try_level_skill(u, 19);
-        }
-        return;
-    }
-
-    // VB6 CalcularDaño: DañoArma = Rand(Bow.MinHIT, Bow.MaxHIT) + Rand(Arrow.MinHIT, Arrow.MaxHIT)
-    let bow_dmg = rand_range(min_hit.max(1), max_hit.max(1));
-    let ammo_dmg = if arrow_max_hit > 0 {
-        rand_range(arrow_min_hit.max(0), arrow_max_hit.max(1))
-    } else {
-        0
-    };
-    let weapon_dmg = bow_dmg + ammo_dmg;
-
-    // VB6: StrBonus uses only bow's MaxHIT (not arrow), matching VB6's commented-out line
-    let str_bonus = ((max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
-    let user_dmg = rand_range(min_hit, max_hit);
-    let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
-
-    // VB6: ModClase.DañoProyectiles
-    let dmg_mod = state.game_data.balance.class_mod_dano_proyectiles_e(class) as f64;
-    let mut damage = (base_dmg as f64 * dmg_mod) as i32;
-
-    // Body part hit (1=head, 2-6=body)
-    let body_part = rand_range(1, 6);
-
-    // Armor absorption
-    let absorption = calc_armor_absorption(state, victim_id, body_part);
-    damage -= absorption;
-
-    // VB6 13.3: No generic crit in ranged PvP — DoGolpeCritico is Bandido+EspadaVikinga only (melee)
-    let damage = damage.max(1);
-
-    // Apply damage
-    if let Some(victim) = state.users.get_mut(&victim_id) {
-        victim.min_hp -= damage;
-    }
-    let n4_pkt = binary_packets::write_multi_user_hitted_by_user(
-        _char_index.0 as i16,
-        body_part as u8,
-        damage as i16,
-    );
-    state.send_bytes(victim_id, &n4_pkt);
-    let n5_pkt = binary_packets::write_multi_user_hitted_user(
-        v_char_index.0 as i16,
-        body_part as u8,
-        damage as i16,
-    );
-    state.send_bytes(conn_id, &n5_pkt);
-    crate::game::handlers::weapon_visuals::confirmed_hit(state, conn_id, v_char_index.0 as i16, false, true);
-
-    state.send_chat_over_head_to(
-        SendTarget::ToArea { map, x, y },
-        &format!("-{}", damage),
-        v_char_index.0 as i16,
-        65535,
-    );
-
-    // VB6: Arrow poison (60% chance if ammo has Envenena=1) — SistemaCombate.bas UserEnvenena
-    // VB6 uses `< 60` (59% effective), matching the melee weapon poison path.
-    if arrow_envenena && rand_range(1, 100) < 60 {
-        let already_poisoned = state
-            .users
-            .get(&victim_id)
-            .map(|u| u.poisoned)
-            .unwrap_or(true);
-        if !already_poisoned {
-            if let Some(victim) = state.users.get_mut(&victim_id) {
-                victim.poisoned = true;
-                victim.counter_poison = 0;
-                victim.poisoned_by = Some(conn_id);
-                victim.poisoned_skill_id = skill_id::PROYECTILES;
-            }
-            state.send_msg_id(victim_id, 171, &attacker_name);
-            state.send_msg_id(conn_id, 172, &victim_name);
-        }
-    }
-
-    // Level Proyectiles skill on hit
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        try_level_skill(u, 19);
-    }
-
-    send_stats_hp(state, victim_id).await;
-
-    // Check death
-    let hp = state.users.get(&victim_id).map(|u| u.min_hp).unwrap_or(0);
-    if hp <= 0 {
-        user_die(state, victim_id, Some(conn_id)).await;
-    }
+    let Some(both_in_arena) = crate::game::handlers::puede_atacar(state, conn_id, victim_id).await else { return };
+    crate::game::handlers::usuario_ataca_usuario(
+        state,
+        conn_id,
+        victim_id,
+        crate::game::handlers::combat_ao20::AttackType::Ranged,
+        both_in_arena,
+    )
+    .await;
 }
