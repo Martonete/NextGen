@@ -41,7 +41,7 @@ public partial class LightningSmoke : Node2D
         for (int i = 0; i < Ages.Length; i++)
         {
             int col = i % 3, row = i / 3;
-            Vector2 pos = new(80 + col * 260, 200 + row * 195);
+            Vector2 pos = new(80 + col * 260, 130 + row * 190);
             var ch = new Character { Body = 1, Head = 1, Heading = 3, FovAlpha = 1 };
             CharRenderer.DrawCharacter(this, ch, pos, _data, _animator);
             _renderer.DrawLightningShape(this, pos + new Vector2(16, 27), Ages[i], 1f, 4);

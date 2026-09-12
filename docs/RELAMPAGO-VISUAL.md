@@ -1,12 +1,12 @@
 # Relámpago: rayo de tormenta sobre el objetivo
 
 Efecto procedural de 0,70 s (`CreateFX 102`, exclusivo de `HECHIZO12`): un rayo alto y
-anguloso que baja del cielo (~150 px sobre la cabeza) e impacta en el torso.
+anguloso y compacto (~60 px sobre la cabeza, unos 2 tiles) e impacta en el torso.
 
 ## Secuencia
 1. **Líder escalonado (0–0,05 s):** canal fino y tenue que baja parpadeando desde arriba.
 2. **Descarga principal (0,05 s):** canal a plena potencia — halo azul, vaina celeste y
-   núcleo blanco — con 2–3 ramas laterales que mueren en el aire, bloom blanco en el
+   núcleo blanco — con 1–2 ramas laterales que mueren en el aire, bloom blanco en el
    pecho, destello sobre el piso y anillo de choque que se expande.
 3. **Dos re-descargas (0,21 s y 0,36 s):** cada una con **su propia geometría de canal**
    y menor intensidad (75 % y 55 %), como el parpadeo de un rayo real.

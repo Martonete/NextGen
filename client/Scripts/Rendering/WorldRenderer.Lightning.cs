@@ -13,8 +13,8 @@ public partial class WorldRenderer
     private const float LightningMainStroke = 0.05f;
     private const float LightningRestrike1 = 0.21f;
     private const float LightningRestrike2 = 0.36f;
-    private const float LightningChannelHeight = 150f;   // px above the head
-    private const int LightningSegments = 11;
+    private const float LightningChannelHeight = 62f;    // px above the head (about 2 tiles)
+    private const int LightningSegments = 7;
 
     private void UpdateLightningEffects(float delta)
     {
@@ -115,7 +115,7 @@ public partial class WorldRenderer
             float haloW = leader ? 4f : 9f, sheathW = leader ? 1.8f : 3.6f, coreW = leader ? 0.9f : 1.7f;
 
             // Sky origin sits slightly off-centre so the strike reads as coming from the storm, not the head.
-            float originX = chest.X + LightningNoise(seed, 0) * 34f;
+            float originX = chest.X + LightningNoise(seed, 0) * 18f;
             Vector2 prev = new(originX, top);
             DrawReactiveGlowSprite(canvas, prev, leader ? 10f : 22f, new Color(0.35f, 0.7f, 1f, power * 0.45f));
 
@@ -125,7 +125,7 @@ public partial class WorldRenderer
                 float frac = (float)s / LightningSegments;
                 float y = Mathf.Lerp(top, chest.Y, frac);
                 // Angular kinks with amplitude that shrinks toward the target so it lands on the chest.
-                float amp = 26f * (1f - frac) + 4f;
+                float amp = 16f * (1f - frac) + 3f;
                 float x = s == LightningSegments
                     ? chest.X
                     : Mathf.Lerp(originX, chest.X, frac) + LightningNoise(seed, s) * amp;
@@ -136,7 +136,7 @@ public partial class WorldRenderer
                 canvas.DrawLine(prev, curr, core, coreW, true);
 
                 // Branches: leave the channel at a kink and die out in the air.
-                bool branchHere = !leader && (s == 3 || s == 6 || (s == 8 && performanceLevel >= 2));
+                bool branchHere = !leader && (s == 2 || (s == 4 && performanceLevel >= 2));
                 if (branchHere)
                 {
                     float dir = LightningNoise(seed, 20 + s) >= 0 ? 1f : -1f;
@@ -145,8 +145,8 @@ public partial class WorldRenderer
                     int bSegs = 3;
                     for (int b = 1; b <= bSegs; b++)
                     {
-                        float bx = bPrev.X + dir * (9f + 5f * LightningNoise(seed, 40 + s * 3 + b));
-                        float by = bPrev.Y + 8f + 6f * MathF.Abs(LightningNoise(seed, 60 + s * 3 + b));
+                        float bx = bPrev.X + dir * (7f + 4f * LightningNoise(seed, 40 + s * 3 + b));
+                        float by = bPrev.Y + 6f + 4f * MathF.Abs(LightningNoise(seed, 60 + s * 3 + b));
                         Vector2 bCurr = new(bx, by);
                         float taper = 1f - (float)(b - 1) / bSegs;
                         canvas.DrawLine(bPrev, bCurr, halo with { A = halo.A * 0.6f * taper }, 5f * taper + 1f, true);
