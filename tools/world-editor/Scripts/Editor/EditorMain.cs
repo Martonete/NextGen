@@ -147,6 +147,7 @@ public partial class EditorMain : Control
     private Button? _rightRemoveLayer2Button;
     private Button? _rightRemoveLayer3Button;
     private Button? _rightRemoveLayer4Button;
+    private VBoxContainer? _rightMoveLayerBox;
     private Button? _rightRemoveNpcButton;
     private Button? _rightRemoveObjectButton;
 
@@ -852,6 +853,13 @@ public partial class EditorMain : Control
         _rightRemoveObjectButton = EditorTheme.MakeButton("Quitar objeto");
         _rightRemoveObjectButton.Pressed += RemoveSelectedTileObject;
         _rightTileSection.AddChild(_rightRemoveObjectButton);
+
+        // "Mover de capa": one row per occupied layer, rebuilt when the tile changes.
+        // Painting a GRH on the wrong layer is a common slip; this fixes it in place
+        // without erasing and re-finding the graphic in the palette.
+        _rightMoveLayerBox = new VBoxContainer();
+        _rightMoveLayerBox.AddThemeConstantOverride("separation", 2);
+        _rightTileSection.AddChild(_rightMoveLayerBox);
 
         rightVBox.AddChild(_rightTileSection);
 
@@ -4295,6 +4303,87 @@ public partial class EditorMain : Control
             _rightRemoveNpcButton.Visible = hasTile && tile!.Value.HasNpc;
         if (_rightRemoveObjectButton != null)
             _rightRemoveObjectButton.Visible = hasTile && tile!.Value.HasObject;
+        RebuildMoveLayerRows(tile);
+    }
+
+    private static int LayerGrh(in MapTile tile, int layer) => layer switch
+    {
+        1 => tile.Layer1, 2 => tile.Layer2, 3 => tile.Layer3, 4 => tile.Layer4, _ => 0
+    };
+
+    private static void SetLayerGrh(ref MapTile tile, int layer, int grh)
+    {
+        switch (layer)
+        {
+            case 1: tile.Layer1 = grh; break;
+            case 2: tile.Layer2 = grh; break;
+            case 3: tile.Layer3 = grh; break;
+            case 4: tile.Layer4 = grh; break;
+        }
+    }
+
+    private void RebuildMoveLayerRows(MapTile? tile)
+    {
+        if (_rightMoveLayerBox == null) return;
+        foreach (var child in _rightMoveLayerBox.GetChildren()) child.QueueFree();
+        if (!tile.HasValue) { _rightMoveLayerBox.Visible = false; return; }
+
+        bool any = false;
+        for (int from = 1; from <= 4; from++)
+        {
+            int grh = LayerGrh(tile.Value, from);
+            if (grh <= 0) continue;
+            if (!any)
+            {
+                _rightMoveLayerBox.AddChild(EditorTheme.MakeLabel("Mover de capa", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+                any = true;
+            }
+            var row = new HBoxContainer();
+            row.AddThemeConstantOverride("separation", 3);
+            row.AddChild(EditorTheme.MakeLabel($"L{from} ({grh})", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+            for (int to = 1; to <= 4; to++)
+            {
+                if (to == from) continue;
+                int f = from, t = to;
+                bool occupied = LayerGrh(tile.Value, to) > 0;
+                var btn = EditorTheme.MakeButton($"→L{to}");
+                btn.TooltipText = occupied
+                    ? $"Intercambiar con el GRH {LayerGrh(tile.Value, to)} que ya hay en L{to}"
+                    : $"Mover el GRH {grh} a la capa {to}";
+                btn.Pressed += () => MoveSelectedTileLayer(f, t);
+                row.AddChild(btn);
+            }
+            _rightMoveLayerBox.AddChild(row);
+        }
+        _rightMoveLayerBox.Visible = any;
+    }
+
+    private void MoveSelectedTileLayer(int from, int to)
+    {
+        if (_map == null || !_state.HasSelectedTile || from == to) return;
+        int x = _state.SelectedTileX, y = _state.SelectedTileY;
+        if (!_map.InBounds(x, y)) return;
+
+        var before = _map.Tiles[x, y];
+        ref var tile = ref _map.Tiles[x, y];
+        int grh = LayerGrh(tile, from);
+        if (grh <= 0) return;
+        int displaced = LayerGrh(tile, to);
+        SetLayerGrh(ref tile, to, grh);
+        SetLayerGrh(ref tile, from, displaced);   // swap, or 0 when the target was empty
+        // Same rule as painting on layer 3: the piece now occupies the tile.
+        if (to == 3 && _state.AutoBlockLayer3) tile.Blocked = true;
+
+        _undo.BeginBatch($"Move Layer {from} -> {to}");
+        _undo.RecordTileChange(x, y, before, tile);
+        _undo.EndBatch();
+        _state.MarkDirty();
+        RefreshSelectedTileInfo();
+        _viewport?.MarkLightmapDirty();
+        _viewport?.QueueRedraw();
+        SetStatus(displaced > 0
+            ? $"GRH {grh} movido a L{to}; el GRH {displaced} pasó a L{from} en ({x}, {y})"
+            : $"GRH {grh} movido de L{from} a L{to} en ({x}, {y})");
     }
 
     private void RemoveSelectedTileLayer(int layer)
