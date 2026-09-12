@@ -1,30 +1,32 @@
-# Relámpago: descarga fulminante celestial
+# Relámpago: rayo de tormenta sobre el objetivo
 
-Efecto procedural de 0,44 segundos sobre el objetivo: un rayo de plasma eléctrico
-compacto que desciende desde justo por encima de la cabeza (~75px) e impacta en el torso,
-con filamentos gemelos entrelazados (*streamers*), nodos de resplandor suave en los vértices,
-arcos envolventes que abrazan la silueta del personaje, anillo de choque electromagnético
-y chispas ionizadas en el suelo.
+Efecto procedural de 0,70 s (`CreateFX 102`, exclusivo de `HECHIZO12`): un rayo alto y
+anguloso que baja del cielo (~150 px sobre la cabeza) e impacta en el torso.
 
-## Identidad visual y proporciones
-- **Escala compacta:** Nace a la altura del personaje (~75px arriba de su centro) evitando
-  trazos excesivamente largos que invadan la pantalla.
-- **Filamentos dobles entrelazados:** Núcleo de plasma blanco puro envuelto en una vaina
-  cian brillante y una estela secundaria que le da volumen y dinamismo.
-- **Nodos de voltaje y arcos corporales:** Destellos radiales suaves en las curvas del rayo
-  y dos micro-arcos que abrazan la silueta del personaje al impactar.
-- **Colores:** Azul zafiro profundo de halo (`#1A60FF`), cian eléctrico de alto voltaje (`#59E0FF`)
-  y núcleo blanco incandescente (`#F2FDFF`).
+## Secuencia
+1. **Líder escalonado (0–0,05 s):** canal fino y tenue que baja parpadeando desde arriba.
+2. **Descarga principal (0,05 s):** canal a plena potencia — halo azul, vaina celeste y
+   núcleo blanco — con 2–3 ramas laterales que mueren en el aire, bloom blanco en el
+   pecho, destello sobre el piso y anillo de choque que se expande.
+3. **Dos re-descargas (0,21 s y 0,36 s):** cada una con **su propia geometría de canal**
+   y menor intensidad (75 % y 55 %), como el parpadeo de un rayo real.
+4. **Arcos residuales (0,12–0,70 s):** chispas que saltan desde el pecho y 2–3 arcos
+   recorriendo el cuerpo mientras se apaga.
 
-## Integración con el protocolo
-- Se activa al recibir `CreateFX 102`, exclusivo de `HECHIZO12` en `server/dat/Hechizos.dat`.
-- Sin cambios en el protocolo, daño o lógica de servidor.
-- Reemplaza el sprite clásico cuando *Mundo Reactivo* y *Partículas* están habilitados;
-  con partículas desactivadas se conserva el sprite clásico original.
+## Decisiones de diseño
+- **La forma se mantiene fija durante cada descarga**; la versión anterior movía la
+  geometría cada 40 ms y se leía como un garabato. El ruido es determinista
+  (`LightningNoise(seed, i)`), sin estado aleatorio.
+- Quiebres angulosos con amplitud decreciente hacia el objetivo: nace desplazado del
+  centro (viene de la tormenta) y aterriza exactamente en el pecho.
 
-## Rendimiento y capas
-- Implementado en `WorldRenderer.Lightning.cs` dentro del paso aditivo de glow.
-- Sigue la posición interpolada del objetivo; respeta visibilidad, niebla de guerra y pausa.
-- Totalmente analítico: 0 allocations por frame (sin nodos Godot ni arrays temporales).
-- Escala de calidad según `PerformanceLevel` (6/12/18 chispas de impacto y ramificaciones adaptativas).
-- Temporizador independiente por personaje (`ch.LightningTime`); se cancela con `ClearFX` (FX 0).
+## Integración
+- Sin cambios de protocolo ni de servidor. Reemplaza el sprite clásico cuando *Mundo
+  Reactivo* y *Partículas* están habilitados; si no, se conserva el FX clásico.
+- `WorldRenderer.Lightning.cs`, pasada aditiva de glow; sigue la posición interpolada,
+  respeta niebla/visibilidad/pausa, 0 allocations por frame. `ClearFX` (FX 0) lo cancela.
+- Calidad según `PerformanceLevel`: 8/14/20 chispas, tercera rama y tercer arco a partir de Med.
+
+## Verificación
+`res://test/render/LightningSmoke.tscn` genera `user://lightning-strip.png`: una tira de
+9 instantes del efecto sobre un personaje para ajustar el aspecto sin correr la suite completa.

@@ -5,7 +5,16 @@ namespace ArgentumNextgen.Rendering;
 
 public partial class WorldRenderer
 {
-    private const float LightningDuration = 0.44f;
+    private const float LightningDuration = 0.70f;
+
+    // Real lightning is one tall, angular channel that holds its shape while it
+    // flickers; it does not wiggle. Three strokes share the flash: the return stroke
+    // and two dimmer re-strikes, each with its own channel geometry.
+    private const float LightningMainStroke = 0.05f;
+    private const float LightningRestrike1 = 0.21f;
+    private const float LightningRestrike2 = 0.36f;
+    private const float LightningChannelHeight = 150f;   // px above the head
+    private const int LightningSegments = 11;
 
     private void UpdateLightningEffects(float delta)
     {
@@ -26,10 +35,9 @@ public partial class WorldRenderer
     }
 
     /// <summary>
-    /// Relámpago (HECHIZO12 / FX 102): A compact, high-voltage lightning strike descending
-    /// from just above the character's head, with a braided dual-filament plasma core,
-    /// soft electric glow nodes, lateral crackling tendrils, and a bright ground impact corona.
-    /// Analytic, zero per-frame heap allocations.
+    /// Relámpago (HECHIZO12 / FX 102): a tall sky-to-target strike. Faint stepped leader,
+    /// blinding return stroke with ground flash and shock ring, two re-strikes with fresh
+    /// channels, then residual arcs crawling over the target. Analytic, no allocations.
     /// </summary>
     private void DrawLightningEffects(CanvasItem canvas)
     {
@@ -43,141 +51,183 @@ public partial class WorldRenderer
             Vector2 feet = ReactiveToScreen(new System.Numerics.Vector2(
                 ch.PosX * TileSize + ch.MoveOffsetX + 16,
                 ch.PosY * TileSize + ch.MoveOffsetY + 27));
-
             if (!ReactiveOnScreen(feet)) continue;
 
-            float t = age / LightningDuration;
-            float fade = (1 - t) * ch.FovAlpha;
-            Vector2 chest = feet + new Vector2(0, -22);
-            Vector2 head = feet + new Vector2(0, -38);
+            DrawLightningShape(canvas, feet, age, ch.FovAlpha, _state.Config.PerformanceLevel);
+        }
+    }
 
-            // Strike phase: jitter shifts rapidly every 40ms for high-speed plasma crackle
-            int phase = (int)(age / 0.040f);
-            float crackle = 0.8f + 0.2f * MathF.Exp(-(age % 0.040f) * 60);
-            float boltFade = Math.Max(0, 1 - age / 0.28f);
-            float boltPower = boltFade * crackle * ch.FovAlpha;
+    // Deterministic noise in [-1, 1]; the channel must be identical every frame of a stroke.
+    private static float LightningNoise(int seed, int i)
+    {
+        float v = MathF.Sin(seed * 91.7f + i * 47.3f + 12.9f) * 43758.5453f;
+        return (v - MathF.Floor(v)) * 2f - 1f;
+    }
 
-            // Colors: deep sapphire halo, electric cyan body, and pure white-hot core
-            var colorHalo = new Color(0.10f, 0.38f, 1.0f, boltPower * 0.45f);
-            var colorCyan = new Color(0.35f, 0.88f, 1.0f, boltPower * 0.85f);
-            var colorCore = new Color(0.95f, 0.99f, 1.0f, boltPower);
+    private static float LightningPulse(float age, float start, float peak, float decay)
+        => age < start ? 0f : peak * MathF.Exp(-(age - start) * decay);
 
-            // ── 1. Compact Lightning Bolt (Descending from ~75px above head) ──
-            if (boltPower > 0.01f)
+    internal void DrawLightningShape(CanvasItem canvas, Vector2 feet, float age, float alpha, int performanceLevel)
+    {
+        Vector2 chest = feet + new Vector2(0, -20);
+        Vector2 head = feet + new Vector2(0, -38);
+        float top = head.Y - LightningChannelHeight;
+
+        // ── Stroke envelope ──
+        int stroke;
+        float power;
+        bool leader = age < LightningMainStroke;
+        if (leader)
+        {
+            // Stepped leader: thin, dim, flickering, only the upper part of the channel.
+            stroke = 0;
+            power = 0.22f + 0.12f * MathF.Sin(age * 260f);
+        }
+        else if (age < LightningRestrike1)
+        {
+            stroke = 0;
+            power = LightningPulse(age, LightningMainStroke, 1.0f, 13f);
+        }
+        else if (age < LightningRestrike2)
+        {
+            stroke = 1;
+            power = LightningPulse(age, LightningRestrike1, 0.75f, 15f);
+        }
+        else
+        {
+            stroke = 2;
+            power = LightningPulse(age, LightningRestrike2, 0.55f, 15f);
+        }
+        power *= alpha;
+
+        // Brightest instant of the whole flash, used for the ground flash and shock ring.
+        float mainFlash = LightningPulse(age, LightningMainStroke, 1f, 11f) * alpha;
+
+        // ── 1. Channel ──
+        if (power > 0.015f)
+        {
+            float leaderReach = leader ? Math.Clamp(age / LightningMainStroke, 0.15f, 1f) : 1f;
+            int seed = stroke * 7 + 3;
+
+            var halo = new Color(0.12f, 0.42f, 1.0f, power * 0.40f);
+            var sheath = new Color(0.55f, 0.85f, 1.0f, power * 0.80f);
+            var core = new Color(0.96f, 0.99f, 1.0f, power);
+            float haloW = leader ? 4f : 9f, sheathW = leader ? 1.8f : 3.6f, coreW = leader ? 0.9f : 1.7f;
+
+            // Sky origin sits slightly off-centre so the strike reads as coming from the storm, not the head.
+            float originX = chest.X + LightningNoise(seed, 0) * 34f;
+            Vector2 prev = new(originX, top);
+            DrawReactiveGlowSprite(canvas, prev, leader ? 10f : 22f, new Color(0.35f, 0.7f, 1f, power * 0.45f));
+
+            int reach = (int)MathF.Ceiling(LightningSegments * leaderReach);
+            for (int s = 1; s <= reach; s++)
             {
-                float strikeTopY = head.Y - 55f; // ~75px total height above chest
-                int segments = 6;
-                Vector2 prevMain = new(chest.X + MathF.Sin(phase * 17.3f) * 4f, strikeTopY);
-                Vector2 prevStreamer = prevMain + new Vector2(MathF.Cos(phase * 11.2f) * 3f, 0);
+                float frac = (float)s / LightningSegments;
+                float y = Mathf.Lerp(top, chest.Y, frac);
+                // Angular kinks with amplitude that shrinks toward the target so it lands on the chest.
+                float amp = 26f * (1f - frac) + 4f;
+                float x = s == LightningSegments
+                    ? chest.X
+                    : Mathf.Lerp(originX, chest.X, frac) + LightningNoise(seed, s) * amp;
+                Vector2 curr = new(x, y);
 
-                // Origin atmospheric burst
-                DrawReactiveGlowSprite(canvas, prevMain, 14f, new Color(0.3f, 0.75f, 1.0f, boltPower * 0.6f));
+                canvas.DrawLine(prev, curr, halo, haloW, true);
+                canvas.DrawLine(prev, curr, sheath, sheathW, true);
+                canvas.DrawLine(prev, curr, core, coreW, true);
 
-                for (int s = 1; s <= segments; s++)
+                // Branches: leave the channel at a kink and die out in the air.
+                bool branchHere = !leader && (s == 3 || s == 6 || (s == 8 && performanceLevel >= 2));
+                if (branchHere)
                 {
-                    float frac = (float)s / segments;
-                    float currY = Mathf.Lerp(strikeTopY, chest.Y, frac);
-                    float currX = chest.X;
-
-                    if (s < segments)
+                    float dir = LightningNoise(seed, 20 + s) >= 0 ? 1f : -1f;
+                    Vector2 bPrev = curr;
+                    float bPower = power * 0.55f;
+                    int bSegs = 3;
+                    for (int b = 1; b <= bSegs; b++)
                     {
-                        float jitter = MathF.Sin(s * 14.17f + phase * 27.31f) * (8.5f * (1f - frac * 0.3f));
-                        currX += jitter;
+                        float bx = bPrev.X + dir * (9f + 5f * LightningNoise(seed, 40 + s * 3 + b));
+                        float by = bPrev.Y + 8f + 6f * MathF.Abs(LightningNoise(seed, 60 + s * 3 + b));
+                        Vector2 bCurr = new(bx, by);
+                        float taper = 1f - (float)(b - 1) / bSegs;
+                        canvas.DrawLine(bPrev, bCurr, halo with { A = halo.A * 0.6f * taper }, 5f * taper + 1f, true);
+                        canvas.DrawLine(bPrev, bCurr, new Color(0.75f, 0.92f, 1f, bPower * taper), 1.2f, true);
+                        bPrev = bCurr;
                     }
-
-                    Vector2 currMain = new(currX, currY);
-                    Vector2 currStreamer = currMain + new Vector2(MathF.Sin(s * 7.7f + phase * 13.1f) * 3.5f, 0);
-
-                    // Multi-layer main filament: deep glow, bright cyan sheath, crisp white core
-                    canvas.DrawLine(prevMain, currMain, colorHalo, 6.0f, true);
-                    canvas.DrawLine(prevMain, currMain, colorCyan, 2.6f, true);
-                    canvas.DrawLine(prevMain, currMain, colorCore, 1.2f, true);
-
-                    // Braided secondary streamer (subtle twin plasma filament)
-                    canvas.DrawLine(prevStreamer, currStreamer, colorHalo with { A = colorHalo.A * 0.5f }, 3.5f, true);
-                    canvas.DrawLine(prevStreamer, currStreamer, colorCyan with { A = colorCyan.A * 0.7f }, 1.0f, true);
-
-                    // Soft plasma node at elbow vertices
-                    if (s == 2 || s == 4)
-                    {
-                        DrawReactiveGlowSprite(canvas, currMain, 9f, new Color(0.35f, 0.85f, 1.0f, boltPower * 0.45f));
-                    }
-
-                    // Lateral branching tendrils
-                    if (s == 2 || (s == 4 && _state.Config.PerformanceLevel >= 2))
-                    {
-                        float forkSign = (s + phase) % 2 == 0 ? 1f : -1f;
-                        float forkAngle = forkSign * (0.65f + 0.25f * MathF.Sin(s * 5.3f + phase));
-                        Vector2 forkDir = new Vector2(MathF.Cos(forkAngle), MathF.Abs(MathF.Sin(forkAngle))).Normalized();
-                        Vector2 forkTip = currMain + forkDir * (12f + 3f * MathF.Sin(phase * 7.1f));
-
-                        float forkPower = boltPower * 0.6f;
-                        canvas.DrawLine(currMain, forkTip, colorHalo, 3.5f, true);
-                        canvas.DrawLine(currMain, forkTip, new Color(0.6f, 0.92f, 1.0f, forkPower), 1.0f, true);
-                        DrawReactiveGlowSprite(canvas, forkTip, 5f, new Color(0.2f, 0.6f, 1.0f, forkPower * 0.4f));
-                    }
-
-                    prevMain = currMain;
-                    prevStreamer = currStreamer;
                 }
 
-                // Impact flash at target head/chest
-                DrawReactiveGlowSprite(canvas, chest, 24f, new Color(0.5f, 0.9f, 1.0f, boltPower * 0.85f));
-                DrawReactiveGlowSprite(canvas, chest, 12f, new Color(1.0f, 1.0f, 1.0f, boltPower * 0.95f));
+                prev = curr;
+            }
 
-                // Crackling wrap-around arc hugging the body
-                for (int a = 0; a < 2; a++)
+            if (!leader)
+            {
+                // Contact point: white-hot bloom that saturates the torso.
+                DrawReactiveGlowSprite(canvas, chest, 30f, new Color(0.45f, 0.80f, 1.0f, power * 0.75f));
+                DrawReactiveGlowSprite(canvas, chest, 15f, new Color(1f, 1f, 1f, power * 0.95f));
+            }
+        }
+
+        // ── 2. Ground flash and shock ring (main stroke only) ──
+        if (mainFlash > 0.01f)
+        {
+            DrawReactiveGlowSprite(canvas, feet, 64f, new Color(0.25f, 0.55f, 1.0f, mainFlash * 0.45f), 0.45f);
+            DrawReactiveGlowSprite(canvas, feet, 28f, new Color(0.85f, 0.95f, 1.0f, mainFlash * 0.8f), 0.45f);
+        }
+        float ringAge = age - LightningMainStroke;
+        if (ringAge >= 0 && ringAge < 0.30f)
+        {
+            float rp = ringAge / 0.30f;
+            float radius = 8f + 30f * (1f - (1f - rp) * (1f - rp));
+            float ringAlpha = (1f - rp) * alpha;
+            DrawReactiveRing(canvas, feet, radius, 0.38f, new Color(0.40f, 0.82f, 1.0f, ringAlpha * 0.7f), 2.2f);
+            DrawReactiveRing(canvas, feet, radius * 0.8f, 0.38f, new Color(0.9f, 0.97f, 1.0f, ringAlpha * 0.45f), 1f);
+        }
+
+        // ── 3. Sparks thrown from the contact point ──
+        float sparkAge = age - LightningMainStroke;
+        if (sparkAge >= 0)
+        {
+            int sparkCount = performanceLevel < 2 ? 8 : performanceLevel == 2 ? 14 : 20;
+            float sparkFade = Math.Max(0, 1f - sparkAge / 0.36f) * alpha;
+            for (int i = 0; i < sparkCount && sparkFade > 0.01f; i++)
+            {
+                float seedA = (i * 0.618033989f) % 1f;
+                float seedB = (i * 0.324717957f) % 1f;
+                float angle = MathF.PI * (0.9f + seedA * 1.2f);          // mostly upward and sideways
+                float speed = 45f + seedB * 95f;
+                Vector2 vel = new(MathF.Cos(angle) * speed, MathF.Sin(angle) * speed);
+                Vector2 pos = chest + vel * sparkAge + new Vector2(0, 260f * sparkAge * sparkAge);
+                Vector2 tail = (vel + new Vector2(0, 520f * sparkAge)) * (0.018f + seedA * 0.02f);
+                canvas.DrawLine(pos, pos - tail, new Color(0.85f, 0.96f, 1f, sparkFade), 1.2f, true);
+                DrawReactiveGlowSprite(canvas, pos, 3f + seedB * 2f, new Color(0.3f, 0.65f, 1f, sparkFade * 0.35f));
+            }
+        }
+
+        // ── 4. Residual arcs crawling over the target while the flash dies ──
+        if (age > 0.12f)
+        {
+            float residual = MathF.Min(1f, (age - 0.12f) / 0.1f) * Math.Max(0, 1f - (age - 0.12f) / (LightningDuration - 0.12f)) * alpha;
+            int phase = (int)(age / 0.06f);
+            float flick = 0.6f + 0.4f * MathF.Exp(-(age % 0.06f) * 50f);
+            float arcPower = residual * flick;
+            if (arcPower > 0.02f)
+            {
+                DrawReactiveGlowSprite(canvas, chest, 20f, new Color(0.15f, 0.45f, 1f, arcPower * 0.35f));
+                int arcs = performanceLevel < 2 ? 2 : 3;
+                for (int a = 0; a < arcs; a++)
                 {
-                    float side = a == 0 ? -1f : 1f;
-                    Vector2 arcStart = chest + new Vector2(side * 3f, -4f);
-                    Vector2 arcMid = chest + new Vector2(side * 10f, 8f + MathF.Sin(phase * 9f + a) * 3f);
-                    Vector2 arcEnd = feet + new Vector2(side * 6f, -3f);
-
-                    float bodyArcPower = boltPower * 0.7f;
-                    canvas.DrawLine(arcStart, arcMid, colorHalo, 3.0f, true);
-                    canvas.DrawLine(arcStart, arcMid, new Color(0.65f, 0.92f, 1.0f, bodyArcPower), 1.1f, true);
-                    canvas.DrawLine(arcMid, arcEnd, colorHalo, 2.5f, true);
-                    canvas.DrawLine(arcMid, arcEnd, new Color(0.65f, 0.92f, 1.0f, bodyArcPower * 0.8f), 0.9f, true);
+                    float side = (a + phase) % 2 == 0 ? -1f : 1f;
+                    float yStart = -34f + 6f * LightningNoise(phase, a);
+                    Vector2 p0 = feet + new Vector2(side * 4f, yStart);
+                    Vector2 p1 = feet + new Vector2(side * (10f + 4f * LightningNoise(phase, 10 + a)), yStart + 10f);
+                    Vector2 p2 = feet + new Vector2(side * (6f + 5f * LightningNoise(phase, 20 + a)), yStart + 20f);
+                    Vector2 p3 = feet + new Vector2(side * 3f, yStart + 28f);
+                    canvas.DrawLine(p0, p1, new Color(0.1f, 0.4f, 1f, arcPower * 0.35f), 3f, true);
+                    canvas.DrawLine(p0, p1, new Color(0.7f, 0.92f, 1f, arcPower), 1f, true);
+                    canvas.DrawLine(p1, p2, new Color(0.1f, 0.4f, 1f, arcPower * 0.35f), 3f, true);
+                    canvas.DrawLine(p1, p2, new Color(0.7f, 0.92f, 1f, arcPower), 1f, true);
+                    canvas.DrawLine(p2, p3, new Color(0.1f, 0.4f, 1f, arcPower * 0.3f), 2.5f, true);
+                    canvas.DrawLine(p2, p3, new Color(0.7f, 0.92f, 1f, arcPower * 0.8f), 0.9f, true);
                 }
-            }
-
-            // ── 2. Ground Impact Corona & Shockwave ──
-            float flash = Math.Max(0, 1 - age / 0.12f) * ch.FovAlpha;
-            if (flash > 0.01f)
-            {
-                DrawReactiveGlowSprite(canvas, feet, 26f, new Color(0.20f, 0.60f, 1.0f, flash * 0.75f), 0.5f);
-                DrawReactiveGlowSprite(canvas, feet, 14f, new Color(0.85f, 0.96f, 1.0f, flash * 0.90f), 0.5f);
-            }
-
-            // Expanding ground ionization ellipse
-            float ringProgress = Math.Min(1, age / 0.20f);
-            float ringRadius = 11f + 7f * ringProgress;
-            float ringAlpha = Math.Max(0, 1 - age / 0.24f) * ch.FovAlpha;
-            if (ringAlpha > 0.01f)
-            {
-                DrawReactiveRing(canvas, feet, ringRadius, 0.36f,
-                    new Color(0.35f, 0.82f, 1.0f, ringAlpha * 0.60f), 1.5f);
-                DrawReactiveRing(canvas, feet, ringRadius - 2f, 0.36f,
-                    new Color(0.80f, 0.95f, 1.0f, ringAlpha * 0.35f), 0.8f);
-            }
-
-            // ── 3. Atmospheric Discharge Sparks ──
-            int sparkCount = _state.Config.PerformanceLevel < 2 ? 6 : _state.Config.PerformanceLevel == 2 ? 12 : 18;
-            for (int i = 0; i < sparkCount; i++)
-            {
-                float seed = (i * 0.618033989f) % 1;
-                float angle = -MathF.PI * 0.5f + (seed - 0.5f) * MathF.PI * 0.90f;
-                float speed = 65f + seed * 45f;
-                float travel = (1 - MathF.Exp(-age * 6.0f)) / 6.0f;
-
-                Vector2 sparkPos = feet + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * (speed * travel)
-                                  + new Vector2(0, 16f * age * age);
-                Vector2 sparkTail = new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * (speed * MathF.Exp(-age * 6.0f) * 0.024f);
-
-                Color sparkColor = new(0.80f, 0.95f, 1.0f, fade);
-                canvas.DrawLine(sparkPos, sparkPos - sparkTail, sparkColor, 1.1f, true);
-                DrawReactiveGlowSprite(canvas, sparkPos, 3.5f + seed * 2f,
-                    new Color(0.20f, 0.60f, 1.0f, fade * 0.30f));
             }
         }
     }
