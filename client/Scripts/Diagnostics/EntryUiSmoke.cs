@@ -18,6 +18,7 @@ public partial class EntryUiSmoke : Node
         {
             ResolutionManager.ApplyResolution(800, 600, true);
             var resources = ResourceProviderFactory.Create(ProjectSettings.GlobalizePath("res://Data"));
+            RpgTheme.ResourceProvider = resources;
             var data = new GameData();
             data.LoadAll(resources);
             var backdrop = new LoginBackdrop();
@@ -36,6 +37,11 @@ public partial class EntryUiSmoke : Node
             login.OnConnectPressed();
             if (login.StatusLabel!.Text != "Ingrese cuenta y contraseña") throw new Exception("Empty password validation failed");
             login.HideForm();
+            var account = new AccountCreateScreen(state);
+            account.CreatePanel(this);
+            account.Panel!.Show();
+            await Capture(output, "account.png");
+            account.Panel.Hide();
             state.CharacterList.Add(new CharacterPreview { Name = "Nier", Class = "Mago", Level = 50, Body = 517, Head = 1, Weapon = 85 });
             state.CharacterList.Add(new CharacterPreview { Name = "Centinela", Class = "Paladín", Level = 35, Body = 515, Head = 2 });
             var select = new CharSelectForm();

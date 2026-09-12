@@ -21,8 +21,8 @@ public partial class FloatingHudWindow : Panel
     private bool _rzLeft, _rzRight, _rzTop, _rzBottom;
     private Vector2 _rzStartMouse, _rzStartSize, _rzStartPos;
     private Control _header = null!;
-    private NinePatchRect _frame = null!;
-    private NinePatchRect _titleBadge = null!;
+    private Control _frame = null!;
+    private Control _titleBadge = null!;
 
     public override void _Ready()
     {
@@ -36,14 +36,14 @@ public partial class FloatingHudWindow : Panel
         // manually-shrunk window may show a sliver of overflowing content — an acceptable
         // trade against breaking the badge or the popup outright.
 
-        _frame = RpgTheme.CreateNinePatch("info_window.png", new Vector4(16, 16, 16, 16));
+        _frame = SacredTheme.Frame();
         AddChild(_frame);
         RpgTheme.FillParent(_frame);
 
         // Name-plate badge straddling the top border, same as RpgBaseForm's title frame.
-        _titleBadge = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(24, 8, 24, 8));
+        _titleBadge = new Control { MouseFilter = MouseFilterEnum.Ignore };
         AddChild(_titleBadge);
-        var title = RpgTheme.CreateInfoLabel(Caption, 10);
+        var title = RpgTheme.CreateTitleLabel(Caption, 12);
         title.HorizontalAlignment = HorizontalAlignment.Center;
         title.VerticalAlignment = VerticalAlignment.Center;
         title.MouseFilter = MouseFilterEnum.Ignore;
@@ -55,7 +55,7 @@ public partial class FloatingHudWindow : Panel
         _header = new Control { Size = new Vector2(Size.X, 26), MouseDefaultCursorShape = CursorShape.Drag };
         AddChild(_header);
 
-        var close = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(20, 20));
+        var close = SacredTheme.CloseButton();
         AddChild(close);
         close.AnchorLeft = 1f; close.AnchorRight = 1f; close.AnchorTop = 0f; close.AnchorBottom = 0f;
         close.OffsetLeft = -26; close.OffsetRight = -6; close.OffsetTop = 4; close.OffsetBottom = 24;
@@ -161,8 +161,8 @@ public partial class FloatingHudWindow : Panel
         _titleBadge.AnchorBottom = 0f;
         _titleBadge.OffsetLeft = -frameW / 2f;
         _titleBadge.OffsetRight = frameW / 2f;
-        _titleBadge.OffsetTop = -8;
-        _titleBadge.OffsetBottom = 20;
+        _titleBadge.OffsetTop = 5;
+        _titleBadge.OffsetBottom = 27;
     }
 
     public void ClampToScreen()

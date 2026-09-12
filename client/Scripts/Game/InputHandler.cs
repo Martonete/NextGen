@@ -466,11 +466,11 @@ public class InputHandler
 	{
 		// VB6 receives clicks over the entire MainViewPic in fullscreen.
 		if (ResolutionManager.FullscreenWorld)
-			return viewportPos.X >= 0 && viewportPos.X < ResolutionManager.ViewportW
-				&& viewportPos.Y >= 0 && viewportPos.Y < ResolutionManager.ViewportH;
+			return viewportPos.X >= 0 && viewportPos.X < ResolutionManager.RenderPixelW
+				&& viewportPos.Y >= 0 && viewportPos.Y < ResolutionManager.RenderPixelH;
 
-		float coreLeft = (ResolutionManager.ViewportW - VisionRange.CoreWidth) * 0.5f;
-		float coreTop = (ResolutionManager.ViewportH - VisionRange.CoreHeight) * 0.5f;
+		float coreLeft = (ResolutionManager.RenderPixelW - VisionRange.CoreWidth) * 0.5f;
+		float coreTop = (ResolutionManager.RenderPixelH - VisionRange.CoreHeight) * 0.5f;
 		return viewportPos.X >= coreLeft && viewportPos.X < coreLeft + VisionRange.CoreWidth
 			&& viewportPos.Y >= coreTop && viewportPos.Y < coreTop + VisionRange.CoreHeight;
 	}

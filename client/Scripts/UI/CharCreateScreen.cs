@@ -88,17 +88,12 @@ public class CharCreateScreen
         float fs = RpgBaseForm.FormScale;
         _charCreatePanel.Scale = new Vector2(fs, fs);
 
-        // V2 background: big_bar stretched
-        var bg = new TextureRect();
-        bg.Texture = RpgTheme.GetTex("big_bar.png");
-        bg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-        bg.StretchMode = TextureRect.StretchModeEnum.Scale;
-        bg.MouseFilter = Control.MouseFilterEnum.Ignore;
+        var bg = SacredTheme.Frame();
         _charCreatePanel.AddChild(bg);
         RpgTheme.FillParent(bg);
 
         // V2 title bar
-        var titleBg = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
+        var titleBg = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         _charCreatePanel.AddChild(titleBg);
         titleBg.AnchorLeft = 0f; titleBg.AnchorRight = 1f;
         titleBg.AnchorTop = 0f;  titleBg.AnchorBottom = 0f;

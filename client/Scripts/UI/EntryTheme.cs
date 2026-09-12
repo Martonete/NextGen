@@ -2,15 +2,15 @@ using Godot;
 
 namespace ArgentumNextgen.UI;
 
-/// <summary>Pre-game styling only; no game textures or shared HUD theme changes.</summary>
+/// <summary>Entry controls share the Tierras Sagradas identity with the game HUD.</summary>
 public static class EntryTheme
 {
-    public static readonly Color Gold = new("c5a772");
-    public static StyleBoxFlat Box(string fill = "101b20", string border = "62543b", int padding = 12)
+    public static readonly Color Gold = SacredTheme.Bronze;
+    public static StyleBoxFlat Box(string fill = "11181c", string border = "4c483c", int padding = 12)
     {
         var box = new StyleBoxFlat { BgColor = new Color(fill), BorderColor = new Color(border) };
         box.SetBorderWidthAll(1);
-        box.SetCornerRadiusAll(4);
+        box.SetCornerRadiusAll(2);
         box.ContentMarginLeft = box.ContentMarginRight = padding;
         box.ContentMarginTop = box.ContentMarginBottom = padding;
         return box;
@@ -20,19 +20,31 @@ public static class EntryTheme
     {
         var label = new Label { Text = text, MouseFilter = Control.MouseFilterEnum.Ignore };
         label.AddThemeFontSizeOverride("font_size", size);
+        label.AddThemeFontOverride("font", GameFonts.AlegreyaRegular);
         label.AddThemeColorOverride("font_color", muted ? new Color("a3b1b4") : new Color("eee5d1"));
         return label;
     }
 
     public static VBoxContainer Header(string eyebrow, string title, string subtitle)
     {
-        var column = RpgTheme.CreateColumn(4);
+        var column = RpgTheme.CreateColumn(5);
+        var masthead = RpgTheme.CreateRow(12);
+        masthead.AddChild(new SacredSeal { CustomMinimumSize = new Vector2(52, 52) });
+        var wordmark = Text("TIERRAS SAGRADAS", 19);
+        wordmark.AddThemeFontOverride("font", SacredTheme.Display);
+        wordmark.VerticalAlignment = VerticalAlignment.Center;
+        masthead.AddChild(wordmark);
+        column.AddChild(masthead);
         var overline = Text(eyebrow, 11);
         overline.AddThemeColorOverride("font_color", Gold);
         column.AddChild(overline);
-        column.AddChild(Text(title, 27));
-        column.AddChild(Text(subtitle, 12, true));
-        column.AddChild(RpgTheme.CreateSpacer(10));
+        var heading = Text(title, 26);
+        heading.AddThemeFontOverride("font", SacredTheme.Display);
+        column.AddChild(heading);
+        var sub = Text(subtitle, 14, true);
+        sub.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        column.AddChild(sub);
+        column.AddChild(RpgTheme.CreateSpacer(4));
         return column;
     }
 
@@ -48,6 +60,7 @@ public static class EntryTheme
         var focus = Box("00000000", "f3d49a", 0);
         focus.SetBorderWidthAll(2);
         button.AddThemeStyleboxOverride("focus", focus);
+        SacredTheme.StyleButton(button, primary);
         return button;
     }
 
@@ -59,6 +72,7 @@ public static class EntryTheme
         input.AddThemeFontSizeOverride("font_size", 15);
         input.AddThemeColorOverride("font_color", new Color("f0eadd"));
         input.AddThemeColorOverride("font_placeholder_color", new Color("829296"));
+        SacredTheme.StyleInput(input);
         return input;
     }
 }

@@ -50,6 +50,19 @@ public static class ResolutionManager
     public static int ViewportH { get; private set; } = DesignViewportH;
     public static int ViewportPixelW => ViewportW;
     public static int ViewportPixelH => ViewportH;
+    public const float WorldZoom = 1.3f;
+    public static int RenderPixelW => Math.Max(1, (int)MathF.Round(ViewportW / WorldZoom));
+    public static int RenderPixelH => Math.Max(1, (int)MathF.Round(ViewportH / WorldZoom));
+
+    private static void UpdateRenderTiles()
+    {
+        TilesX = (int)MathF.Ceiling(RenderPixelW / 32f);
+        TilesY = (int)MathF.Ceiling(RenderPixelH / 32f);
+        HalfTilesX = RenderPixelW / 64;
+        HalfTilesY = RenderPixelH / 64;
+        ExtraTilesX = Math.Max(0, HalfTilesX - CoreHalfX);
+        ExtraTilesY = Math.Max(0, HalfTilesY - CoreHalfY);
+    }
     public static int TilesX { get; private set; } = 17;
     public static int TilesY { get; private set; } = 13;
     public static int RenderTilesX => TilesX;
@@ -110,6 +123,7 @@ public static class ResolutionManager
             ResizeWindowIfNeeded(width, height);
             GD.Print($"[RES] {width}x{height} VB6 fullscreen world=" +
                      $"{ViewportW}x{ViewportH} tiles={TilesX}x{TilesY}");
+            UpdateRenderTiles();
             OnResolutionChanged?.Invoke();
             return;
         }
@@ -171,6 +185,7 @@ public static class ResolutionManager
                  $"viewport={ViewportW}x{ViewportH} tiles={TilesX}x{TilesY} " +
                  $"sidebar={ActualSidebarWidth}px@{SidebarX} extra={ExtraTilesX},{ExtraTilesY}");
 
+        UpdateRenderTiles();
         OnResolutionChanged?.Invoke();
     }
 

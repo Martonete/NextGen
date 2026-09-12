@@ -290,15 +290,17 @@ public partial class OptionsPanel : RpgBaseForm
         _chkFullscreen = GetCheckboxFromRow(fullscreenRow);
         _chkFullscreen.Toggled += on =>
         {
-            if (_aspectRow != null) _aspectRow.Visible = on;
             ApplyImmediate();
         };
         leftCol.AddChild(fullscreenRow);
 
         _aspectRow = RpgTheme.CreateRpgDropdownRow("Aspecto:",
-            new[] { "4:3", "16:9" }, 100);
+            new[] { "Nativo", "Nativo" }, 100);
         _optAspect = GetDropdownFromRow(_aspectRow);
         _optAspect.ItemSelected += _ => ApplyImmediate();
+        // Native monitor aspect is always preserved; keep the legacy setting
+        // readable but do not expose the old stretch-to-fill mode.
+        _aspectRow.Visible = false;
         leftCol.AddChild(_aspectRow);
 
         // Resolution preset dropdown
@@ -623,7 +625,7 @@ public partial class OptionsPanel : RpgBaseForm
 
         // Render tab — Display
         SetCheck(_chkFullscreen, cfg.Fullscreen);
-        if (_aspectRow != null) _aspectRow.Visible = cfg.Fullscreen;
+        if (_aspectRow != null) _aspectRow.Visible = false;
         if (_optAspect != null) _optAspect.Selected = cfg.AspectRatioMode;
 
         // Resolution preset

@@ -169,14 +169,16 @@ public partial class Main
 	private void EnterFullscreen()
 	{
 		var root = GetTree().Root;
+		var native = DisplayServer.ScreenGetSize(root.CurrentScreen);
+		root.Mode = Window.ModeEnum.Fullscreen;
+		if (ResolutionManager.WindowWidth != native.X || ResolutionManager.WindowHeight != native.Y)
+			ResolutionManager.ApplyResolution(native.X, native.Y, true);
 		// Set content scale to match the current resolution layout.
 		// This tells Godot to scale our WindowWidth x WindowHeight content to fill the screen.
 		root.ContentScaleSize = new Vector2I(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 		root.ContentScaleMode = Window.ContentScaleModeEnum.CanvasItems;
 		root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
-		root.ContentScaleAspect = _state.Config.AspectRatioMode == 0
-			? Window.ContentScaleAspectEnum.Keep
-			: Window.ContentScaleAspectEnum.Ignore;
+		root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
 		// Keep Godot's Window state in sync with the native window. Direct
 		// DisplayServer changes can be overwritten by Window on the next frame.
 		root.Borderless = false;
@@ -189,6 +191,9 @@ public partial class Main
 	private void ExitFullscreen()
 	{
 		var root = GetTree().Root;
+		if (ResolutionManager.WindowWidth != _state.Config.ResolutionWidth ||
+			ResolutionManager.WindowHeight != _state.Config.ResolutionHeight)
+			ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight, false);
 		// Disable content scaling — in windowed mode we use real pixels
 		root.ContentScaleSize = new Vector2I(0, 0);
 		root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;

@@ -46,26 +46,27 @@ public static class VisionRange
         {
             int dx = Math.Abs(charX - userX);
             int dy = Math.Abs(charY - userY);
-            return dx <= ResolutionManager.HalfTilesX + 1
-                && dy <= ResolutionManager.HalfTilesY + 1;
+            // Match the server interest window. The renderer performs sprite-aware
+            // culling, so giant NPCs are not hidden when their feet leave the view.
+            return dx <= 30 && dy <= 15;
         }
 
-        float x = ResolutionManager.ViewportW * 0.5f
+        float x = ResolutionManager.RenderPixelW * 0.5f
                   + (charX - userX) * ResolutionManager.TileSize;
-        float y = ResolutionManager.ViewportH * 0.5f
+        float y = ResolutionManager.RenderPixelH * 0.5f
                   + (charY - userY) * ResolutionManager.TileSize;
-        float left = (ResolutionManager.ViewportW - CreatureWidth) * 0.5f;
-        float top = (ResolutionManager.ViewportH - CoreHeight) * 0.5f
+        float left = (ResolutionManager.RenderPixelW - CreatureWidth) * 0.5f;
+        float top = (ResolutionManager.RenderPixelH - CoreHeight) * 0.5f
                     - ResolutionManager.TileSize;
         return x >= left && x < left + CreatureWidth
             && y >= top && y < top + CreatureHeight;
     }
 
     private static int ScaleX(float referencePixels)
-        => Math.Clamp((int)MathF.Round(referencePixels * ResolutionManager.ViewportW / ReferenceViewportW),
-            1, ResolutionManager.ViewportW);
+        => Math.Clamp((int)MathF.Round(referencePixels * ResolutionManager.RenderPixelW / ReferenceViewportW),
+            1, ResolutionManager.RenderPixelW);
 
     private static int ScaleY(float referencePixels)
-        => Math.Clamp((int)MathF.Round(referencePixels * ResolutionManager.ViewportH / ReferenceViewportH),
-            1, ResolutionManager.ViewportH);
+        => Math.Clamp((int)MathF.Round(referencePixels * ResolutionManager.RenderPixelH / ReferenceViewportH),
+            1, ResolutionManager.RenderPixelH);
 }

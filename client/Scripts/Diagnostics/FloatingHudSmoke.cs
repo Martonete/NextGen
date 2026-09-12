@@ -56,7 +56,7 @@ public partial class FloatingHudSmoke : Node
             var oldPosition = window.Position;
             window.Hide(); window.Show();
             if (window.Position != oldPosition) throw new Exception("Hide/show lost position");
-            typeof(Quickbar).GetMethod("OpenSlot", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(quickbar, new object[] { 2 });
+            typeof(Quickbar).GetMethod("OpenMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(quickbar, new object[] { 2 });
             typeof(Quickbar).GetField("_capture", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(quickbar, 2);
             state.QuickbarEditing = true;
             quickbar.HandleKey(new InputEventKey { Keycode = Key.F12, Pressed = true });
@@ -75,7 +75,7 @@ public partial class FloatingHudSmoke : Node
             string output = ProjectSettings.GlobalizePath("user://floating-hud-smoke.png");
             using var image = GetViewport().GetTexture().GetImage();
             if (image.SavePng(output) != Error.Ok) throw new IOException("Capture failed");
-            typeof(Quickbar).GetMethod("OpenSlot", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(quickbar, new object[] { 0 });
+            typeof(Quickbar).GetMethod("OpenMenu", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(quickbar, new object[] { 0 });
             await ToSignal(GetTree().CreateTimer(0.2), SceneTreeTimer.SignalName.Timeout);
             await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
             using var menuImage = GetViewport().GetTexture().GetImage();

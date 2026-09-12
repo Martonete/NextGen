@@ -65,15 +65,18 @@ public partial class Main : Control
 		// SubViewportContainer
 		if (_viewportContainer != null)
 		{
+			_viewportContainer.Stretch = false;
+			_viewportContainer.Scale = new Vector2((float)ResolutionManager.ViewportW / ResolutionManager.RenderPixelW,
+				(float)ResolutionManager.ViewportH / ResolutionManager.RenderPixelH);
+			_viewportContainer.TextureFilter = TextureFilterEnum.Nearest;
 			_viewportContainer.OffsetLeft = ResolutionManager.LeftMargin;
 			_viewportContainer.OffsetTop = ResolutionManager.TopMargin;
-			_viewportContainer.OffsetRight = ResolutionManager.LeftMargin + ResolutionManager.ViewportW;
-			_viewportContainer.OffsetBottom = ResolutionManager.TopMargin + ResolutionManager.ViewportH;
+			_viewportContainer.OffsetRight = ResolutionManager.LeftMargin + ResolutionManager.RenderPixelW;
+			_viewportContainer.OffsetBottom = ResolutionManager.TopMargin + ResolutionManager.RenderPixelH;
 		}
 
-		// SubViewport
 		if (_gameViewport != null)
-			_gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+			_gameViewport.Size = new Vector2I(ResolutionManager.RenderPixelW, ResolutionManager.RenderPixelH);
 
 		// Sidebar background
 		if (_sidebarBg != null)
@@ -622,7 +625,11 @@ public partial class Main : Control
 		};
 
 		// Apply initial SubViewport size
-		_gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+		_viewportContainer.Stretch = false;
+		_viewportContainer.Scale = new Vector2((float)ResolutionManager.ViewportW / ResolutionManager.RenderPixelW,
+			(float)ResolutionManager.ViewportH / ResolutionManager.RenderPixelH);
+		_gameViewport.Size = new Vector2I(ResolutionManager.RenderPixelW, ResolutionManager.RenderPixelH);
+		_viewportContainer.TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
 
 		// Setup sound manager
 		_soundManager = new SoundManager();

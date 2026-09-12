@@ -33,8 +33,8 @@ public partial class WeatherRenderer : Node2D
     private readonly float[] _snowY = new float[MaxSnowFlakes];
     private readonly float[] _snowSway = new float[MaxSnowFlakes]; // per-flake sway velocity
     private bool _snowInitialized;
-    private static int ViewW => ResolutionManager.ViewportW;
-    private static int ViewH => ResolutionManager.ViewportH;
+    private static int ViewW => ResolutionManager.RenderPixelW;
+    private static int ViewH => ResolutionManager.RenderPixelH;
     // Spawn margin: drops spawn outside viewport so they enter from top/left
     private const float SpawnMarginX = 160f;
 

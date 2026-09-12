@@ -77,8 +77,8 @@ public partial class WorldRenderer : Node2D
 	public void SetClampCameraToMap(bool enabled) => _clampCameraToMap = enabled;
 
 	// Viewport dimensions — dynamic, read from ResolutionManager
-	private int ViewportWidth => _renderWindowOverride?.X ?? ResolutionManager.ViewportW;
-	private int ViewportHeight => _renderWindowOverride?.Y ?? ResolutionManager.ViewportH;
+	private int ViewportWidth => _renderWindowOverride?.X ?? ResolutionManager.RenderPixelW;
+	private int ViewportHeight => _renderWindowOverride?.Y ?? ResolutionManager.RenderPixelH;
 
 	// How many tiles from center to edge (visible range) — dynamic
 	private int HalfWindowTileWidth => _renderWindowOverride.HasValue
@@ -629,6 +629,17 @@ void fragment() {
 	/// Advance per-character timers (FOV fade, transparency, FX, dialog) for all characters.
 	/// Must run in _Process, once per frame, before any draw calls.
 	/// </summary>
+	private Vector2I GetCharacterDrawMargin(Character ch)
+	{
+		if (_data == null || ch.Body <= 0 || ch.Body >= _data.Bodies.Length)
+			return new Vector2I(1, 1);
+		int grh = _data.Bodies[ch.Body].Walk[Math.Clamp(ch.Heading, 1, 4)];
+		var sprite = _data.ResolveGrh(grh, 0);
+		if (sprite == null) return new Vector2I(1, 1);
+		return new Vector2I(Math.Max(1, (sprite.PixelWidth + 63) / 64),
+			Math.Max(1, (sprite.PixelHeight + 31) / 32));
+	}
+
 	private void UpdateAllCharacterTimers()
 	{
 		if (_state == null || _data == null) return;
@@ -640,7 +651,9 @@ void fragment() {
 		{
 			// Full update for characters near viewport (visible or about to be)
 			// Lightweight FOV-only update for distant characters
-			bool nearViewport = Math.Abs(ch.PosX - ux) <= halfX && Math.Abs(ch.PosY - uy) <= halfY;
+			var extent = GetCharacterDrawMargin(ch);
+			bool nearViewport = Math.Abs(ch.PosX - ux) <= halfX + extent.X
+				&& ch.PosY >= uy - halfY && ch.PosY <= uy + halfY + extent.Y;
 			if (nearViewport)
 				CharRenderer.UpdateCharacterTimers(ch, _deltaMs, _state, _data);
 			else
@@ -926,6 +939,22 @@ void fragment() {
 		_frameCharMaxX = Math.Min(mapW, screenMaxX + CharBufferSize);
 		_frameCharMinY = Math.Max(1, screenMinY - CharBufferSize);
 		_frameCharMaxY = Math.Min(mapH, screenMaxY + CharBufferSize);
+
+		// Large bodies extend upward from their feet, potentially many tiles
+		// below the viewport. Keep their draw anchors in the depth-sorted loop.
+		int characterMarginX = CharBufferSize, characterMarginY = CharBufferSize;
+		foreach (var ch in _state.Characters.Values)
+		{
+			var margin = GetCharacterDrawMargin(ch);
+			characterMarginX = Math.Max(characterMarginX, margin.X);
+			characterMarginY = Math.Max(characterMarginY, margin.Y);
+		}
+		_frameCharMinX = Math.Max(1, screenMinX - characterMarginX);
+		_frameCharMaxX = Math.Min(mapW, screenMaxX + characterMarginX);
+		_frameCharMaxY = Math.Min(mapH, screenMaxY + characterMarginY);
+		_frameMinX = Math.Min(_frameMinX, _frameCharMinX);
+		_frameMaxX = Math.Max(_frameMaxX, _frameCharMaxX);
+		_frameMaxY = Math.Max(_frameMaxY, _frameCharMaxY);
 
 		// Opt 4: Pre-compute per-column X and per-row Y screen coords for the terrain buffer range.
 		// These are reused by DrawContent, DrawNonWaterMask, DrawLayer2, and the roof loop.

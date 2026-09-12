@@ -160,8 +160,8 @@ public partial class SafeZoneBorderLayer : Node2D
         float uY  = cam.UserY;
         int hX  = ResolutionManager.HalfTilesX;
         int hY  = ResolutionManager.HalfTilesY;
-        int vpW = ResolutionManager.ViewportW;
-        int vpH = ResolutionManager.ViewportH;
+        int vpW = ResolutionManager.RenderPixelW;
+        int vpH = ResolutionManager.RenderPixelH;
 
         float offX = cam.PixelOffsetX;
         float offY = cam.PixelOffsetY;
