@@ -18,10 +18,13 @@ public partial class Quickbar : Control
     public Func<int>? SelectedObject;
     public Action<QuickSlot, int>? Execute;
     private readonly Button[] _buttons = new Button[10];
-    private readonly Label[] _keyLabels = new Label[10];
-    private readonly Label[] _slotLabels = new Label[10];
     private readonly TextureRect[] _slotIcons = new TextureRect[10];
     private readonly QuickbarSpellIcon[] _spellIcons = new QuickbarSpellIcon[10];
+    // Per-slot text drawn by the overlay (key tag top-left, stack count bottom-right) —
+    // no Label nodes, so the bar is just the frame, the slots and what's in them.
+    private readonly string[] _keyTags = new string[10];
+    private readonly string[] _counts = new string[10];
+    private TextOverlay? _overlay;
     private PanelContainer? _menu;
     private Label? _message;
     private int _editing = -1;
@@ -30,37 +33,95 @@ public partial class Quickbar : Control
     private double _refresh;
     private readonly System.Collections.Generic.Dictionary<int, Texture2D> _icons = new();
 
+    // Compact action-bar geometry: 10 square slots inside a thin carved frame.
+    public const int SlotSize = 40, SlotGap = 3, Pad = 5;
+    public const int BarWidth = Pad * 2 + 10 * SlotSize + 9 * SlotGap; // 437
+    public const int BarHeight = Pad * 2 + SlotSize;                    // 50
+    private static readonly Color FrameFill = new(0.055f, 0.045f, 0.035f);
+    private static readonly Color FrameLine = new(0.72f, 0.58f, 0.34f);
+    private static readonly Color FrameInner = new(0.32f, 0.25f, 0.15f);
+    private static readonly Color SlotFill = new(0.10f, 0.085f, 0.07f);
+    private static readonly Color SlotLine = new(0.30f, 0.25f, 0.18f);
+    private static readonly Color SlotInset = new(0.02f, 0.02f, 0.015f);
+    private static readonly Color TagColor = new(0.96f, 0.93f, 0.85f);
+    private static readonly Color CountColor = new(1f, 0.90f, 0.55f);
+    private static readonly Color Shadow = new(0, 0, 0, 0.9f);
+
+    private static Vector2 SlotOrigin(int i) => new(Pad + i * (SlotSize + SlotGap), Pad);
+
     public override void _Ready()
     {
-        Size = new Vector2(560, 54);
+        Size = new Vector2(BarWidth, BarHeight);
+        var normal = new StyleBoxEmpty();
+        var hover = SacredTheme.Surface(new Color(1, 1, 1, 0.07f), new Color(FrameLine, 0.8f), 0);
+        var pressed = SacredTheme.Surface(new Color(0, 0, 0, 0.35f), FrameLine, 0);
         for (int i = 0; i < 10; i++)
         {
             int index = i;
-            var button = EntryTheme.Button("");
-            button.Position = new Vector2(i * 56, 0);
-            button.Size = new Vector2(52, 54);
-            button.FocusMode = FocusModeEnum.None;
-            button.AddThemeFontSizeOverride("font_size", 11);
+            var button = new Button { Position = SlotOrigin(i), Size = new Vector2(SlotSize, SlotSize), FocusMode = FocusModeEnum.None };
+            button.AddThemeStyleboxOverride("normal", normal);
+            button.AddThemeStyleboxOverride("hover", hover);
+            button.AddThemeStyleboxOverride("pressed", pressed);
+            button.AddThemeStyleboxOverride("focus", normal);
             button.Pressed += () => OnLeftClick(index);
             button.GuiInput += ev => OnButtonGuiInput(ev, index);
             AddChild(button);
             _buttons[i] = button;
-            _keyLabels[i] = EntryTheme.Text("", 10);
-            _keyLabels[i].Position = new Vector2(4, 2);
-            _keyLabels[i].Size = new Vector2(44, 14);
-            _keyLabels[i].TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
-            button.AddChild(_keyLabels[i]);
-            _slotLabels[i] = EntryTheme.Text("+", 12);
-            _slotLabels[i].Position = new Vector2(4, 23);
-            _slotLabels[i].Size = new Vector2(44, 22);
-            _slotLabels[i].HorizontalAlignment = HorizontalAlignment.Center;
-            button.AddChild(_slotLabels[i]);
-            _slotIcons[i] = new TextureRect { Position = new Vector2(9, 17), Size = new Vector2(34, 34),
+            _slotIcons[i] = new TextureRect { Position = new Vector2(3, 3), Size = new Vector2(34, 34),
                 ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
                 TextureFilter = TextureFilterEnum.Nearest, MouseFilter = MouseFilterEnum.Ignore };
             button.AddChild(_slotIcons[i]);
-            _spellIcons[i] = new QuickbarSpellIcon { Position = new Vector2(9, 17), Size = new Vector2(34, 34), MouseFilter = MouseFilterEnum.Ignore, Visible = false };
+            _spellIcons[i] = new QuickbarSpellIcon { Position = new Vector2(3, 3), Size = new Vector2(34, 34), MouseFilter = MouseFilterEnum.Ignore, Visible = false };
             button.AddChild(_spellIcons[i]);
+            _keyTags[i] = "";
+            _counts[i] = "";
+        }
+        _overlay = new TextOverlay { Bar = this, MouseFilter = MouseFilterEnum.Ignore, Size = Size };
+        AddChild(_overlay);
+    }
+
+    public override void _Draw()
+    {
+        // Frame: dark plate, bronze outline, darker inner line.
+        var rect = new Rect2(Vector2.Zero, Size);
+        DrawRect(rect, FrameFill);
+        DrawRect(rect.Grow(-0.5f), FrameLine, false, 1);
+        DrawRect(rect.Grow(-2.5f), FrameInner, false, 1);
+        for (int i = 0; i < 10; i++)
+        {
+            var slot = new Rect2(SlotOrigin(i), new Vector2(SlotSize, SlotSize));
+            DrawRect(slot, SlotInset);
+            DrawRect(slot.Grow(-1), SlotFill);
+            DrawRect(slot.Grow(-0.5f), SlotLine, false, 1);
+        }
+    }
+
+    // Text sits above the icons (buttons are earlier children, drawn before this).
+    private sealed partial class TextOverlay : Control
+    {
+        public Quickbar Bar = null!;
+        public override void _Draw()
+        {
+            var font = GameFonts.AlegreyaBold;
+            for (int i = 0; i < 10; i++)
+            {
+                var o = SlotOrigin(i);
+                string tag = Bar._keyTags[i];
+                if (tag.Length > 0)
+                {
+                    var p = o + new Vector2(3, 11);
+                    DrawString(font, p + new Vector2(1, 1), tag, HorizontalAlignment.Left, -1, 10, Shadow);
+                    DrawString(font, p, tag, HorizontalAlignment.Left, -1, 10, TagColor);
+                }
+                string count = Bar._counts[i];
+                if (count.Length > 0)
+                {
+                    float w = font.GetStringSize(count, HorizontalAlignment.Left, -1, 10).X;
+                    var p = o + new Vector2(SlotSize - 3 - w, SlotSize - 4);
+                    DrawString(font, p + new Vector2(1, 1), count, HorizontalAlignment.Left, -1, 10, Shadow);
+                    DrawString(font, p, count, HorizontalAlignment.Left, -1, 10, CountColor);
+                }
+            }
         }
     }
 
@@ -80,8 +141,10 @@ public partial class Quickbar : Control
             var b = _buttons[i];
             int resolved = s.Resolve(State);
             string key = OS.GetKeycodeString(s.Key);
-            _keyLabels[i].Text = key;
-            _slotLabels[i].Text = s.Id == 0 ? "+" : s.Spell ? s.Name[..Math.Min(3, s.Name.Length)].ToUpperInvariant() : "";
+            _keyTags[i] = key;
+            // Stack count for items, like the backpack; spells and empties show nothing.
+            _counts[i] = !s.Spell && s.Id > 0 && resolved >= 0 && resolved < State.Inventory.Length && State.Inventory[resolved].Amount > 1
+                ? State.Inventory[resolved].Amount.ToString() : "";
             b.TooltipText = s.Id == 0 ? "Asignar hechizo u objeto" : $"{s.Name} · {key}\nClick: {(s.Spell ? "lanzar" : "usar")} · Click derecho: configurar";
             b.Modulate = s.Id != 0 && resolved < 0 ? new Color(0.55f, 0.55f, 0.55f) : Colors.White;
             _slotIcons[i].Texture = null;
@@ -98,11 +161,9 @@ public partial class Quickbar : Control
                         _icons[iconId] = icon = new AtlasTexture { Atlas = tex, Region = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight) };
                 }
                 _slotIcons[i].Texture = icon;
-                _slotLabels[i].Visible = icon == null;
             }
-            else _slotLabels[i].Visible = true;
-            if (_spellIcons[i].Visible) _slotLabels[i].Visible = false;
         }
+        _overlay?.QueueRedraw();
     }
 
     /// <summary>Left click: run a loaded slot instantly (item → equip/use, spell → cast).
@@ -137,11 +198,11 @@ public partial class Quickbar : Control
     {
         CloseMenu();
         _editing = index;
-        _menu = new PanelContainer { ZIndex = 10, Position = new Vector2(Math.Min(index * 56, 250), -280), Size = new Vector2(300, 270) };
+        _menu = new PanelContainer { ZIndex = 10, Position = new Vector2(Math.Min(index * (SlotSize + SlotGap), BarWidth - 300), -280), Size = new Vector2(300, 270) };
         _menu.AddThemeStyleboxOverride("panel", EntryTheme.Box());
         AddChild(_menu);
         // Keep the popover inside the screen even when the bar is moved to the top.
-        if (_menu.GlobalPosition.Y < 0) _menu.Position = new Vector2(_menu.Position.X, 58);
+        if (_menu.GlobalPosition.Y < 0) _menu.Position = new Vector2(_menu.Position.X, BarHeight + 4);
         var column = RpgTheme.CreateColumn(4);
         _menu.AddChild(column);
         _message = EntryTheme.Text($"Slot {index + 1} · elegí una acción", 12);

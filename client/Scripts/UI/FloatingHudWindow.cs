@@ -14,6 +14,10 @@ public partial class FloatingHudWindow : Panel
     /// <summary>True once the player has dragged the resize grip — from then on
     /// FitToContent leaves the window's size alone, the player's choice wins.</summary>
     public bool UserResized { get; private set; }
+    /// <summary>Bare mode for the macro bar: no skin, badge, close button or resize
+    /// grips — the content draws its own frame. The whole panel drags (content that
+    /// stops the mouse, like the slot buttons, still gets its clicks first).</summary>
+    public bool Chromeless;
     private static readonly Vector2 MinSize = new(150, 90);
     private bool _dragging;
     private Vector2 _grab;
@@ -35,6 +39,30 @@ public partial class FloatingHudWindow : Panel
         // window's bounds. Clipping either `this` or Content cuts one of them off, so a
         // manually-shrunk window may show a sliver of overflowing content — an acceptable
         // trade against breaking the badge or the popup outright.
+
+        if (Chromeless)
+        {
+            Content = new Control { Position = Vector2.Zero, Size = Size, MouseFilter = MouseFilterEnum.Ignore };
+            AddChild(Content);
+            Resized += () => Content.Size = Size;
+            GuiInput += e =>
+            {
+                if (e is InputEventMouseButton b && b.ButtonIndex == MouseButton.Left)
+                {
+                    _dragging = b.Pressed;
+                    _grab = GetGlobalMousePosition() - GlobalPosition;
+                    if (!b.Pressed) DeferLayoutChanged();
+                    AcceptEvent();
+                }
+                if (e is InputEventMouseMotion && _dragging)
+                {
+                    GlobalPosition = GetGlobalMousePosition() - _grab;
+                    ClampToScreen();
+                    AcceptEvent();
+                }
+            };
+            return;
+        }
 
         _frame = SacredTheme.Frame();
         AddChild(_frame);
