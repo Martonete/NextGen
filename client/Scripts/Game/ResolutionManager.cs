@@ -50,7 +50,7 @@ public static class ResolutionManager
     public static int ViewportH { get; private set; } = DesignViewportH;
     public static int ViewportPixelW => ViewportW;
     public static int ViewportPixelH => ViewportH;
-    public const float WorldZoom = 1.15f;
+    public const float WorldZoom = 1.06f;
     public static int RenderPixelW => Math.Max(1, (int)MathF.Round(ViewportW / WorldZoom));
     public static int RenderPixelH => Math.Max(1, (int)MathF.Round(ViewportH / WorldZoom));
 

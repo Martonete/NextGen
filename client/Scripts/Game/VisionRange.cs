@@ -16,10 +16,10 @@ public static class VisionRange
     // engine/map_container.gd. They are ratios, never a requested resolution.
     private const float ReferenceViewportW = 1452f;
     private const float ReferenceViewportH = 987f;
-    private const float ReferenceCoreW = 765f;
-    private const float ReferenceCoreH = 637f;
-    private const float ReferenceCreatureW = 829f;
-    private const float ReferenceCreatureH = 733f;
+    private const float ReferenceCoreW = 1100f;   // widened from AO Libre 765: larger clickable attack area
+    private const float ReferenceCoreH = 860f;    // widened from 637
+    private const float ReferenceCreatureW = 1180f; // must stay >= core (was 829)
+    private const float ReferenceCreatureH = 940f;  // was 733
     private const float ReferenceFogW = 1452f * (0.6423f - 0.3577f);
     private const float ReferenceFogH = 987f * (0.8166f - 0.1832f);
 
