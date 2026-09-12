@@ -109,32 +109,35 @@ public class InputHandler
 			{
 				// Still in cooldown — skip movement
 			}
-			else if (!_state.UserMoving && _state.PendingMoves < 2)
+			else if (!_state.UserMoving)
 			{
 				// When BlockWalkOnChat is enabled, block all movement while chatting
 				bool blockMovement = _state.ChatActive && _state.Config.BlockWalkOnChat;
 				if (!blockMovement)
 				{
+				// Reading order copied from the reference client's _CheckKeys: it
+				// iterates ui_left, ui_right, ui_up, ui_down and moves on the first
+				// key it finds held, so West wins over North when both are down.
 				// Arrow keys: always available (hardcoded, not rebindable — VB6 same)
-				if (Input.IsKeyPressed(Key.Up))
-					TryMove(1); // North
+				if (Input.IsKeyPressed(Key.Left))
+					TryMove(4); // West
 				else if (Input.IsKeyPressed(Key.Right))
 					TryMove(2); // East
+				else if (Input.IsKeyPressed(Key.Up))
+					TryMove(1); // North
 				else if (Input.IsKeyPressed(Key.Down))
 					TryMove(3); // South
-				else if (Input.IsKeyPressed(Key.Left))
-					TryMove(4); // West
 				// Configurable movement keys (default WASD): only when chat is NOT active
 				else if (!_state.ChatActive)
 				{
-					if (_keys.IsActionPressed(GameAction.MoveUp))
-						TryMove(1);
+					if (_keys.IsActionPressed(GameAction.MoveLeft))
+						TryMove(4);
 					else if (_keys.IsActionPressed(GameAction.MoveRight))
 						TryMove(2);
+					else if (_keys.IsActionPressed(GameAction.MoveUp))
+						TryMove(1);
 					else if (_keys.IsActionPressed(GameAction.MoveDown))
 						TryMove(3);
-					else if (_keys.IsActionPressed(GameAction.MoveLeft))
-						TryMove(4);
 				}
 				}
 			}

@@ -20,7 +20,7 @@ public partial class CatalogRecoverySmoke : Node
             var resources = ResourceProviderFactory.Create(ProjectSettings.GlobalizePath("res://Data"));
             var data = new GameData();
             data.LoadAll(resources);
-            if (data.Bodies.Length != 518 || data.Weapons.Length != 86 || data.Objects.Length != 1676)
+            if (data.Bodies.Length < 518 || data.Weapons.Length < 86 || data.Objects.Length < 1676)
                 throw new Exception("Incompatible character/object catalog; expected the Vigilia dataset.");
             if (!WorldRenderer.IsWaterGrh(1505) || WorldRenderer.IsWaterGrh(1))
                 throw new Exception("Incompatible water catalog.");

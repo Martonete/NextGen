@@ -152,6 +152,15 @@ public partial class TilePalette : VBoxContainer
         brushRow.AddChild(brushSpin);
         AddChild(brushRow);
 
+        // Layer-3 art is solid (trees, rocks, furniture) far more often than not, so
+        // painting it blocks the tile by default. Same pattern as SheetPalette's
+        // "Bloquear área" — untick for flowers and other walk-through decor.
+        var autoBlock = new CheckBox { Text = "Bloquear al pintar en capa 3", ButtonPressed = State?.AutoBlockLayer3 ?? true };
+        autoBlock.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        autoBlock.TooltipText = "Cada tile pintado en capa 3 queda bloqueado (se deshace junto con el trazo).\nDesactivalo para decoración por la que se puede caminar.";
+        autoBlock.Toggled += value => { if (State != null) State.AutoBlockLayer3 = value; };
+        AddChild(autoBlock);
+
         // Camino is deliberately a manual brush. Road art has distinct edge
         // pieces, therefore the mapper chooses its orientation before drawing.
         var pathRow = new HBoxContainer();

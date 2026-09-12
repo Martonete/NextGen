@@ -4,7 +4,7 @@
 
 use super::build_cd_binary;
 use super::common::*;
-use crate::game::types::{GameState, SendTarget};
+use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::game::world;
 use crate::net::ConnectionId;
 use crate::protocol::binary_packets;
@@ -921,9 +921,27 @@ pub(crate) async fn warp_user_inner(
     warp_mascotas(state, conn_id, new_map, final_x, final_y).await;
 }
 
+/// Warp arrival sound at the user's current position, without the FX sprite.
+/// Split out so the staff halo can keep the audio cue and drop the sprite.
+pub(crate) async fn send_warp_sound(state: &mut GameState, conn_id: ConnectionId) {
+    let (invisible, map, x, y) = match state.users.get(&conn_id) {
+        Some(u) => (u.admin_invisible, u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if invisible {
+        return;
+    }
+    state.send_data_bytes(
+        SendTarget::ToArea { map, x, y },
+        &binary_packets::write_play_wave(3, x as i16, y as i16),
+    );
+}
+
 /// Send warp FX (sound + visual) at user's current position.
 /// VB6: Only called when tile has otTeleport object (FX=True param).
 pub(crate) async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
+    send_warp_sound(state, conn_id).await;
+
     let (invisible, ci, map, x, y) = match state.users.get(&conn_id) {
         Some(u) => (
             u.admin_invisible,
@@ -937,13 +955,25 @@ pub(crate) async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
     if !invisible {
         state.send_data_bytes(
             SendTarget::ToArea { map, x, y },
-            &binary_packets::write_play_wave(3, x as i16, y as i16),
-        );
-        state.send_data_bytes(
-            SendTarget::ToArea { map, x, y },
             &binary_packets::write_create_fx(ci as i16, 1, 0),
         );
     }
+}
+
+/// Staff-only halo on arrival: the client turns FX 207 into aura 103 (a short
+/// static ring, no FX slot). It replaces the classic warp sprite for staff, so
+/// regular players keep the VB6 look untouched.
+pub(crate) async fn send_gm_warp_aura(state: &mut GameState, conn_id: ConnectionId) {
+    let (ci, map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && !u.admin_invisible && u.privileges >= privilege_level::CONSEJERO => {
+            (u.char_index.0, u.pos_map, u.pos_x, u.pos_y)
+        }
+        _ => return,
+    };
+    state.send_data_bytes(
+        SendTarget::ToArea { map, x, y },
+        &binary_packets::write_create_fx(ci as i16, 207, 0),
+    );
 }
 
 // find_free_pos — moved to common.rs

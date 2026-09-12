@@ -10,22 +10,17 @@ namespace ArgentumNextgen.Rendering;
 /// </summary>
 public static partial class CharRenderer
 {
-    // Shared in-world font: vector, anti-aliased, with fallbacks.
-    // Lazy-initialized on first draw (always on main thread inside _Draw).
-    private static Font? _inWorldFont;
-    private static Font GetInWorldFont()
-    {
-        if (_inWorldFont != null) return _inWorldFont;
-        var f = new SystemFont();
-        f.FontNames = new string[] { "Segoe UI", "Verdana", "Tahoma", "Arial" };
-        f.FontWeight = 700;
-        f.MultichannelSignedDistanceField = true;
-        _inWorldFont = f;
-        return f;
-    }
+    // In-world face: the same one ArgentumOnlineGodot ends up with for names and
+    // dialogue. Its labels set a size but no font, so they fall through to Godot's
+    // default theme face.
+    private static Font GetInWorldFont() => UI.GameFonts.InWorld;
 
-    private const int NameFontSize   = 11;
-    private const int DialogFontSize = 11;
+    // Sizes and outline from that client's character.tscn LabelSettings:
+    // name 14 with a 5 px half-transparent black outline, dialogue 12.
+    internal const int NameFontSize   = 14;
+    internal const int DialogFontSize = 12;
+    internal const int TextOutlineSize = 5;
+    internal static readonly Color TextOutlineColor = new(0f, 0f, 0f, 0.5f);
 
     /// <summary>
     /// Draw name + clan/rank above character. Vector font with drop shadow.
@@ -66,14 +61,37 @@ public static partial class CharRenderer
             DrawStringCentered(canvas, font, NameFontSize, centerX, tagY + asc, clan, nickColor);
     }
 
-    // Draw a string centered at (cx, baselineY) with a dark drop-shadow.
+    // Draw a string centered at (cx, baselineY). The reference client gets its
+    // separation from the map with a black outline on the label, not a dropped
+    // copy of the text, so the name stays readable over any terrain.
     private static void DrawStringCentered(Node2D canvas, Font font, int size, float cx, float baselineY, string text, Color color)
     {
         float w = font.GetStringSize(text, HorizontalAlignment.Left, -1, size).X;
         float x = cx - w / 2f;
-        Color shadow = new Color(0f, 0f, 0f, color.A * 0.75f);
-        canvas.DrawString(font, new Vector2(x + 1, baselineY + 1), text, HorizontalAlignment.Left, -1, size, shadow);
-        canvas.DrawString(font, new Vector2(x,     baselineY),     text, HorizontalAlignment.Left, -1, size, color);
+        var outline = new Color(TextOutlineColor.R, TextOutlineColor.G, TextOutlineColor.B,
+            TextOutlineColor.A * color.A);
+        canvas.DrawStringOutline(font, new Vector2(x, baselineY), text, HorizontalAlignment.Left,
+            -1, size, TextOutlineSize, outline);
+        canvas.DrawString(font, new Vector2(x, baselineY), text, HorizontalAlignment.Left, -1, size, color);
+    }
+
+    /// <summary>
+    /// One line of over-head speech, drawn the way the reference client stacks its
+    /// two labels: a black copy carrying a wide soft outline sits half a pixel
+    /// right and one down, and the coloured text goes on top. No panel behind it —
+    /// the halo is what keeps the words readable over the map.
+    /// </summary>
+    internal static void DrawDialogLine(CanvasItem canvas, Font font, int size,
+        float x, float baselineY, string text, Color color)
+    {
+        var halo = new Color(0f, 0f, 0f, color.A);
+        var haloOutline = new Color(TextOutlineColor.R, TextOutlineColor.G, TextOutlineColor.B,
+            TextOutlineColor.A * color.A);
+        var shadowPos = new Vector2(x + 0.5f, baselineY + 1f);
+        canvas.DrawStringOutline(font, shadowPos, text, HorizontalAlignment.Left, -1, size,
+            TextOutlineSize, haloOutline);
+        canvas.DrawString(font, shadowPos, text, HorizontalAlignment.Left, -1, size, halo);
+        canvas.DrawString(font, new Vector2(x, baselineY), text, HorizontalAlignment.Left, -1, size, color);
     }
 
     /// <summary>
@@ -145,30 +163,14 @@ public static partial class CharRenderer
             var font2     = GetInWorldFont();
             float asc2    = font2.GetAscent(DialogFontSize);
             int lineSpacing = DialogFontSize + 5;
-            const int padding = 5;
 
-            // Background
-            float maxW = 0f;
-            foreach (var line in lines)
-                maxW = MathF.Max(maxW, font2.GetStringSize(line, HorizontalAlignment.Left, -1, DialogFontSize).X);
-            int firstOffset = -lineSpacing * (numLines - 1);
-            float firstTop  = baseY + firstOffset + 2;
-            canvas.DrawRect(new Rect2(textCenterX - maxW / 2f - padding, firstTop - padding,
-                maxW + padding * 2, numLines * lineSpacing + padding * 2),
-                new Color(0.04f, 0.03f, 0.02f, 0.72f));
-
-            int offset = firstOffset;
+            int offset = -lineSpacing * (numLines - 1);
             for (int i = 0; i < numLines; i++)
             {
                 float lineBaseY = baseY + offset + 2 + asc2;
                 float w = font2.GetStringSize(lines[i], HorizontalAlignment.Left, -1, DialogFontSize).X;
                 float x = textCenterX - w / 2f;
-                Color ol = new Color(0f, 0f, 0f, color.A * 0.9f);
-                canvas.DrawString(font2, new Vector2(x - 1, lineBaseY),     lines[i], HorizontalAlignment.Left, -1, DialogFontSize, ol);
-                canvas.DrawString(font2, new Vector2(x + 1, lineBaseY),     lines[i], HorizontalAlignment.Left, -1, DialogFontSize, ol);
-                canvas.DrawString(font2, new Vector2(x,     lineBaseY - 1), lines[i], HorizontalAlignment.Left, -1, DialogFontSize, ol);
-                canvas.DrawString(font2, new Vector2(x,     lineBaseY + 1), lines[i], HorizontalAlignment.Left, -1, DialogFontSize, ol);
-                canvas.DrawString(font2, new Vector2(x,     lineBaseY),     lines[i], HorizontalAlignment.Left, -1, DialogFontSize, color);
+                DrawDialogLine(canvas, font2, DialogFontSize, x, lineBaseY, lines[i], color);
                 offset += lineSpacing;
             }
         }

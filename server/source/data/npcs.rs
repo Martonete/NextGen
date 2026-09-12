@@ -463,6 +463,50 @@ mod tests {
         assert_eq!((boss.map,boss.x,boss.y),(205,50,10));assert_eq!(boss.min_hp,6500);
     }
 
+    /// `/LOADMAP` used to swap tile data without spawning anything, so a map edited in
+    /// the world editor came back with terrain but no NPCs. The per-map spawn helper
+    /// behind the fix must populate exactly that map and leak nothing onto others.
+    #[tokio::test]
+    async fn map_filtered_spawn_only_touches_that_map() {
+        use crate::game::types::GameState;
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
+        if !base.join("dat").join("NPCs.dat").exists() {
+            return;
+        }
+        let maps = crate::data::maps::load_all_maps(&base).unwrap();
+        let data = crate::data::GameData {
+            experience: vec![],
+            objects: crate::data::objects::load_objects(&base).unwrap(),
+            spells: crate::data::spells::load_spells(&base).unwrap(),
+            maps,
+            npcs: load_npcs(&base).unwrap(),
+            balance: Default::default(),
+            crafting: Default::default(),
+        };
+        let config = crate::config::ServerConfig::load(&base).unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://test:test@127.0.0.1:1/test")
+            .unwrap();
+        let bans = crate::db::bans::BanList {
+            banned_hds: Default::default(),
+            banned_ips: Default::default(),
+        };
+        let mut state = GameState::new(config, base, data, pool, bans);
+
+        let spawned = state.spawn_map_npcs_filtered(Some(205));
+        assert_eq!(
+            spawned, 18,
+            "a filtered reload of map 205 must spawn its own NPCs"
+        );
+        assert!(
+            state
+                .active_npc_indices
+                .iter()
+                .all(|&i| state.get_npc(i).unwrap().map == 205),
+            "filtered spawn leaked NPCs onto other maps"
+        );
+    }
+
     #[test]
     fn load_real_npcs() {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");

@@ -41,7 +41,8 @@ public partial class Quickbar : Control
             button.Size = new Vector2(52, 54);
             button.FocusMode = FocusModeEnum.None;
             button.AddThemeFontSizeOverride("font_size", 11);
-            button.Pressed += () => OpenSlot(index);
+            button.Pressed += () => OnLeftClick(index);
+            button.GuiInput += ev => OnButtonGuiInput(ev, index);
             AddChild(button);
             _buttons[i] = button;
             _keyLabels[i] = EntryTheme.Text("", 10);
@@ -81,7 +82,7 @@ public partial class Quickbar : Control
             string key = OS.GetKeycodeString(s.Key);
             _keyLabels[i].Text = key;
             _slotLabels[i].Text = s.Id == 0 ? "+" : s.Spell ? s.Name[..Math.Min(3, s.Name.Length)].ToUpperInvariant() : "";
-            b.TooltipText = s.Id == 0 ? "Asignar hechizo u objeto" : $"{s.Name} · {key}\nClick: configurar";
+            b.TooltipText = s.Id == 0 ? "Asignar hechizo u objeto" : $"{s.Name} · {key}\nClick: {(s.Spell ? "lanzar" : "usar")} · Click derecho: configurar";
             b.Modulate = s.Id != 0 && resolved < 0 ? new Color(0.55f, 0.55f, 0.55f) : Colors.White;
             _slotIcons[i].Texture = null;
             _spellIcons[i].Visible = s.Spell && s.Id > 0;
@@ -104,9 +105,36 @@ public partial class Quickbar : Control
         }
     }
 
-    private void OpenSlot(int index)
+    /// <summary>Left click: run a loaded slot instantly (item → equip/use, spell → cast).
+    /// An empty slot opens the assign menu, same as before — there's nothing to run yet.</summary>
+    private void OnLeftClick(int index)
     {
         if (!State.IsLogged || State.AnyFormOpen) return;
+        var slot = Slots[index];
+        if (slot.Id <= 0) { OpenMenu(index); return; }
+        TryExecute(slot);
+    }
+
+    private void OnButtonGuiInput(InputEvent ev, int index)
+    {
+        if (ev is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Right)
+        {
+            if (!State.IsLogged || State.AnyFormOpen) return;
+            OpenMenu(index);
+            _buttons[index].AcceptEvent();
+        }
+    }
+
+    /// <summary>Shared by left-click and the keyboard shortcut: resolve the slot and fire it.</summary>
+    private void TryExecute(QuickSlot slot)
+    {
+        int index = slot.Resolve(State);
+        if (index >= 0) Execute?.Invoke(slot, index);
+        else State.EnqueueChat(new ChatMessage { Text = $"{slot.Name}: no está disponible.", Color = "FFFF00" });
+    }
+
+    private void OpenMenu(int index)
+    {
         CloseMenu();
         _editing = index;
         _menu = new PanelContainer { ZIndex = 10, Position = new Vector2(Math.Min(index * 56, 250), -280), Size = new Vector2(300, 270) };
@@ -171,9 +199,7 @@ public partial class Quickbar : Control
         foreach (var slot in Slots)
         {
             if (slot.Id <= 0 || slot.Key != key.Keycode || Reserved(slot.Key)) continue;
-            int index = slot.Resolve(State);
-            if (index >= 0) Execute?.Invoke(slot, index);
-            else State.EnqueueChat(new ChatMessage { Text = $"{slot.Name}: no está disponible.", Color = "FFFF00" });
+            TryExecute(slot);
             return true;
         }
         return false;

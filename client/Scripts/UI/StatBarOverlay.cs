@@ -9,20 +9,29 @@ namespace ArgentumNextgen.UI;
 /// VB6 uses Image controls (HpSHP, MPShp, SPShp, AguaSP, COMIDASp, ExpBar) whose
 /// Width is modified proportionally to current/max ratio. We replicate this by
 /// drawing a clipped region of each bar image.
-/// Bar X positions are relative to ResolutionManager.SidebarX (560 at 800x600).
+///
+/// Self-contained compact stack: five rows (Hp/Mana/Sta/Ham/Agua) starting at local
+/// (0,0), meant to live inside the "Estado" floating HUD window (see Main.FloatingHud.cs).
+/// Unlike the old sidebar layout this no longer depends on ResolutionManager.SidebarX —
+/// callers just position/size this control like any other widget.
 /// </summary>
 public partial class StatBarOverlay : Control
 {
-    // Bar positions computed from sidebar X, scaled by S(). Design-space offsets: 584=560+24, 565=560+5
     private static int S(int v) => ResolutionManager.S(v);
-    private static Rect2 StaRect  => new(ResolutionManager.SidebarX + S(24), S(443), S(75), S(12));
-    private static Rect2 ManaRect => new(ResolutionManager.SidebarX + S(24), S(467), S(75), S(12));
-    private static Rect2 HpRect   => new(ResolutionManager.SidebarX + S(24), S(488), S(75), S(12));
-    private static Rect2 HamRect  => new(ResolutionManager.SidebarX + S(24), S(511), S(75), S(12));
-    private static Rect2 AguaRect => new(ResolutionManager.SidebarX + S(24), S(534), S(75), S(12));
-    private static Rect2 ExpRect  => new(ResolutionManager.SidebarX + S(5), S(80), S(202), S(10));
+
+    private const int TagW = 26, BarW = 78, BarH = 13, RowH = 16;
+    private static Rect2 HpRect   => new(S(TagW), S(RowH * 0), S(BarW), S(BarH));
+    private static Rect2 ManaRect => new(S(TagW), S(RowH * 1), S(BarW), S(BarH));
+    private static Rect2 StaRect  => new(S(TagW), S(RowH * 2), S(BarW), S(BarH));
+    private static Rect2 HamRect  => new(S(TagW), S(RowH * 3), S(BarW), S(BarH));
+    private static Rect2 AguaRect => new(S(TagW), S(RowH * 4), S(BarW), S(BarH));
+
+    /// <summary>Tight bounding size of the drawn content (5 rows) — callers position/size
+    /// this control to exactly this, keyed to the current UIScale.</summary>
+    public static Vector2 IntrinsicSize => new(S(TagW + BarW), S(RowH) * 5);
 
     private static readonly Color TextColor = new(1f, 1f, 1f);
+    private static readonly Color TagColor = new(0.78f, 0.72f, 0.6f);
 
     // Bar image textures (extracted from VB6 frmMain.frx)
     private Texture2D? _hpTex;
@@ -130,21 +139,37 @@ public partial class StatBarOverlay : Control
         DrawBar(HpRect, _hpTex, HpColor, _minHp, _maxHp);
         DrawBar(ManaRect, _manaTex, ManaColor, _minMana, _maxMana);
         DrawBar(StaRect, _staTex, StaColor, _minSta, _maxSta);
-        DrawBar(AguaRect, _aguaTex, AguaColor, _minAgua, _maxAgua);
         DrawBar(HamRect, _hamTex, HamColor, _minHam, _maxHam);
+        DrawBar(AguaRect, _aguaTex, AguaColor, _minAgua, _maxAgua);
         // Experience is shown by the character sheet (P) now; drawing it here
         // too would leave a fill floating over the hidden sidebar frame.
 
         if (_font == null) return;
+
+        // Short tag so each bar reads on its own — this widget no longer sits
+        // next to sidebar icons that used to give that context.
+        DrawBarTag(HpRect, "HP");
+        DrawBarTag(ManaRect, "MP");
+        DrawBarTag(StaRect, "STA");
+        DrawBarTag(HamRect, "HAM");
+        DrawBarTag(AguaRect, "SED");
 
         // Draw stat value text centered on each bar — VB6: "min/max" format
         DrawBarText(HpRect, $"{_minHp}/{_maxHp}");
         DrawBarText(ManaRect, $"{_minMana}/{_maxMana}");
         DrawBarText(StaRect, $"{_minSta}/{_maxSta}");
         // VB6: Agua/Ham show percentage
-        DrawBarText(AguaRect, $"{_minAgua}%");
         DrawBarText(HamRect, $"{_minHam}%");
+        DrawBarText(AguaRect, $"{_minAgua}%");
         // Exp bar is too thin (5px) for text — ExpLabel handles it
+    }
+
+    private void DrawBarTag(Rect2 barRect, string tag)
+    {
+        if (_font == null) return;
+        float ascent = _font.GetAscent(FontSize);
+        var pos = new Vector2(0, barRect.Position.Y + (barRect.Size.Y + ascent) / 2f - 1f);
+        DrawString(_font, pos, tag, HorizontalAlignment.Left, S(TagW) - S(2), FontSize - 1, TagColor);
     }
 
     private void DrawBar(Rect2 rect, Texture2D? tex, Color fallbackColor, int min, int max)

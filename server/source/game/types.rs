@@ -1577,10 +1577,19 @@ impl GameState {
 
     /// Spawn all NPCs from map tile data (called on server startup).
     pub fn spawn_map_npcs(&mut self) -> usize {
+        self.spawn_map_npcs_filtered(None)
+    }
+
+    /// Same, restricted to one map. `/LOADMAP` uses this so a map edited in the
+    /// world editor gets its NPCs without restarting the whole server.
+    pub fn spawn_map_npcs_filtered(&mut self, only_map: Option<usize>) -> usize {
         let mut count = 0;
         // Collect NPC spawn positions from map data
         let mut spawns: Vec<(usize, i32, i32, i32)> = Vec::new();
         for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
+            if only_map.is_some_and(|m| m != map_idx) {
+                continue;
+            }
             if let Some(game_map) = maybe_map {
                 for y in 0..game_map.tiles.height {
                     for x in 0..game_map.tiles.width {
@@ -1610,11 +1619,19 @@ impl GameState {
     /// Spawn NPCs defined in zone spawn lists (.aozone files).
     /// Called after spawn_map_npcs() on server startup.
     pub fn spawn_zone_npcs(&mut self) -> usize {
+        self.spawn_zone_npcs_filtered(None)
+    }
+
+    /// Same, restricted to one map — see spawn_map_npcs_filtered.
+    pub fn spawn_zone_npcs_filtered(&mut self, only_map: Option<usize>) -> usize {
         use crate::data::zones::SpawnMode;
 
         let mut spawns_to_create: Vec<(usize, i32, i32, i32, u16)> = Vec::new(); // (npc_num, map, x, y, zone_id)
 
         for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
+            if only_map.is_some_and(|m| m != map_idx) {
+                continue;
+            }
             if let Some(game_map) = maybe_map {
                 if let Some(ref zones) = game_map.zones {
                     let map_num = map_idx as i32;
@@ -1671,8 +1688,16 @@ impl GameState {
     /// Load static map objects (doors, items, etc.) from .inf data into the WorldState grid.
     /// VB6 loads these at startup: each tile's OBJInfo becomes a ground item on the runtime grid.
     pub fn load_map_objects(&mut self) -> usize {
+        self.load_map_objects_filtered(None)
+    }
+
+    /// Same, restricted to one map — see spawn_map_npcs_filtered.
+    pub fn load_map_objects_filtered(&mut self, only_map: Option<usize>) -> usize {
         let mut count = 0;
         for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
+            if only_map.is_some_and(|m| m != map_idx) {
+                continue;
+            }
             if let Some(game_map) = maybe_map {
                 let map_num = map_idx as i32;
                 for y in 0..game_map.tiles.height {

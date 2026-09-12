@@ -76,6 +76,10 @@ public partial class EditorMain : Control
     private WalkModePanel? _walkPanel;
     private BodyAnimData[]? _walkBodies;
     private HeadAnimData[]? _walkHeads;
+
+    // In-viewport character preview (toolbar toggle + J key) and game-view toggle (F7)
+    private Button? _previewBtn;
+    private Button? _gameViewBtn;
     private Dictionary<int, DoorInfo>? _doorData;
 
     // Status bar
@@ -83,6 +87,14 @@ public partial class EditorMain : Control
     private HBoxContainer? _statusBar;
     private Label? _statusLabel;
     private Label? _coordLabel;
+    private Button? _zoomBtn;
+    private AcceptDialog? _goToDialog;
+    private SpinBox? _goToX, _goToY;
+
+    // "Revisar mapa" (F8) results window
+    private Window? _lintWindow;
+    private Label? _lintSummary;
+    private ItemList? _lintList;
     private Label? _fpsLabel;
     private float _fpsAccumTime;
     private int _fpsAccumFrames;
@@ -266,6 +278,9 @@ public partial class EditorMain : Control
         editMenu.AddItem("Pegar (Ctrl+V)", 3);
         editMenu.AddSeparator();
         editMenu.AddItem("Eliminar (Supr)", 5);
+        editMenu.AddSeparator();
+        editMenu.AddItem("Bloquear tiles con capa 3 (selección o todo el mapa)", 6);
+        editMenu.AddItem("Revisar mapa (F8)", 7);
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
@@ -273,6 +288,7 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Grilla (G)", 0);
         _viewMenu.AddCheckItem("Bloqueados", 1);
         _viewMenu.AddCheckItem("Salidas", 2);
+        _viewMenu.AddCheckItem("Triggers", 21);
         _viewMenu.AddSeparator();
         _viewMenu.AddCheckItem("Capa 1", 3);
         _viewMenu.AddCheckItem("Capa 2", 4);
@@ -284,16 +300,26 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Particulas", 9);
         _viewMenu.AddCheckItem("Luces", 10);
         _viewMenu.AddCheckItem("GRH de tiles (F6)", 15);
+        _viewMenu.AddCheckItem("Selección como máscara de pincel", 18);
+        _viewMenu.AddCheckItem("Bloquear al pintar en capa 3", 19);
+        _viewMenu.AddCheckItem("Borde del server (zona no caminable)", 20);
         _viewMenu.AddSeparator();
         _viewMenu.AddItem("Modo Caminata (F5)", 11);
         _viewMenu.AddItem("Panel de Partículas", 12);
         _viewMenu.AddItem("Encuadrar Mapa Completo (Home)", 13);
+        _viewMenu.AddItem("Zoom 1:1 (0)", 16);
+        _viewMenu.AddItem("Ir a X,Y... (Ctrl+G)", 17);
         _viewMenu.AddItem("Abrir Mapa de Consulta...", 14);
         for (int id = 0; id <= 10; id++)
         {
             int idx = _viewMenu.GetItemIndex(id);
             if (idx >= 0) _viewMenu.SetItemChecked(idx, true);
         }
+        int trigIdx = _viewMenu.GetItemIndex(21);
+        if (trigIdx >= 0) _viewMenu.SetItemChecked(trigIdx, _state.ShowTriggers);
+        _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(18), _state.UseSelectionAsMask);
+        _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(19), _state.AutoBlockLayer3);
+        _viewMenu.SetItemChecked(_viewMenu.GetItemIndex(20), _state.ShowServerMargin);
         _viewMenu.IdPressed += OnViewMenuId;
         _menuBar.AddChild(_viewMenu);
 
@@ -426,6 +452,24 @@ public partial class EditorMain : Control
         }
         layerGroup.AddChild(layerGroupH);
         _toolBar.AddChild(layerGroup);
+
+        _toolBar.AddChild(EditorTheme.ToolBarGroupSeparator());
+
+        // -- Group 6: in-viewport player preview. --
+        // A ghost character you walk around with the arrow keys while every other
+        // tool keeps working — the way to judge how big an area really is in-game.
+        var previewGroup = EditorTheme.ToolBarGroup();
+        var previewGroupH = new HBoxContainer();
+        previewGroupH.AddThemeConstantOverride("separation", 6);
+        _previewBtn = EditorTheme.ToolToggleCompact("☺", "Personaje de prueba (J) — flechas para caminar, Shift+J para quitar", "Personaje");
+        _previewBtn.Pressed += () => SetPreviewActive(_previewBtn.ButtonPressed);
+        previewGroupH.AddChild(_previewBtn);
+        _gameViewBtn = EditorTheme.ToolToggleCompact("▶", "Vista de juego (F7) — sin overlays, zoom 1:1, como lo ve el jugador", "Vista juego");
+        _gameViewBtn.Pressed += () => SetGameView(_gameViewBtn.ButtonPressed);
+        previewGroupH.AddChild(_gameViewBtn);
+        previewGroupH.AddChild(EditorTheme.ActionButtonCompact("✔", "Revisar mapa (F8) — NPCs sobre bloqueado, salidas rotas, huecos, techos sin trigger", RunMapLint, "Revisar"));
+        previewGroup.AddChild(previewGroupH);
+        _toolBar.AddChild(previewGroup);
 
         AddChild(_toolBar);
         SyncToolBar();
@@ -653,6 +697,11 @@ public partial class EditorMain : Control
         unblockAllBtn.Pressed += () => BlockSelection(false);
         _rightSelectionSection.AddChild(unblockAllBtn);
 
+        var blockL3Btn = EditorTheme.MakeButton("Bloquear tiles con capa 3");
+        blockL3Btn.TooltipText = "Bloquea cada tile del área que tenga algo en capa 3 (árboles, objetos). Sin selección: todo el mapa.";
+        blockL3Btn.Pressed += BlockLayer3Tiles;
+        _rightSelectionSection.AddChild(blockL3Btn);
+
         var markWaterBtn = EditorTheme.MakeButton("Marcar como agua animada");
         markWaterBtn.Pressed += () => SetSelectionAnimatedWater(true);
         _rightSelectionSection.AddChild(markWaterBtn);
@@ -855,6 +904,19 @@ public partial class EditorMain : Control
         // Coordinates (monospace-style)
         _coordLabel = EditorTheme.MakeLabel("(0, 0)", EditorTheme.TEXT_PRIMARY, EditorTheme.FONT_SM);
         _statusBar.AddChild(_coordLabel);
+
+        // "Ir a X,Y" — CenterOnTile existed but had no way to reach it from the UI.
+        var goToBtn = new Button { Text = "Ir a…", TooltipText = "Ir a una coordenada (Ctrl+G)", Flat = true, FocusMode = FocusModeEnum.None };
+        goToBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        goToBtn.Pressed += OpenGoToDialog;
+        _statusBar.AddChild(goToBtn);
+
+        // Zoom % — click to snap back to 1:1 (the game's real scale). Wheel zoom steps
+        // multiplicatively, so without this you'd never land exactly on 100% again.
+        _zoomBtn = new Button { Text = "100%", TooltipText = "Zoom actual — click para volver a 1:1 (tecla 0)", Flat = true, FocusMode = FocusModeEnum.None };
+        _zoomBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        _zoomBtn.Pressed += () => _viewport?.SetZoom(1f);
+        _statusBar.AddChild(_zoomBtn);
 
         // FPS indicator — averaged over the last ~0.5 s so the number
         // doesn't flicker frame-to-frame. Green when ≥55 FPS, yellow
@@ -1756,6 +1818,11 @@ public partial class EditorMain : Control
         string cabezasInd = Path.Combine(dataPath, "INIT", "Cabezas.ind");
         _headGrhs = GameDataLoader.LoadHeadGrhs(cabezasInd);
 
+        // Full four-heading tables: Modo Caminata and the in-viewport character preview
+        // both need them, so load once here instead of lazily on F5.
+        _walkBodies = WalkModeData.LoadBodies(personajesInd);
+        _walkHeads = WalkModeData.LoadHeads(cabezasInd);
+
         // Load object and NPC data from server dat/
         if (_serverDatDir.Length > 0 && Directory.Exists(_serverDatDir))
         {
@@ -1971,6 +2038,8 @@ public partial class EditorMain : Control
         _viewport.NpcHeadOfsY = _npcHeadOfsY;
         _viewport.HeadGrhs = _headGrhs;
         _viewport.NpcDb = _npcDb;
+        _viewport.Bodies = _walkBodies;
+        _viewport.Heads = _walkHeads;
         // Let the LightRenderer rebuild its polygon cache against the
         // (possibly freshly-loaded) GRH table + texture manager.
         _viewport.SyncLightRendererGraphics();
@@ -2006,6 +2075,8 @@ public partial class EditorMain : Control
             case 3: PasteClipboard(); break;
             case 4: CutSelection(); break;
             case 5: DeleteSelection(); break;
+            case 6: BlockLayer3Tiles(); break;
+            case 7: RunMapLint(); break;
         }
     }
 
@@ -2016,6 +2087,7 @@ public partial class EditorMain : Control
             case 0: _state.ShowGrid = !_state.ShowGrid; break;
             case 1: _state.ShowBlocked = !_state.ShowBlocked; break;
             case 2: _state.ShowExits = !_state.ShowExits; break;
+            case 21: _state.ShowTriggers = !_state.ShowTriggers; break;
             case 3: _state.ShowLayer1 = !_state.ShowLayer1; break;
             case 4: _state.ShowLayer2 = !_state.ShowLayer2; break;
             case 5: _state.ShowLayer3 = !_state.ShowLayer3; break;
@@ -2025,10 +2097,15 @@ public partial class EditorMain : Control
             case 9: _state.ShowParticles = !_state.ShowParticles; break;
             case 10: _state.ShowLights = !_state.ShowLights; break;
             case 15: _state.ShowGrhOverlay = !_state.ShowGrhOverlay; break;
+            case 18: _state.UseSelectionAsMask = !_state.UseSelectionAsMask; _lastRightSidebarHasSel = !_state.HasSelection; break; // force label refresh
+            case 19: _state.AutoBlockLayer3 = !_state.AutoBlockLayer3; break;
+            case 20: _state.ShowServerMargin = !_state.ShowServerMargin; break;
             case 11: OpenWalkMode(); return; // not a checkbox — early return
             case 12: if (_sidebarTabs != null && _particlePalette != null) _sidebarTabs.CurrentTab = _particlePalette.GetIndex(); return;
             case 13: _viewport?.ZoomToFit(); return; // not a checkbox — early return
             case 14: OpenAuxMapWindow(); return; // not a checkbox — early return
+            case 16: _viewport?.SetZoom(1f); return;
+            case 17: OpenGoToDialog(); return;
         }
 
         if (_viewMenu != null)
@@ -2036,11 +2113,15 @@ public partial class EditorMain : Control
             bool val = id switch
             {
                 0 => _state.ShowGrid, 1 => _state.ShowBlocked, 2 => _state.ShowExits,
+                21 => _state.ShowTriggers,
                 3 => _state.ShowLayer1, 4 => _state.ShowLayer2,
                 5 => _state.ShowLayer3, 6 => _state.ShowLayer4,
                 7 => _state.ShowNpcs, 8 => _state.ShowObjects,
                 9 => _state.ShowParticles, 10 => _state.ShowLights,
                 15 => _state.ShowGrhOverlay,
+                18 => _state.UseSelectionAsMask,
+                19 => _state.AutoBlockLayer3,
+                20 => _state.ShowServerMargin,
                 _ => false
             };
             int idx = _viewMenu.GetItemIndex((int)id);
@@ -2659,6 +2740,228 @@ public partial class EditorMain : Control
         _propsWindow.Position = new Vector2I(x, 60);
     }
 
+    /// <summary>J: drop the preview character on the hovered tile (or toggle it if the
+    /// mouse is off the map). It is deliberately NOT cleared by Escape — Escape already
+    /// means "clear selection"; Shift+J removes the character.</summary>
+    private void PlaceOrTogglePreview()
+    {
+        if (_map == null) { SetStatus("Carga un mapa primero."); return; }
+        if (_walkBodies == null || _walkBodies.Length <= 1)
+        {
+            SetStatus("No se cargaron cuerpos (Personajes.ind) — no hay personaje para mostrar.");
+            return;
+        }
+        var p = _state.Preview;
+        if (_state.HoverValid)
+        {
+            p.PlaceAt(_state.HoverX, _state.HoverY);
+            SetPreviewActive(true);
+            SetStatus($"Personaje en ({p.X},{p.Y}) — flechas para caminar, Shift+J para quitar");
+        }
+        else
+        {
+            SetPreviewActive(!p.Active);
+        }
+    }
+
+    /// <summary>
+    /// F7: see the map the way a player would. Hides every editor overlay, locks the
+    /// camera at 1:1 on the preview character (placing one at the view centre if none
+    /// is out) and switches the viewport to its game-faithful draw path. Turning it
+    /// off restores the zoom and camera you had.
+    /// </summary>
+    private void SetGameView(bool on)
+    {
+        if (_map == null || _viewport == null)
+        {
+            _gameViewBtn?.SetPressedNoSignal(false);
+            if (_map == null) SetStatus("Carga un mapa primero.");
+            return;
+        }
+        if (on == _state.GameView) { _gameViewBtn?.SetPressedNoSignal(on); return; }
+
+        if (on)
+        {
+            if (!_state.Preview.Active)
+            {
+                var c = _viewport.GetViewCenterTile();
+                _state.Preview.PlaceAt(
+                    Math.Clamp(c.X, 1, _map.Width), Math.Clamp(c.Y, 1, _map.Height));
+                SetPreviewActive(true);
+            }
+            _state.GameViewSavedZoom = _state.Zoom;
+            _state.GameViewSavedCamera = _state.CameraOffset;
+            _state.GameView = true;
+            _viewport.OnGameViewChanged();
+            SetStatus("Vista de juego — flechas para caminar, F7 para volver al editor");
+        }
+        else
+        {
+            _state.GameView = false;
+            _state.Zoom = _state.GameViewSavedZoom;
+            _state.CameraOffset = _state.GameViewSavedCamera;
+            _viewport.OnGameViewChanged();
+            SetStatus("Vista de editor");
+        }
+        _gameViewBtn?.SetPressedNoSignal(on);
+        _viewport.QueueRedraw();
+    }
+
+    /// <summary>
+    /// F8: run MapLint and show the findings in a window. Clicking a row centres the
+    /// camera on the tile; the flagged tiles stay marked on the map while the window is
+    /// open. Everything the lint needs is loaded read-only, so it never dirties the map.
+    /// </summary>
+    private void RunMapLint()
+    {
+        if (_map == null) { SetStatus("Carga un mapa primero."); return; }
+
+        if (_lintWindow == null)
+        {
+            _lintWindow = new Window
+            {
+                Title = "Revisar mapa",
+                Size = new Vector2I(560, 380),
+                Visible = false,
+                Exclusive = false,
+                AlwaysOnTop = true,
+            };
+            _lintWindow.CloseRequested += () =>
+            {
+                _lintWindow.Visible = false;
+                _state.ShowLintMarkers = false;
+                _viewport?.QueueRedraw();
+            };
+
+            var root = new VBoxContainer();
+            root.AddThemeConstantOverride("separation", 6);
+            root.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+            root.OffsetLeft = 8; root.OffsetTop = 8; root.OffsetRight = -8; root.OffsetBottom = -8;
+
+            _lintSummary = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+            _lintSummary.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            root.AddChild(_lintSummary);
+
+            _lintList = new ItemList { SizeFlagsVertical = SizeFlags.ExpandFill, SelectMode = ItemList.SelectModeEnum.Single };
+            _lintList.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+            _lintList.ItemSelected += index =>
+            {
+                if (index < 0 || index >= _state.LintIssues.Count || _viewport == null) return;
+                var issue = _state.LintIssues[(int)index];
+                _viewport.CenterOnTile(issue.X, issue.Y);
+                _state.SelectedTileX = issue.X;
+                _state.SelectedTileY = issue.Y;
+                _viewport.QueueRedraw();
+            };
+            root.AddChild(_lintList);
+
+            var buttons = new HBoxContainer();
+            buttons.AddThemeConstantOverride("separation", 8);
+            var again = EditorTheme.MakeButton("Revisar de nuevo");
+            again.Pressed += RunMapLint;
+            buttons.AddChild(again);
+            var close = EditorTheme.MakeButton("Cerrar");
+            close.Pressed += () => _lintWindow!.EmitSignal(Window.SignalName.CloseRequested);
+            buttons.AddChild(close);
+            root.AddChild(buttons);
+
+            _lintWindow.AddChild(root);
+            AddChild(_lintWindow);
+        }
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _state.LintIssues = MapLint.Run(_map, _state.MapDir, _state.AvailableMaps);
+        sw.Stop();
+        _state.ShowLintMarkers = true;
+
+        _lintList!.Clear();
+        var counts = new Dictionary<LintKind, int>();
+        foreach (var issue in _state.LintIssues)
+        {
+            counts[issue.Kind] = counts.GetValueOrDefault(issue.Kind) + 1;
+            _lintList.AddItem($"({issue.X,3},{issue.Y,3})  {MapLint.Label(issue.Kind)} — {issue.Message}");
+        }
+
+        if (_state.LintIssues.Count == 0)
+        {
+            _lintSummary!.Text = $"Sin problemas en el mapa {_map.MapNumber}. ({sw.ElapsedMilliseconds} ms)";
+        }
+        else
+        {
+            var parts = new List<string>();
+            foreach (var (kind, n) in counts) parts.Add($"{n} × {MapLint.Label(kind)}");
+            _lintSummary!.Text = $"{_state.LintIssues.Count} problema(s) en el mapa {_map.MapNumber} — click en una fila para ir al tile.\n"
+                + string.Join("  ·  ", parts) + $"   ({sw.ElapsedMilliseconds} ms)";
+        }
+
+        if (!_lintWindow.Visible)
+        {
+            _lintWindow.Position = new Vector2I(
+                (int)(GetViewport().GetVisibleRect().Size.X - _lintWindow.Size.X - 40), 120);
+            _lintWindow.Visible = true;
+        }
+        _viewport?.QueueRedraw();
+        SetStatus(_state.LintIssues.Count == 0 ? "Revisar mapa: sin problemas" : $"Revisar mapa: {_state.LintIssues.Count} problema(s)");
+    }
+
+    /// <summary>Ctrl+G: jump the camera to a tile and highlight it. Built lazily, reused.</summary>
+    private void OpenGoToDialog()
+    {
+        if (_map == null) { SetStatus("Carga un mapa primero."); return; }
+
+        if (_goToDialog == null)
+        {
+            _goToDialog = new AcceptDialog { Title = "Ir a coordenada", Size = new Vector2I(260, 130), OkButtonText = "Ir" };
+            var row = new HBoxContainer();
+            row.AddThemeConstantOverride("separation", 8);
+            row.AddChild(new Label { Text = "X:" });
+            _goToX = new SpinBox { MinValue = 1, MaxValue = 9999, Step = 1, CustomMinimumSize = new Vector2(80, 0) };
+            row.AddChild(_goToX);
+            row.AddChild(new Label { Text = "Y:" });
+            _goToY = new SpinBox { MinValue = 1, MaxValue = 9999, Step = 1, CustomMinimumSize = new Vector2(80, 0) };
+            row.AddChild(_goToY);
+            _goToDialog.AddChild(row);
+            _goToDialog.Confirmed += () =>
+            {
+                if (_map == null || _viewport == null) return;
+                int x = Math.Clamp((int)_goToX!.Value, 1, _map.Width);
+                int y = Math.Clamp((int)_goToY!.Value, 1, _map.Height);
+                _viewport.CenterOnTile(x, y);
+                _state.SelectedTileX = x;
+                _state.SelectedTileY = y;
+                SetStatus($"Centrado en ({x}, {y})");
+            };
+            AddChild(_goToDialog);
+        }
+
+        _goToX!.MaxValue = _map.Width;
+        _goToY!.MaxValue = _map.Height;
+        // Start from where the mouse is, or the view centre — usually you want "near here".
+        var start = _state.HoverValid ? new Vector2I(_state.HoverX, _state.HoverY)
+            : (_viewport?.GetViewCenterTile() ?? new Vector2I(1, 1));
+        _goToX.Value = Math.Clamp(start.X, 1, _map.Width);
+        _goToY.Value = Math.Clamp(start.Y, 1, _map.Height);
+        _goToDialog.PopupCentered();
+        _goToX.GetLineEdit().GrabFocus();
+        _goToX.GetLineEdit().SelectAll();
+    }
+
+    private void SetPreviewActive(bool active)
+    {
+        // The game view is locked onto the character; removing it means leaving the view.
+        if (!active && _state.GameView) SetGameView(false);
+
+        var p = _state.Preview;
+        if (active && _map != null && !_map.InBounds(p.X, p.Y))
+            p.PlaceAt(Math.Clamp(p.X, 1, _map.Width), Math.Clamp(p.Y, 1, _map.Height));
+        p.Active = active;
+        p.ClearKeys();
+        _viewport?.OnPreviewActiveChanged();
+        _previewBtn?.SetPressedNoSignal(active);
+        _viewport?.QueueRedraw();
+        if (!active) SetStatus("Personaje de prueba quitado");
+    }
+
     private void OpenWalkMode()
     {
         if (_map == null)
@@ -2667,13 +2970,7 @@ public partial class EditorMain : Control
             return;
         }
 
-        // Load body/head data once
-        if (_walkBodies == null && _dataPath.Length > 0)
-        {
-            string initDir = Path.Combine(_dataPath, "INIT");
-            _walkBodies = WalkModeData.LoadBodies(Path.Combine(initDir, "Personajes.ind"));
-            _walkHeads = WalkModeData.LoadHeads(Path.Combine(initDir, "Cabezas.ind"));
-        }
+        // Body/head tables are loaded up-front in LoadDataPath (shared with the viewport preview).
 
         // Create window if needed
         if (_walkWindow == null)
@@ -3358,6 +3655,8 @@ public partial class EditorMain : Control
                 case Key.C: _state.CopySelection(_map!); SetStatus($"Copiado {_state.ClipWidth}x{_state.ClipHeight} tiles"); break;
                 case Key.V: PasteClipboard(); break;
                 case Key.I: InsertMap(); break;
+                case Key.G: OpenGoToDialog(); break;
+                case Key.Key0: case Key.Kp0: _viewport?.SetZoom(1f); break;
             }
         }
         else
@@ -3386,7 +3685,16 @@ public partial class EditorMain : Control
                 case Key.F6: ToggleGrhOverlay(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.F5: OpenWalkMode(); break;
+                case Key.J:
+                    if (key.ShiftPressed) SetPreviewActive(false);
+                    else PlaceOrTogglePreview();
+                    break;
+                case Key.F7: SetGameView(!_state.GameView); break;
+                case Key.F8: RunMapLint(); break;
                 case Key.Home: _viewport?.ZoomToFit(); break;
+                case Key.Key0: case Key.Kp0: _viewport?.SetZoom(1f); break;
+                case Key.Plus: case Key.Equal: case Key.KpAdd: _viewport?.ZoomStep(inward: true); break;
+                case Key.Minus: case Key.KpSubtract: _viewport?.ZoomStep(inward: false); break;
                 case Key.F12: ExportMapAsPng(); break;
                 case Key.Key1: ActivateLayer(1); break;
                 case Key.Key2: ActivateLayer(2); break;
@@ -3430,9 +3738,8 @@ public partial class EditorMain : Control
     {
         _state.ActiveTool = tool;
         _state.Pick.Clear();
-        // Keep selection when in Select or Move (Move requires an active selection)
-        if (tool != EditorTool.Select && tool != EditorTool.Move)
-            _state.ClearSelection();
+        // The selection survives tool switches on purpose: it doubles as a paint mask
+        // (see EditorState.InSelectionMask). Escape is the explicit way to drop it.
         SyncToolBar();
         UpdateLightSection();
         UpdateTriggerPanel();
@@ -3540,6 +3847,40 @@ public partial class EditorMain : Control
         _viewport?.QueueRedraw();
     }
 
+    /// <summary>
+    /// Block every tile carrying layer 3 — the retroactive version of AutoBlockLayer3
+    /// for maps painted before it existed. Selection if there is one, else the whole
+    /// map. One undo batch; skips tiles already blocked so the history stays small.
+    /// </summary>
+    private void BlockLayer3Tiles()
+    {
+        if (_map == null) return;
+        bool useSel = _state.HasSelection;
+        int x1 = useSel ? _state.SelX1 : 1, y1 = useSel ? _state.SelY1 : 1;
+        int x2 = useSel ? _state.SelX2 : _map.Width, y2 = useSel ? _state.SelY2 : _map.Height;
+
+        _undo.BeginBatch("Bloquear capa 3");
+        int changed = 0;
+        for (int y = y1; y <= y2; y++)
+            for (int x = x1; x <= x2; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                if (before.Layer3 == 0 || before.Blocked) continue;
+                _map.Tiles[x, y].Blocked = true;
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+                changed++;
+            }
+        _undo.EndBatch();
+
+        if (changed > 0) _state.MarkDirty();
+        _viewport?.MarkLightmapDirty();
+        _viewport?.QueueRedraw();
+        SetStatus(changed > 0
+            ? $"{changed} tiles con capa 3 bloqueados{(useSel ? " en la selección" : " en todo el mapa")}"
+            : "No había tiles con capa 3 sin bloquear");
+    }
+
     private void SetSelectionAnimatedWater(bool animatedWater)
     {
         if (_map == null || !_state.HasSelection) return;
@@ -3558,6 +3899,40 @@ public partial class EditorMain : Control
         _state.MarkDirty();
         _viewport?.QueueRedraw();
         SetStatus(animatedWater ? "Area marcada como agua animada" : "Marca de agua quitada del area");
+    }
+
+    /// <summary>
+    /// Apply the selected trigger to every tile at once. Marking a whole map safe or
+    /// unsafe is the one case where the per-tile brush is useless — this does it in a
+    /// single undo batch, and skips tiles that already carry the trigger.
+    /// </summary>
+    private void ApplyTriggerToWholeMap()
+    {
+        if (_map == null) return;
+
+        short trigger = _state.SelectedTriggerType;
+        string name = TriggerTypeDefs.FirstOrDefault(t => t.Id == trigger).Label
+            ?? trigger.ToString();
+
+        _undo.BeginBatch($"Trigger {trigger} en todo el mapa");
+        int changed = 0;
+        for (int y = 1; y <= _map.Height; y++)
+            for (int x = 1; x <= _map.Width; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                if (before.Trigger == trigger) continue;
+                _map.Tiles[x, y].Trigger = trigger;
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+                changed++;
+            }
+        _undo.EndBatch();
+
+        if (changed > 0) _state.MarkDirty();
+        _viewport?.QueueRedraw();
+        SetStatus(changed > 0
+            ? $"\"{name}\" aplicado a {changed} tiles de todo el mapa"
+            : $"Todo el mapa ya tenia \"{name}\"");
     }
 
     private void ClearSelectionTiles_Confirm1()
@@ -4017,6 +4392,11 @@ public partial class EditorMain : Control
 
         // Update status bar
         _coordLabel!.Text = _state.HoverValid ? $"({_state.HoverX,3}, {_state.HoverY,3})" : "";
+        if (_zoomBtn != null)
+        {
+            string zoomText = $"{(int)MathF.Round(_state.Zoom * 100f)}%";
+            if (_zoomBtn.Text != zoomText) _zoomBtn.Text = zoomText;
+        }
         int toolIdx = (int)_state.ActiveTool;
         _toolLabel!.Text = toolIdx < ToolNames.Length ? ToolNames[toolIdx] : "?";
         int layer = _state.ActiveLayer;
@@ -4124,7 +4504,8 @@ public partial class EditorMain : Control
                 int w = _state.SelX2 - _state.SelX1 + 1;
                 int h = _state.SelY2 - _state.SelY1 + 1;
                 string prefix = _state.InsertedMapSelection ? "MAPA INSERTADO\n" : "";
-                _rightSelectionLabel.Text = $"{prefix}({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles";
+                string mask = _state.UseSelectionAsMask ? "\nLos pinceles solo pintan adentro" : "";
+                _rightSelectionLabel.Text = $"{prefix}({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles{mask}";
                 UpdateSelectionThumbnail();
             }
 
@@ -4309,6 +4690,22 @@ public partial class EditorMain : Control
             vbox.AddChild(btn);
             _triggerTypeButtons[i] = btn;
         }
+
+        // Whole-map shortcut: painting 10.000 tiles by hand just to make a map safe
+        // (trigger 4) or unsafe again (trigger 0) is the case the brush can't cover.
+        vbox.AddChild(new HSeparator());
+        vbox.AddChild(EditorTheme.SectionLabel("TODO EL MAPA"));
+
+        var applyHint = EditorTheme.MakeLabel(
+            "Aplica el tipo elegido arriba a todos los tiles.\nSe deshace con Ctrl+Z en un solo paso.",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        applyHint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        vbox.AddChild(applyHint);
+
+        var applyAll = new Button { Text = "Aplicar a TODO el mapa", ClipText = false };
+        applyAll.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        applyAll.Pressed += ApplyTriggerToWholeMap;
+        vbox.AddChild(applyAll);
 
         _triggerPanel.AddChild(vbox);
         AddChild(_triggerPanel);

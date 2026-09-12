@@ -51,6 +51,10 @@ public class InventoryUI
     /// <summary>Callback to check if a drop landed on the guild bank panel.</summary>
     public Func<int, Vector2, bool>? TryGuildBankDeposit;
 
+    /// <summary>Fired after switching between the Inventario/Hechizos tabs — lets the
+    /// floating HUD window re-fit its height to whatever is visible now.</summary>
+    public Action? TabChanged;
+
     public InventoryUI(GameState state)
     {
         _state = state;
@@ -123,6 +127,7 @@ public class InventoryUI
         if (_invEquImage != null && _invEquInvTexture != null)
             _invEquImage.Texture = _invEquInvTexture;
         UpdateTabVisuals();
+        TabChanged?.Invoke();
     }
 
     /// <summary>Switch to spell tab.</summary>
@@ -142,6 +147,7 @@ public class InventoryUI
         if (_invEquImage != null && _invEquSpellTexture != null)
             _invEquImage.Texture = _invEquSpellTexture;
         UpdateTabVisuals();
+        TabChanged?.Invoke();
     }
 
     /// <summary>
