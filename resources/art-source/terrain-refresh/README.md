@@ -1,5 +1,12 @@
 # Renovacion de terreno 6000-6009
 
+## Versión vigente: casas de pizarra
+
+Ver `slate-village/README.md`: materiales nuevos de pasto y tierra generados con
+imagegen e importados por `tools/Import-SlateVillageTerrain.ps1`, preservando la
+cobertura original usada por la versión anterior. Los apartados siguientes
+documentan el historial, no el importador actualmente invocado por los alias.
+
 ## Version vigente: reimaginacion completa desde originales
 
 El usuario rechazo el acabado repetido de la version anterior. El importador

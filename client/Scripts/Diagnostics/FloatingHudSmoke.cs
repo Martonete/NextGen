@@ -1,9 +1,13 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Linq;
 using Godot;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.UI;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Data.Resources;
+using ArgentumNextgen.Rendering;
 
 namespace ArgentumNextgen.Diagnostics;
 
@@ -21,9 +25,20 @@ public partial class FloatingHudSmoke : Node
             Field<Control>("_startupLoadingScreen").Hide();
             Field<LoginForm>("_loginForm").HideForm();
             Field<Control>("_gameUI").Show();
-            Field<Control>("_viewportContainer").Hide();
+            Field<Control>("_viewportContainer").Show();
             var state = Field<GameState>("_state");
             state.AccountName = "offline-hud-test"; state.UserName = "preview"; state.IsLogged = true;
+            state.CurrentMap = 28; state.UserPosX = 33; state.UserPosY = 61; state.OnlineCount = 17;
+            state.Strength = 21; state.Agility = 18; state.Gold = 47964300;
+            state.MinHp = 495; state.MaxHp = 495; state.MinMana = 2810; state.MaxMana = 2810;
+            state.MinSta = 999; state.MaxSta = 999; state.MinHam = 100; state.MaxHam = 100;
+            state.MinAgua = 100; state.MaxAgua = 100;
+            var resources = ResourceProviderFactory.Create(ProjectSettings.GlobalizePath("res://Data"));
+            state.MapData = MapLoader.Load(resources, 28);
+            state.Characters[1] = new Character { CharIndex = 1, Body = 1, Head = 1, Heading = 3,
+                PosX = 33, PosY = 61, Name = "preview", FovAlpha = 1 };
+            var renderer = Field<WorldRenderer>("_worldRenderer");
+            renderer.ResetMapVisualCaches(); renderer.BuildRoofRegions(); renderer.RebuildWaterMap();
             state.Spells[0] = new SpellSlot { SpellId = 11, Name = "Descarga eléctrica" };
             state.Inventory[0] = new InventorySlot { ObjIndex = 1674, Amount = 1, Name = "Espada Corazón Carmesí", GrhIndex = 33513 };
             var quickbar = Field<Quickbar>("_quickbar");
@@ -52,6 +67,7 @@ public partial class FloatingHudSmoke : Node
             Field<InventoryPanel>("_inventoryPanel").Init(state, data, new ArgentumNextgen.Network.AoTcpClient());
             Field<SpellPanel>("_spellPanel").Init(state, data, new ArgentumNextgen.Network.AoTcpClient());
             Field<StatBarOverlay>("_statBarOverlay").SetStats(495, 495, 2810, 2810, 999, 999, 100, 100, 100, 100, 1, 10);
+            Field<GameUIUpdater>("_gameUIUpdater").UpdateGameUI();
             var window = Field<FloatingHudWindow>("_inventoryWindow");
             var oldPosition = window.Position;
             window.Hide(); window.Show();
@@ -70,7 +86,21 @@ public partial class FloatingHudSmoke : Node
             await ToSignal(GetTree().CreateTimer(1), SceneTreeTimer.SignalName.Timeout);
             Field<Control>("_loginBackdrop").Hide();
             Field<Control>("_gameUI").Show();
-            foreach (string name in new[] { "_inventoryWindow", "_statusWindow", "_quickWindow" }) Field<Control>(name).Show();
+            foreach (string name in new[] { "_inventoryWindow", "_statusWindow", "_quickWindow", "_actionsWindow", "_minimapWindow" }) Field<Control>(name).Show();
+            var statusWindow = Field<FloatingHudWindow>("_statusWindow");
+            var actionWindow = Field<FloatingHudWindow>("_actionsWindow");
+            var minimapWindow = Field<FloatingHudWindow>("_minimapWindow");
+            if (Field<Label>("_onlineLabel").GetParent() != Field<Panel>("_worldInfoPanel"))
+                throw new Exception("Online/FPS did not move to RenderScreen");
+            if (Field<Label>("_coordsLabel").Visible || Field<TextureRect>("_goldIcon").GetParent() != statusWindow.Content)
+                throw new Exception("Status window still contains unrelated controls");
+            if (Field<MinimapPanel>("_minimapPanel").GetParent() != minimapWindow.Content)
+                throw new Exception("Minimap is not independently movable");
+            if (Field<TextureButton>("_grupoButton").GetParent()?.GetParent() != actionWindow.Content)
+                throw new Exception("Action buttons are not in their own bar");
+            if (!Field<FloatingHudWindow>("_quickWindow").FindChildren("*", "Button", true, false)
+                    .Any(n => n is Button b && b.Text == "MOVER"))
+                throw new Exception("Macro move handle missing");
             await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
             string output = ProjectSettings.GlobalizePath("user://floating-hud-smoke.png");
             using var image = GetViewport().GetTexture().GetImage();

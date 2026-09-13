@@ -324,28 +324,21 @@ public partial class Main
 	private void UpdateConsoleWidth()
 	{
 		if (_consoleLabel == null) return;
-		bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
-		// Fullscreen has a fixed lower-left console. The minimap lives in the
-		// upper-right HUD and must not reduce this text area.
+		// The minimap is now an independent floating window and never takes width
+		// away from the chat console.
 		if (ResolutionManager.FullscreenWorld)
 		{
 			float fullscreenRight = ResolutionManager.S(586);
 			_consoleLabel.OffsetRight = fullscreenRight;
 			if (_chatInputNode != null)
 				_chatInputNode.OffsetRight = fullscreenRight;
-			if (_minimapBorder != null)
-				_minimapBorder.Visible = minimapVisible;
+			if (_minimapBorder != null) _minimapBorder.Visible = false;
 			return;
 		}
-		// Console right edge: full width when minimap hidden, shrink when visible
-		// Gap S(5) between console text and minimap border (5px@800, ~10px@1920)
-		float fullRight = ResolutionManager.ConsoleRight;
-		float right = minimapVisible ? fullRight - ResolutionManager.S(118) - ResolutionManager.S(5) : fullRight;
-		_consoleLabel.OffsetRight = right;
+		_consoleLabel.OffsetRight = ResolutionManager.ConsoleRight;
 		if (_chatInputNode != null)
-			_chatInputNode.OffsetRight = right;
-		if (_minimapBorder != null)
-			_minimapBorder.Visible = minimapVisible;
+			_chatInputNode.OffsetRight = ResolutionManager.ConsoleRight;
+		if (_minimapBorder != null) _minimapBorder.Visible = false;
 	}
 
 	/// <summary>Add a panel to _gameUI with standard defaults (hidden, positioned, above minimap).</summary>
@@ -671,11 +664,11 @@ public partial class Main
 		_inputRouter.OnSpellMacroToggle = () => _inventoryUI?.HandleSpellMacroToggle();
 		_inputRouter.OnMinimapToggle = () =>
 		{
-			if (_minimapPanel == null) return;
-			bool newVisible = !_minimapPanel.Visible;
-			_minimapPanel.Visible = newVisible;
+			if (_minimapWindow == null) return;
+			bool newVisible = !_minimapWindow.Visible;
+			_minimapWindow.Visible = newVisible;
 			_state.Config.ShowMinimap = newVisible;
-			UpdateConsoleWidth();
+			SaveHudLayout();
 		};
 		_inputRouter.OnCharPanelToggle = () =>
 		{

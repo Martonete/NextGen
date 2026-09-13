@@ -250,10 +250,10 @@ public partial class Main
 		_worldRenderer?.RebuildFogOverlay();
 
 		// Apply minimap visibility + resize console accordingly
-		if (_minimapPanel != null)
+		if (_minimapWindow != null)
 		{
-			_minimapPanel.Visible = cfg.ShowMinimap;
-			UpdateConsoleWidth();
+			_minimapWindow.Visible = cfg.ShowMinimap;
+			SaveHudLayout();
 		}
 
 		// Apply form transparency

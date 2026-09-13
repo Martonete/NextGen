@@ -18,6 +18,8 @@ public partial class FloatingHudWindow : Panel
     /// grips — the content draws its own frame. The whole panel drags (content that
     /// stops the mouse, like the slot buttons, still gets its clicks first).</summary>
     public bool Chromeless;
+    /// <summary>Adds a dedicated drag button above a chromeless action bar.</summary>
+    public bool MoveHandle;
     private static readonly Vector2 MinSize = new(150, 90);
     private bool _dragging;
     private Vector2 _grab;
@@ -42,25 +44,14 @@ public partial class FloatingHudWindow : Panel
 
         if (Chromeless)
         {
-            Content = new Control { Position = Vector2.Zero, Size = Size, MouseFilter = MouseFilterEnum.Ignore };
+            float top = MoveHandle ? 18f : 0f;
+            Content = new Control { Position = new Vector2(0, top), Size = Size - new Vector2(0, top), MouseFilter = MouseFilterEnum.Ignore };
             AddChild(Content);
-            Resized += () => Content.Size = Size;
-            GuiInput += e =>
-            {
-                if (e is InputEventMouseButton b && b.ButtonIndex == MouseButton.Left)
-                {
-                    _dragging = b.Pressed;
-                    _grab = GetGlobalMousePosition() - GlobalPosition;
-                    if (!b.Pressed) DeferLayoutChanged();
-                    AcceptEvent();
-                }
-                if (e is InputEventMouseMotion && _dragging)
-                {
-                    GlobalPosition = GetGlobalMousePosition() - _grab;
-                    ClampToScreen();
-                    AcceptEvent();
-                }
-            };
+            Resized += () => Content.Size = Size - new Vector2(0, top);
+            if (MoveHandle)
+                AddChromelessMoveHandle();
+            else
+                BindDragInput(this);
             return;
         }
 
@@ -82,29 +73,13 @@ public partial class FloatingHudWindow : Panel
         // Invisible drag strip across the top — the badge sits on top of it, unaffected.
         _header = new Control { Size = new Vector2(Size.X, 26), MouseDefaultCursorShape = CursorShape.Drag };
         AddChild(_header);
+        BindDragInput(_header);
 
         var close = SacredTheme.CloseButton();
         AddChild(close);
         close.AnchorLeft = 1f; close.AnchorRight = 1f; close.AnchorTop = 0f; close.AnchorBottom = 0f;
         close.OffsetLeft = -26; close.OffsetRight = -6; close.OffsetTop = 4; close.OffsetBottom = 24;
         close.Pressed += () => { Hide(); DeferLayoutChanged(); };
-
-        _header.GuiInput += e =>
-        {
-            if (e is InputEventMouseButton b && b.ButtonIndex == MouseButton.Left)
-            {
-                _dragging = b.Pressed;
-                _grab = GetGlobalMousePosition() - GlobalPosition;
-                if (!b.Pressed) DeferLayoutChanged();
-                _header.AcceptEvent();
-            }
-            if (e is InputEventMouseMotion && _dragging)
-            {
-                GlobalPosition = GetGlobalMousePosition() - _grab;
-                ClampToScreen();
-                _header.AcceptEvent();
-            }
-        };
 
         Content = new Control { Position = new Vector2(10, 34), Size = Size - new Vector2(20, 44), MouseFilter = MouseFilterEnum.Ignore };
         AddChild(Content);
@@ -125,6 +100,43 @@ public partial class FloatingHudWindow : Panel
         AddResizeHandle(new Vector2(0, 1), new Vector2(1, 1), new Vector4(c, -t, -c, 0), CursorShape.Vsize, left: false, top: false, right: false, bottom: true);
         AddResizeHandle(new Vector2(0, 1), new Vector2(0, 1), new Vector4(0, -c, c, 0), CursorShape.Bdiagsize, left: true, top: false, right: false, bottom: true);
         AddResizeHandle(new Vector2(1, 1), new Vector2(1, 1), new Vector4(-c, -c, 0, 0), CursorShape.Fdiagsize, left: false, top: false, right: true, bottom: true);
+    }
+
+    private void AddChromelessMoveHandle()
+    {
+        var move = new Button
+        {
+            Text = "MOVER",
+            Position = new Vector2(Math.Max(0, Size.X - 54), 0),
+            Size = new Vector2(54, 17),
+            FocusMode = FocusModeEnum.None,
+            MouseDefaultCursorShape = CursorShape.Drag
+        };
+        SacredTheme.StyleButton(move, false);
+        move.AddThemeFontSizeOverride("font_size", 9);
+        AddChild(move);
+        Resized += () => move.Position = new Vector2(Math.Max(0, Size.X - 54), 0);
+        BindDragInput(move);
+    }
+
+    private void BindDragInput(Control target)
+    {
+        target.GuiInput += e =>
+        {
+            if (e is InputEventMouseButton b && b.ButtonIndex == MouseButton.Left)
+            {
+                _dragging = b.Pressed;
+                _grab = GetGlobalMousePosition() - GlobalPosition;
+                if (!b.Pressed) DeferLayoutChanged();
+                target.AcceptEvent();
+            }
+            if (e is InputEventMouseMotion && _dragging)
+            {
+                GlobalPosition = GetGlobalMousePosition() - _grab;
+                ClampToScreen();
+                target.AcceptEvent();
+            }
+        };
     }
 
     /// <summary>One resize hit-region. `anchorMin/Max` place it (Godot anchor space,
@@ -182,13 +194,15 @@ public partial class FloatingHudWindow : Panel
 
     private void LayoutTitleBadge()
     {
-        float frameW = Math.Max(Caption.Length * 8 + 40, 120);
-        _titleBadge.AnchorLeft = 0.5f;
-        _titleBadge.AnchorRight = 0.5f;
+        float available = Math.Max(80, Size.X - 38);
+        float frameW = Math.Min(Math.Max(Caption.Length * 8 + 40, 120), available);
+        float centerX = (Size.X - 22) / 2f; // reserve the close-button corner
+        _titleBadge.AnchorLeft = 0f;
+        _titleBadge.AnchorRight = 0f;
         _titleBadge.AnchorTop = 0f;
         _titleBadge.AnchorBottom = 0f;
-        _titleBadge.OffsetLeft = -frameW / 2f;
-        _titleBadge.OffsetRight = frameW / 2f;
+        _titleBadge.OffsetLeft = centerX - frameW / 2f;
+        _titleBadge.OffsetRight = centerX + frameW / 2f;
         _titleBadge.OffsetTop = 5;
         _titleBadge.OffsetBottom = 27;
     }

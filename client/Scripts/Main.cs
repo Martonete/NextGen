@@ -108,9 +108,8 @@ public partial class Main : Control
 		// Gold icon + label — Position/Size for both now come from LayoutStatusContent
 		// (they live inside the "Estado" floating window); only the font size stays here.
 		if (_goldLabel != null) _goldLabel.AddThemeFontSizeOverride("font_size", S(8));
-		// Sidebar buttons + coords/online/fps labels: Position/Size for all of these now
-		// come from LayoutStatusContent (they live inside the "Estado" floating window);
-		// only the font sizes stay here.
+		// Coordinates are painted inside the minimap. Online/FPS live in a small
+		// RenderScreen overlay and the four menu buttons have their own action bar.
 		int btnFontSize = S(10);
 		if (_coordsLabel != null) _coordsLabel.AddThemeFontSizeOverride("font_size", S(8));
 		if (_onlineLabel != null) _onlineLabel.AddThemeFontSizeOverride("font_size", S(7));
@@ -149,12 +148,14 @@ public partial class Main : Control
 		// "Estado" floating window); alignment + font size aren't touched there, so they stay.
 		if (_agilidadLabel != null) { _agilidadLabel.HorizontalAlignment = HorizontalAlignment.Right; _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 		if (_fuerzaLabel != null) { _fuerzaLabel.HorizontalAlignment = HorizontalAlignment.Left; _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
-		// --- Minimap (inside console area, top-right corner) ---
-		// Position: right-aligned to ConsoleRight, with S(5) gap from console text
-		int mmBorderW = S(118);
-		int mmBorderX = ResolutionManager.ConsoleRight - mmBorderW;
-		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(mmBorderW, S(118)); }
-		if (_minimapPanel != null) { _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28)); _minimapPanel.Size = new Vector2(S(100), S(100)); }
+		if (_minimapBorder != null) _minimapBorder.Visible = false;
+		if (_worldInfoPanel != null)
+		{
+			_worldInfoPanel.Position = new Vector2((ResolutionManager.WindowWidth - S(104)) / 2f, S(28));
+			_worldInfoPanel.Size = new Vector2(S(104), S(34));
+			if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(S(6), S(3)); _onlineLabel.Size = new Vector2(S(92), S(13)); _onlineLabel.HorizontalAlignment = HorizontalAlignment.Center; }
+			if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(S(6), S(18)); _fpsLabel.Size = new Vector2(S(92), S(13)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; }
+		}
 
 		// Macro status label
 		if (_macroStatusLabel != null) { _macroStatusLabel.Position = new Vector2(S(484), S(4)); _macroStatusLabel.Size = new Vector2(S(60), S(12)); _macroStatusLabel.AddThemeFontSizeOverride("font_size", S(7)); }

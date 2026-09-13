@@ -72,7 +72,7 @@ public partial class MinimapPanel : Control
 
     public override void _Process(double delta)
     {
-        if (!Visible) return;
+        if (!IsVisibleInTree()) return;
         _redrawTimer += (float)delta;
         if (_redrawTimer >= MinimapRedrawInterval)
         {
@@ -275,6 +275,18 @@ public partial class MinimapPanel : Control
             // Arrow fill
             DrawColoredPolygon(new Vector2[] { center + tip, center + left, center + right }, SelfColor);
         }
+
+        // Map and position stay inside the minimap, readable over every terrain.
+        float infoH = Math.Max(16f, ResolutionManager.Sf(14f));
+        var infoRect = new Rect2(0, MapSize - infoH, MapSize, infoH);
+        DrawRect(infoRect, new Color(0.015f, 0.022f, 0.025f, 0.84f));
+        DrawLine(new Vector2(0, infoRect.Position.Y), new Vector2(MapSize, infoRect.Position.Y),
+            new Color(SacredTheme.Bronze, 0.85f), 1f);
+        string position = $"MAPA {_state.CurrentMap}  ·  {_state.UserPosX}, {_state.UserPosY}";
+        int fontSize = Math.Max(9, ResolutionManager.S(8));
+        float baseline = infoRect.Position.Y + (infoH + GameFonts.AlegreyaBold.GetAscent(fontSize)) / 2f - 1f;
+        DrawString(GameFonts.AlegreyaBold, new Vector2(0, baseline), position,
+            HorizontalAlignment.Center, MapSize, fontSize, SacredTheme.Paper);
     }
 
     private static string ExtractBaseName(string name)

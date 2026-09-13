@@ -9,30 +9,54 @@ namespace ArgentumNextgen;
 
 public partial class Main
 {
-    private FloatingHudWindow? _inventoryWindow, _statusWindow, _quickWindow;
+    private const int HudLayoutVersion = 2;
+    private FloatingHudWindow? _inventoryWindow, _statusWindow, _quickWindow, _actionsWindow, _minimapWindow;
     private Quickbar? _quickbar;
+    private HudActionBar? _actionBar;
+    private Panel? _worldInfoPanel;
     private HBoxContainer? _hudToggles;
     private Control?[] InventoryControls => new Control?[] { _invTabButton, _spellTabButton, _inventoryPanel, _spellPanel, _dydToggle, _lanzarButton, _infoButton, _spellUpButton, _spellDownButton };
-    private Control?[] StatusControls => new Control?[] { _goldIcon, _goldLabel, _coordsLabel, _onlineLabel, _fpsLabel, _agilidadLabel, _fuerzaLabel, _statSepLabel, _mapaButton, _grupoButton, _opcionesButton, _estadisticasButton, _clanesButton };
-    private TextureButton?[] StatusButtons => new[] { _mapaButton, _grupoButton, _opcionesButton, _estadisticasButton, _clanesButton };
+    private Control?[] StatusControls => new Control?[] { _goldIcon, _goldLabel, _agilidadLabel, _fuerzaLabel, _statSepLabel };
+    private TextureButton?[] ActionButtons => new[] { _grupoButton, _opcionesButton, _estadisticasButton, _clanesButton };
 
     private void SetupFloatingHud()
     {
-        FloatingHudWindow Window(string caption, Vector2 size, bool chromeless = false)
+        FloatingHudWindow Window(string caption, Vector2 size, bool chromeless = false, bool moveHandle = false)
         {
-            var window = new FloatingHudWindow { Caption = caption, Size = size, ZIndex = 2, Chromeless = chromeless };
+            var window = new FloatingHudWindow { Caption = caption, Size = size, ZIndex = 2, Chromeless = chromeless, MoveHandle = moveHandle };
             _gameUI!.AddChild(window);
             window.LayoutChanged = SaveHudLayout;
             return window;
         }
         float scale = ResolutionManager.UIScale;
         _inventoryWindow = Window("Inventario y hechizos", new Vector2(240 * scale, 254 * scale + 44));
-        _statusWindow = Window("Estado y menú", new Vector2(240 * scale, 190 * scale + 44));
-        // Macro bar: just the carved frame and the ten slots, no caption or chrome.
-        _quickWindow = Window("Macros", new Vector2(Quickbar.BarWidth, Quickbar.BarHeight), chromeless: true);
+        _statusWindow = Window("Estado", new Vector2(140 * scale, 150 * scale + 44));
+        _quickWindow = Window("Macros", new Vector2(Quickbar.BarWidth, Quickbar.BarHeight + 18), chromeless: true, moveHandle: true);
+        _actionsWindow = Window("Accesos", new Vector2(HudActionBar.BarWidth, HudActionBar.BarHeight + 18), chromeless: true, moveHandle: true);
+        _minimapWindow = Window("Minimapa", new Vector2(120 * scale, 120 * scale + 44));
         foreach (var control in InventoryControls) if (control != null) { control.SetAnchorsPreset(Control.LayoutPreset.TopLeft); control.Reparent(_inventoryWindow.Content, false); }
         foreach (var control in StatusControls) if (control != null) { control.SetAnchorsPreset(Control.LayoutPreset.TopLeft); control.Reparent(_statusWindow.Content, false); }
         _statBarOverlay?.Reparent(_statusWindow.Content, false);
+        if (_coordsLabel != null) _coordsLabel.Visible = false;
+        if (_mapaButton != null) _mapaButton.Visible = false;
+
+        _actionBar = new HudActionBar();
+        _actionsWindow.Content.AddChild(_actionBar);
+        _actionBar.Attach(ActionButtons);
+
+        if (_minimapPanel != null)
+        {
+            _minimapPanel.Reparent(_minimapWindow.Content, false);
+            _minimapPanel.Visible = true;
+        }
+        if (_minimapBorder != null) _minimapBorder.Visible = false;
+
+        _worldInfoPanel = new Panel { ZIndex = 2, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _worldInfoPanel.AddThemeStyleboxOverride("panel", SacredTheme.Surface(
+            new Color(0.025f, 0.035f, 0.04f, 0.78f), new Color(SacredTheme.Bronze, 0.62f), 5));
+        _gameUI!.AddChild(_worldInfoPanel);
+        foreach (var label in new[] { _onlineLabel, _fpsLabel })
+            if (label != null) { label.Reparent(_worldInfoPanel, false); label.Visible = true; label.MouseFilter = Control.MouseFilterEnum.Ignore; }
         // Re-fit the backpack window's height whenever the visible content changes shape
         // (Inventario's 5x5 grid vs. Hechizos' list + Lanzar/Info buttons).
         if (_inventoryUI != null) _inventoryUI.TabChanged = () => _inventoryWindow?.FitToContent();
@@ -55,7 +79,7 @@ public partial class Main
         _quickWindow.Content.AddChild(_quickbar);
         _hudToggles = new HBoxContainer { Position = new Vector2(50, 44), ZIndex = 3 };
         _gameUI!.AddChild(_hudToggles);
-        foreach (var pair in new[] { ("Mochila", _inventoryWindow), ("Estado", _statusWindow), ("Macros", _quickWindow) })
+        foreach (var pair in new[] { ("Mochila", _inventoryWindow), ("Estado", _statusWindow), ("Minimapa", _minimapWindow), ("Accesos", _actionsWindow), ("Macros", _quickWindow) })
         {
             var button = EntryTheme.Button(pair.Item1);
             button.CustomMinimumSize = new Vector2(75, 28);
@@ -66,28 +90,44 @@ public partial class Main
         RepositionUI();
         var cfg = new ConfigFile();
         cfg.Load(ProjectSettings.GlobalizePath("user://floating-hud.cfg"));
+        bool compatibleLayout = (int)cfg.GetValue("meta", "version", 0) == HudLayoutVersion;
         var area = GetViewportRect().Size;
         float margin = 24 * scale;
-        var defaults = new[] { new Vector2(area.X - _inventoryWindow.Size.X - margin, 40 * scale), new Vector2(area.X - _statusWindow.Size.X - margin, area.Y - _statusWindow.Size.Y - margin), new Vector2(margin, 100) };
+        float inventoryX = area.X - _inventoryWindow.Size.X - margin;
+        float quickScale = _quickWindow.Scale.X;
+        float actionScale = _actionsWindow.Scale.X;
+        float quickY = area.Y - _quickWindow.Size.Y * quickScale - margin;
+        var defaults = new[]
+        {
+            new Vector2(inventoryX, 40 * scale),
+            new Vector2(area.X - _statusWindow.Size.X - margin, area.Y - _statusWindow.Size.Y - margin),
+            new Vector2((area.X - _quickWindow.Size.X * quickScale) / 2f, quickY),
+            new Vector2((area.X - _actionsWindow.Size.X * actionScale) / 2f,
+                quickY - _actionsWindow.Size.Y * actionScale - 8 * scale),
+            new Vector2(Math.Max(margin, inventoryX - _minimapWindow.Size.X - margin), 40 * scale)
+        };
         int n = 0;
         foreach (var window in HudWindows())
         {
             string id = n.ToString();
-            window.Position = (Vector2)cfg.GetValue(id, "position", defaults[n++]);
-            window.Visible = (bool)cfg.GetValue(id, "visible", true);
+            Vector2 defaultPosition = defaults[n++];
+            window.Position = compatibleLayout ? (Vector2)cfg.GetValue(id, "position", defaultPosition) : defaultPosition;
+            bool defaultVisible = window != _minimapWindow || _state.Config.ShowMinimap;
+            window.Visible = compatibleLayout ? (bool)cfg.GetValue(id, "visible", defaultVisible) : defaultVisible;
             // Only a size the player actually dragged is restored — otherwise the
             // window keeps auto-fitting to its content on every resolution change.
-            if (!window.Chromeless && (bool)cfg.GetValue(id, "resized", false))
+            if (compatibleLayout && !window.Chromeless && (bool)cfg.GetValue(id, "resized", false))
                 window.ApplySavedSize((Vector2)cfg.GetValue(id, "size", window.Size));
             window.ClampToScreen();
         }
     }
 
-    private FloatingHudWindow[] HudWindows() => new[] { _inventoryWindow!, _statusWindow!, _quickWindow! };
+    private FloatingHudWindow[] HudWindows() => new[] { _inventoryWindow!, _statusWindow!, _quickWindow!, _actionsWindow!, _minimapWindow! };
     private void SaveHudLayout()
     {
         if (_quickWindow == null) return;
         var cfg = new ConfigFile(); int n = 0;
+        cfg.SetValue("meta", "version", HudLayoutVersion);
         foreach (var window in HudWindows())
         {
             string id = (n++).ToString();
@@ -96,6 +136,7 @@ public partial class Main
             cfg.SetValue(id, "resized", window.UserResized);
             if (window.UserResized) cfg.SetValue(id, "size", window.Size);
         }
+        if (_minimapWindow != null) _state.Config.ShowMinimap = _minimapWindow.Visible;
         if (cfg.Save(ProjectSettings.GlobalizePath("user://floating-hud.cfg")) != Error.Ok)
             GD.PrintErr("[HUD] No se pudo guardar la disposición de ventanas.");
     }
@@ -106,14 +147,20 @@ public partial class Main
         int S(int value) => ResolutionManager.S(value);
         LayoutInventoryContent();
         LayoutStatusContent();
+        LayoutMinimapContent();
         if (!_inventoryWindow.UserResized) _inventoryWindow.Size = new Vector2(S(240), _inventoryWindow.Size.Y);
-        if (!_statusWindow.UserResized) _statusWindow.Size = new Vector2(S(240), _statusWindow.Size.Y);
+        if (!_statusWindow.UserResized) _statusWindow.Size = new Vector2(S(130), _statusWindow.Size.Y);
         _inventoryWindow.FitToContent();
         _statusWindow.FitToContent();
         if (_quickWindow != null && !_quickWindow.UserResized)
         {
             float barScale = Math.Min(1.3f, (ResolutionManager.WindowWidth - S(240) - S(72)) / (float)Quickbar.BarWidth);
             _quickWindow.Scale = Vector2.One * Math.Max(0.7f, barScale);
+        }
+        if (_actionsWindow != null)
+        {
+            float actionScale = Math.Min(1.2f, (ResolutionManager.WindowWidth - S(80)) / (float)HudActionBar.BarWidth);
+            _actionsWindow.Scale = Vector2.One * Math.Max(0.75f, actionScale);
         }
         foreach (var window in HudWindows()) if (window != null) window.ClampToScreen();
     }
@@ -160,16 +207,12 @@ public partial class Main
     }
 
     /// <summary>
-    /// Compact two-column layout for the "Estado" window: gold + Agilidad/Fuerza +
-    /// the five stat bars on the left, the five menu buttons + Online/FPS on the right.
-    /// Purpose-built local offsets (not the old full-sidebar coordinates RepositionUI
-    /// computes for these same controls) — that's what used to leave the window mostly
-    /// empty: the sidebar design spread them across ~450px of a screen-tall column.
+    /// Compact status-only layout: gold, agility/strength and five vital bars.
     /// </summary>
     private void LayoutStatusContent()
     {
         int S(int v) => ResolutionManager.S(v);
-        const int leftX = 4, leftW = 150, rightX = 158, rightW = 78;
+        const int leftX = 4, leftW = 120;
 
         if (_goldIcon != null) { _goldIcon.Position = new Vector2(S(leftX), S(2)); _goldIcon.Size = new Vector2(S(14), S(14)); }
         if (_goldLabel != null) { _goldLabel.Position = new Vector2(S(leftX + 18), S(3)); _goldLabel.Size = new Vector2(S(leftW - 18), S(14)); }
@@ -183,20 +226,15 @@ public partial class Main
         const int barsY = 38;
         if (_statBarOverlay != null) _statBarOverlay.Position = new Vector2(S(leftX), S(barsY));
 
-        const int coordsY = barsY + 84; // 4px gap under the 80px-tall bar stack
-        if (_coordsLabel != null)
-        {
-            _coordsLabel.Position = new Vector2(S(leftX), S(coordsY));
-            _coordsLabel.Size = new Vector2(S(leftW), S(26));
-            _coordsLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        }
+    }
 
-        var buttons = StatusButtons;
-        for (int i = 0; i < buttons.Length; i++)
-            if (buttons[i] != null) { buttons[i]!.Position = new Vector2(S(rightX), S(2 + i * 23)); buttons[i]!.Size = new Vector2(S(rightW), S(20)); }
-
-        if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(S(rightX), S(coordsY)); _onlineLabel.Size = new Vector2(S(rightW), S(12)); _onlineLabel.HorizontalAlignment = HorizontalAlignment.Center; }
-        if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(S(rightX), S(coordsY + 14)); _fpsLabel.Size = new Vector2(S(rightW), S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; }
+    private void LayoutMinimapContent()
+    {
+        if (_minimapWindow == null || _minimapPanel == null) return;
+        float mapSize = ResolutionManager.S(100);
+        _minimapPanel.Position = new Vector2(Math.Max(0, (_minimapWindow.Content.Size.X - mapSize) / 2f), 0);
+        _minimapPanel.Size = new Vector2(mapSize, mapSize);
+        _minimapWindow.FitToContent();
     }
 
     private bool OverFloatingHud(Vector2 point) => _quickbar?.IsOver(point) == true
