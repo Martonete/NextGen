@@ -60,6 +60,11 @@ public partial class SafeZoneBorderLayer : Node2D
             _safeY2 = _state.CurrentZoneY2;
             _hasSafeZone = true;
         }
+        else if (!_state.CurrentZoneSafe)
+        {
+            // Leaving the safe zone: stop redrawing every frame once the warning has faded.
+            _hasSafeZone = false;
+        }
 
         // Update zone transition state machine (must run in _Process, not _Draw)
         if (_hasSafeZone)

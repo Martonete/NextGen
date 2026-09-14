@@ -145,6 +145,10 @@ public partial class WorldRenderer : Node2D
 	// a tile camera step; within the 32px smooth scroll Godot only translates them.
 	private bool _staticLayersDirty = true;
 	private bool _staticLayerCacheActive;
+	private bool _mapHasRoofs;
+	private bool[]? _roofRowHasL4;
+	// Objects and L3 stay dynamic: they are authored in .aoinf and mutated by packets.
+	private const bool _staticContentCacheActive = false;
 	private int _staticBaseUserX, _staticBaseUserY;
 	private float _staticBasePixelOffsetX, _staticBasePixelOffsetY;
 
@@ -355,6 +359,12 @@ void fragment() {
 		int w = _state.MapData.Width;
 		int h = _state.MapData.Height;
 		_roofRegionMap = new int[w + 1, h + 1]; // 1-based, all 0 by default
+		// Per-row L4 presence lets the per-frame roof pass skip rows (and whole maps) without roofs.
+		_roofRowHasL4 = new bool[h + 2];
+		_mapHasRoofs = false;
+		for (int ry = 1; ry <= h; ry++)
+			for (int rx = 1; rx <= w; rx++)
+				if (_state.MapData.Tiles[rx, ry].Layer4 > 0) { _roofRowHasL4[ry] = true; _mapHasRoofs = true; break; }
 		int nextRegion = 0;
 		var queue = new Queue<(int x, int y)>();
 
@@ -1215,9 +1225,11 @@ void fragment() {
 		}
 
 		// Each roof retains its own transition when moving between buildings.
+		if (_mapHasRoofs)
 		{
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
+				if (_roofRowHasL4 != null && y >= 1 && y < _roofRowHasL4.Length && !_roofRowHasL4[y]) continue;
 				float sy = _screenYCache[y - _frameMinY];
 				for (int x = _frameMinX; x <= _frameMaxX; x++)
 				{
@@ -1244,20 +1256,32 @@ void fragment() {
 			}
 		}
 
-		// Trigger child layer redraws
-		_reflAuraLayer?.QueueRedraw();
-		_reflBodyLayer?.QueueRedraw();
+		// Trigger child layer redraws. Layers that only show queued items are skipped while
+		// their queue is empty — after one final redraw that clears the stale commands.
 		_maskLayer?.QueueRedraw();
 		_layer2Layer?.QueueRedraw();
-		_auraLayer?.QueueRedraw();
-		_auraFrontLayer?.QueueRedraw();
-		_reflAuraFrontLayer?.QueueRedraw();
 		_contentLayer?.QueueRedraw();
-		_dialogLayer?.QueueRedraw();
-		_additiveLayer?.QueueRedraw();
-		_roofLayer?.QueueRedraw();
 		_waterEffectsLayer?.QueueRedraw();
 		_groundEffectsLayer?.QueueRedraw();
+		RedrawIfNeeded(_reflAuraLayer, _pendingReflAuraDraws.Count > 0, ref _hadReflAura);
+		RedrawIfNeeded(_reflAuraFrontLayer, _pendingReflAuraDraws.Count > 0, ref _hadReflAuraFront);
+		RedrawIfNeeded(_reflBodyLayer, _pendingReflBodyDraws.Count > 0, ref _hadReflBody);
+		RedrawIfNeeded(_auraLayer, _pendingAuraDraws.Count > 0, ref _hadAura);
+		RedrawIfNeeded(_auraFrontLayer, _pendingAuraDraws.Count > 0, ref _hadAuraFront);
+		RedrawIfNeeded(_dialogLayer, _pendingDialogDraws.Count > 0, ref _hadDialog);
+		// The additive layer also draws the procedural spell effects (DrawReactiveGlow:
+		// apocalipsis, descarga, relámpago, impactos, meditación), not only the queues.
+		_additiveLayer?.QueueRedraw();
+		RedrawIfNeeded(_roofLayer, _pendingRoofDraws.Count > 0, ref _hadRoof);
+	}
+
+	private bool _hadReflAura, _hadReflAuraFront, _hadReflBody, _hadAura, _hadAuraFront, _hadDialog, _hadRoof;
+
+	private static void RedrawIfNeeded(CanvasItem? layer, bool hasContent, ref bool hadContent)
+	{
+		if (layer == null) return;
+		if (hasContent || hadContent) layer.QueueRedraw();
+		hadContent = hasContent;
 	}
 
 	/// <summary>
@@ -1267,18 +1291,18 @@ void fragment() {
 	/// </summary>
 	private void UpdateStaticLayerCache()
 	{
-		// The retained-layer experiment cannot safely cover mapper objects yet:
-		// those are authored in .aoinf and may be changed by server packets. Keep
-		// the established dynamic passes authoritative so no map decoration drops.
-		bool active = false;
+		// Retain the static non-water L1 and static L2 tiles (they only change on map load or
+		// via InvalidateStaticLayers). Ground objects and L3 stay dynamic — they are authored
+		// in .aoinf and mutated by packets (see _staticContentCacheActive).
+		bool active = _state?.MapData != null;
 		if (_staticLayerCacheActive != active)
 		{
 			_staticLayerCacheActive = active;
 			_staticLayersDirty = true;
 			if (_staticGroundLayer != null) _staticGroundLayer.Visible = active;
 			if (_staticLayer2Layer != null) _staticLayer2Layer.Visible = active;
-			if (_staticObjectsLayer != null) _staticObjectsLayer.Visible = active;
-			if (_staticForegroundLayer != null) _staticForegroundLayer.Visible = active;
+			if (_staticObjectsLayer != null) _staticObjectsLayer.Visible = active && _staticContentCacheActive;
+			if (_staticForegroundLayer != null) _staticForegroundLayer.Visible = active && _staticContentCacheActive;
 		}
 		if (!active) return;
 
@@ -1362,11 +1386,7 @@ void fragment() {
 		int frame = _animator.GetCurrentFrame(grhIndex, _data);
 		var grh = _data.ResolveGrh(grhIndex, frame);
 		if (grh == null || grh.FileNum <= 0) return;
-		var texture = _data.Textures?.GetTexture(grh.FileNum);
-		if (texture == null) return;
-
-		int textureWidth = texture.GetWidth();
-		int textureHeight = texture.GetHeight();
+		if (_data.Textures == null || !_data.Textures.TryGetTexture(grh.FileNum, out var texture, out int textureWidth, out int textureHeight)) return;
 		if (textureWidth <= 0 || textureHeight <= 0) return;
 		int sx = grh.SX % textureWidth;
 		int sy = grh.SY % textureHeight;

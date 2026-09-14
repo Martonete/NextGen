@@ -68,7 +68,7 @@ public partial class WorldRenderer
                 // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
                 if (_state.GroundObjects.TryGetValue((x, y), out var groundObj) && groundObj.Grh > 0
                     && groundObj.Grh != tile.Layer3
-					&& !(_staticLayerCacheActive && IsStaticGrh(groundObj.Grh)))
+					&& !(_staticContentCacheActive && IsStaticGrh(groundObj.Grh)))
                 {
                     var light = GetContentLightColor(x, y);
 					// AO20 TileEngine_RenderScreen: only ground objects whose ObjType
@@ -120,7 +120,7 @@ public partial class WorldRenderer
                 }
 
                 // Layer 3 (trees/objects) — dimmed slightly, with proximity transparency for trees
-                if (tile.Layer3 > 0 && !(_staticLayerCacheActive && IsStaticGrh(tile.Layer3) && !IsTree(tile.Layer3)))
+                if (tile.Layer3 > 0 && !(_staticContentCacheActive && IsStaticGrh(tile.Layer3) && !IsTree(tile.Layer3)))
                 {
 					// AO20 AgregarSombra() is deliberately a narrow GRH whitelist, not
 					// a generic L3/tree rule. Keep it exact to avoid darkening scenery
@@ -373,20 +373,35 @@ public partial class WorldRenderer
         return LightSystem.GetTileLight(_state, x, y);
 	}
 
-	/// <summary>Retained non-water L1 for ambient-only maps.</summary>
+	/// <summary>Retained non-water L1 for ambient-only maps. Tiles are grouped by texture
+	/// before submission: L1 tiles never overlap, so the order is free, and the compat
+	/// batcher only merges consecutive rects that share a texture.</summary>
 	public void DrawStaticGround(CanvasItem canvas)
 	{
 		if (!_staticLayerCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
-		for (int y = _frameMinY; y <= _frameMaxY; y++)
+		foreach (var list in _staticGroundBuckets.Values) list.Clear();
+		for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
 		{
 			float sy = _screenYCache[y - _frameMinY];
-			for (int x = _frameMinX; x <= _frameMaxX; x++)
+			for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
 			{
 				if (!TryResolveTile(x, y, out var tile) || tile.Layer1 <= 0 || IsWaterGrh(tile.Layer1) || !IsStaticGrh(tile.Layer1)) continue;
-				DrawTileGrhTo(canvas, tile.Layer1, new Vector2(_screenXCache[x - _frameMinX], sy));
+				int file = _data.Grhs[tile.Layer1].FileNum;
+				if (!_staticGroundBuckets.TryGetValue(file, out var list))
+				{
+					list = new List<(int, Vector2)>(64);
+					_staticGroundBuckets[file] = list;
+				}
+				list.Add((tile.Layer1, new Vector2(_screenXCache[x - _frameMinX], sy)));
 			}
 		}
+		foreach (var list in _staticGroundBuckets.Values)
+		{
+			for (int i = 0; i < list.Count; i++)
+				CharRenderer.DrawGrh(canvas, _data, list[i].Item1, 0, list[i].Item2, false, null);
+		}
 	}
+	private readonly Dictionary<int, List<(int, Vector2)>> _staticGroundBuckets = new();
 
 	/// <summary>Retained static L2; animated tiles stay in DrawLayer2.</summary>
 	public void DrawStaticLayer2(CanvasItem canvas)
@@ -406,7 +421,7 @@ public partial class WorldRenderer
 	/// <summary>Retained ground objects; their packet mutations explicitly invalidate the cache.</summary>
 	public void DrawStaticObjects(CanvasItem canvas)
 	{
-		if (!_staticLayerCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
+		if (!_staticContentCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
 		const float objBright = 220f / 255f;
 		var objColor = new Color(objBright, objBright, objBright, 1f);
 		foreach (var entry in _state.GroundObjects)
@@ -425,7 +440,7 @@ public partial class WorldRenderer
 	/// <summary>Retained L3 foreground; animated trees/decorations remain dynamic.</summary>
 	public void DrawStaticForeground(CanvasItem canvas)
 	{
-		if (!_staticLayerCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
+		if (!_staticContentCacheActive || _state?.MapData == null || _data == null || _animator == null) return;
 		const float treeBright = 220f / 255f;
 		var color = new Color(treeBright, treeBright, treeBright, 1f);
 		for (int y = _frameMinY; y <= _frameMaxY; y++)
@@ -568,12 +583,10 @@ public partial class WorldRenderer
                 // We need to draw centered, so resolve sprite dimensions for center calc
                 var resolved = _data.ResolveGrh(grhIndex, frame);
                 if (resolved == null || resolved.FileNum <= 0) continue;
-                var texture = _data.Textures?.GetTexture(resolved.FileNum);
-                if (texture == null) continue;
+                if (_data.Textures == null || !_data.Textures.TryGetTexture(resolved.FileNum, out var texture, out int texW, out int texH)) continue;
 
                 int sx = resolved.SX, sy = resolved.SY;
                 int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-                int texW = texture.GetWidth(), texH = texture.GetHeight();
                 if (texW > 0) sx = sx % texW;
                 if (texH > 0) sy = sy % texH;
                 if (sx + pw > texW) pw = texW - sx;
@@ -633,22 +646,43 @@ public partial class WorldRenderer
         if (_state?.MapData == null || _data == null || _animator == null) return;
 
         // Must cover same range as L2/L3 terrain buffer to prevent flash at edges
-        for (int y = _frameMinY; y <= _frameMaxY; y++)
+        for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
             float sy = _screenYCache[y - _frameMinY];
-            for (int x = _frameMinX; x <= _frameMaxX; x++)
+            for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
             {
                 if (!TryResolveTile(x, y, out var tile)) continue;
                 if (tile.Layer1 <= 0) continue;
                 if (IsWaterGrh(tile.Layer1)) continue; // skip water
-				// Retained L1 is already visible below reflections. Only redraw it
-				// every frame when it is animated, or when a reflection needs this
-				// pass as an occlusion mask over land.
-				if (_staticLayerCacheActive && !_frameAnyReflection && IsStaticGrh(tile.Layer1)) continue;
+                // Retained (static) L1 is already visible below the reflections; only the
+                // animated ground tiles are re-submitted every frame here.
+                if (_staticLayerCacheActive && IsStaticGrh(tile.Layer1)) continue;
 
                 // Opt 4: use pre-computed screen coords
                 Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
                 DrawTileGrhTo(canvas, tile.Layer1, pos, center: false);
+            }
+        }
+
+        // A water reflection is mirrored below its character and must be occluded by any
+        // land it overlaps. With retention on, only the few tiles a reflection can reach
+        // are drawn again above it (instead of the whole ~3000-tile window).
+        if (_staticLayerCacheActive && _frameAnyReflection)
+        {
+            foreach (var (ch, _, _, _) in _pendingReflBodyDraws)
+            {
+                int minX = Math.Max(_frameMinX, ch.PosX - 2), maxX = Math.Min(_frameMaxX, ch.PosX + 2);
+                int minY = Math.Max(_frameMinY, ch.PosY), maxY = Math.Min(_frameMaxY, ch.PosY + 6);
+                for (int y = minY; y <= maxY; y++)
+                {
+                    float sy = _screenYCache[y - _frameMinY];
+                    for (int x = minX; x <= maxX; x++)
+                    {
+                        if (!TryResolveTile(x, y, out var tile)) continue;
+                        if (tile.Layer1 <= 0 || IsWaterGrh(tile.Layer1) || !IsStaticGrh(tile.Layer1)) continue;
+                        DrawTileGrhTo(canvas, tile.Layer1, new Vector2(_screenXCache[x - _frameMinX], sy), center: false);
+                    }
+                }
             }
         }
     }
@@ -698,12 +732,10 @@ public partial class WorldRenderer
                 // Rotating aura — use DrawSetTransform for rotation around sprite center
                 var resolved = _data.ResolveGrh(grhIndex, frame);
                 if (resolved == null || resolved.FileNum <= 0) continue;
-                var texture = _data.Textures?.GetTexture(resolved.FileNum);
-                if (texture == null) continue;
+                if (_data.Textures == null || !_data.Textures.TryGetTexture(resolved.FileNum, out var texture, out int texW, out int texH)) continue;
 
                 int sx = resolved.SX, sy = resolved.SY;
                 int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-                int texW = texture.GetWidth(), texH = texture.GetHeight();
                 if (texW > 0) sx = sx % texW;
                 if (texH > 0) sy = sy % texH;
                 if (sx + pw > texW) pw = texW - sx;

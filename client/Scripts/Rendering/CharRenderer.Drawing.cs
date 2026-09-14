@@ -269,11 +269,8 @@ public static partial class CharRenderer
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
 
-        var texture = data.Textures?.GetTexture(resolved.FileNum);
-        if (texture == null) return;
-
-        int texW = texture.GetWidth();
-        int texH = texture.GetHeight();
+        // One dictionary probe instead of a lookup plus two native GetWidth/GetHeight calls.
+        if (data.Textures == null || !data.Textures.TryGetTexture(resolved.FileNum, out var texture, out int texW, out int texH)) return;
 
         // VB6/DirectX 8 doesn't bounds-check source rects — it clamps or wraps.
         // Instead of discarding sprites that slightly exceed texture bounds,
@@ -331,11 +328,8 @@ public static partial class CharRenderer
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
 
-        var texture = data.Textures?.GetTexture(resolved.FileNum);
-        if (texture == null) return;
-
-        int texW = texture.GetWidth();
-        int texH = texture.GetHeight();
+        // One dictionary probe instead of a lookup plus two native GetWidth/GetHeight calls.
+        if (data.Textures == null || !data.Textures.TryGetTexture(resolved.FileNum, out var texture, out int texW, out int texH)) return;
         int sx = resolved.SX;
         int sy = resolved.SY;
         int pw = resolved.PixelWidth;

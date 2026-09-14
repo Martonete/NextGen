@@ -199,6 +199,7 @@ public class InputHandler
 	// ── AO20 General.bas: movement key queue ──
 
 	private static readonly Key[] ArrowKeys = { Key.Up, Key.Down, Key.Left, Key.Right };
+	private static readonly GameAction[] MovementActions = { GameAction.MoveUp, GameAction.MoveDown, GameAction.MoveLeft, GameAction.MoveRight };
 
 	/// <summary>AO20 AddMovementToKeysMovementPressedQueue: add held movement keys (once,
 	/// in press order) and drop released ones. Arrow keys are always valid; the
@@ -213,7 +214,7 @@ public class InputHandler
 			else _movementQueue.Remove(key);
 		}
 		foreach (var k in ArrowKeys) Track(k);
-		foreach (var action in new[] { GameAction.MoveUp, GameAction.MoveDown, GameAction.MoveLeft, GameAction.MoveRight })
+		foreach (var action in MovementActions)
 		{
 			var key = _keys.GetKey(action);
 			if (Array.IndexOf(ArrowKeys, key) >= 0) continue;
