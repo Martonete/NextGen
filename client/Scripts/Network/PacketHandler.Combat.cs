@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -180,8 +180,13 @@ public partial class PacketHandler
             _state.WeaponImpacts.Add(strike);
             return;
         }
+        if (fxIndex == 207)
+        {
+            ch.GmTeleportAuraTime = 0f;
+            return;
+        }
 
-        ch.SuppressNextSpellImpact = (fxIndex == 11 || fxIndex == 8)
+        ch.SuppressNextSpellImpact = (fxIndex == 11 || fxIndex == 8 || fxIndex == 102)
             && _state.Config.ShowReactiveEffects && _state.Config.ShowParticles;
         // Hechizos.dat: Apocalipsis (25) uniquely uses FX 13. The procedural
         // impact replaces the sprite when enabled, without occupying an FX slot.
@@ -196,6 +201,12 @@ public partial class PacketHandler
             ch.ElectricDischargeTime = 0;
             if (_state.Config.ShowReactiveEffects && _state.Config.ShowParticles) return;
         }
+        // Relampago (HECHIZO12) uniquely uses FX 102.
+        if (fxIndex == 102)
+        {
+            ch.LightningTime = 0;
+            if (_state.Config.ShowReactiveEffects && _state.Config.ShowParticles) return;
+        }
         // FX 8: loop marker -24 distinguishes Inmovilizar from Paralizar.
         // Legacy clients clamp negative loops to one, preserving their classic FX.
         if (fxIndex == 8)
@@ -208,7 +219,9 @@ public partial class PacketHandler
         {
             ch.ApocalypseTime = -1;
             ch.ElectricDischargeTime = -1;
+            ch.LightningTime = -1;
             ch.BindingTime = -1;
+            ch.GmTeleportAuraTime = -1;
             for (int i = 0; i < 3; i++)
             {
                 ch.ActiveFxSlots[i] = 0;
@@ -748,4 +761,52 @@ public partial class PacketHandler
         _state.ShowCharInfo = true;
     }
 
+
+    /// <summary>AO20 HandleIntervals: 16 Int32 (ms) → gIntervals + MainTimer intervals.</summary>
+    private void HandleBinIntervals(ByteQueue bq)
+    {
+        var iv = _state.Intervals;
+        iv.Hit = bq.ReadLong();
+        iv.Bow = bq.ReadLong();
+        iv.Magic = bq.ReadLong();
+        iv.ExtractWork = bq.ReadLong();
+        iv.BuildWork = bq.ReadLong();
+        iv.Walk = bq.ReadLong();
+        iv.DropItem = bq.ReadLong();
+        iv.UseItemKey = bq.ReadLong();
+        iv.UseItemClick = bq.ReadLong();
+        iv.HitMagic = bq.ReadLong();
+        iv.MagicHit = bq.ReadLong();
+        iv.HitUseItem = bq.ReadLong();
+        iv.Hide = bq.ReadLong();
+        iv.Talk = bq.ReadLong();
+        iv.LeftClick = bq.ReadLong();
+        iv.Meditate = bq.ReadLong();
+        _state.MainTimer.ApplyIntervals(iv);
+        _state.MainTimer.ApplyWalkSpeed(iv.Walk, _state.UserSpeeding);
+    }
+
+    /// <summary>AO20 HandleVelocidadToggle: own Speeding (Single) + walk timer rescale.</summary>
+    private void HandleBinVelocidadToggle(ByteQueue bq)
+    {
+        float speeding = bq.ReadSingle();
+        _state.UserSpeeding = speeding;
+        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var self))
+            self.Speeding = speeding;
+        _state.MainTimer.ApplyWalkSpeed(_state.Intervals.Walk, speeding);
+    }
+
+    /// <summary>AO20 HandleSpeedingACT: Speeding of any char in the area.</summary>
+    private void HandleBinSpeedingAct(ByteQueue bq)
+    {
+        int charIndex = bq.ReadInteger();
+        float speeding = bq.ReadSingle();
+        if (_state.Characters.TryGetValue(charIndex, out var ch))
+            ch.Speeding = speeding;
+        if (charIndex == _state.UserCharIndex)
+        {
+            _state.UserSpeeding = speeding;
+            _state.MainTimer.ApplyWalkSpeed(_state.Intervals.Walk, speeding);
+        }
+    }
 }

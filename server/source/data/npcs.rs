@@ -127,6 +127,7 @@ pub struct NpcData {
 
     // Status effects
     pub veneno: bool, // Poisons on hit (VB6: Npclist.Veneno)
+    pub afecta_paralisis: bool, // Immune to Paralizar/Inmovilizar (VB6: flags.AfectaParalisis)
 
     // Spells
     pub lanza_spells: i32, // Number of spells (0 = can't cast)
@@ -203,6 +204,7 @@ impl Default for NpcData {
             agua_valida: false,
             tierra_invalida: false,
             veneno: false,
+            afecta_paralisis: false,
             lanza_spells: 0,
             spells: Vec::new(),
             snd1: 0,
@@ -294,6 +296,7 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
         agua_valida: get_bool("AguaValida"),
         tierra_invalida: get_bool("TierraInvalida"),
         veneno: get_bool("Veneno"),
+        afecta_paralisis: get_bool("AfectaParalisis"),
         lanza_spells: get_int("LanzaSpells"),
         spells: {
             let nro = get_int("LanzaSpells") as usize;
@@ -412,6 +415,19 @@ pub fn load_npcs(base: &Path) -> Result<NpcDatabase, String> {
 mod tests {
     use super::*;
 
+    /// Paralizar/Inmovilizar consult this flag (VB6 flags.AfectaParalisis); a wolf
+    /// must be affected while NPC 582 (flagged in NPCs-HOSTILES.dat) is immune.
+    #[test]
+    fn afecta_paralisis_flag_is_loaded() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
+        if !base.join("dat").join("NPCs.dat").exists() {
+            return;
+        }
+        let db = load_npcs(&base).unwrap();
+        assert!(!db.get(501).unwrap().afecta_paralisis, "Lobo must be paralyzable");
+        assert!(db.get(582).unwrap().afecta_paralisis, "NPC 582 is flagged immune");
+    }
+
     #[tokio::test]
     async fn vigilia_map_spawns_exits_and_respawn() {
         use crate::game::types::GameState;
@@ -461,6 +477,50 @@ mod tests {
         assert!(state.respawn_npc(boss_index));
         let boss=state.get_npc(boss_index).unwrap();
         assert_eq!((boss.map,boss.x,boss.y),(205,50,10));assert_eq!(boss.min_hp,6500);
+    }
+
+    /// `/LOADMAP` used to swap tile data without spawning anything, so a map edited in
+    /// the world editor came back with terrain but no NPCs. The per-map spawn helper
+    /// behind the fix must populate exactly that map and leak nothing onto others.
+    #[tokio::test]
+    async fn map_filtered_spawn_only_touches_that_map() {
+        use crate::game::types::GameState;
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
+        if !base.join("dat").join("NPCs.dat").exists() {
+            return;
+        }
+        let maps = crate::data::maps::load_all_maps(&base).unwrap();
+        let data = crate::data::GameData {
+            experience: vec![],
+            objects: crate::data::objects::load_objects(&base).unwrap(),
+            spells: crate::data::spells::load_spells(&base).unwrap(),
+            maps,
+            npcs: load_npcs(&base).unwrap(),
+            balance: Default::default(),
+            crafting: Default::default(),
+        };
+        let config = crate::config::ServerConfig::load(&base).unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://test:test@127.0.0.1:1/test")
+            .unwrap();
+        let bans = crate::db::bans::BanList {
+            banned_hds: Default::default(),
+            banned_ips: Default::default(),
+        };
+        let mut state = GameState::new(config, base, data, pool, bans);
+
+        let spawned = state.spawn_map_npcs_filtered(Some(205));
+        assert_eq!(
+            spawned, 18,
+            "a filtered reload of map 205 must spawn its own NPCs"
+        );
+        assert!(
+            state
+                .active_npc_indices
+                .iter()
+                .all(|&i| state.get_npc(i).unwrap().map == 205),
+            "filtered spawn leaked NPCs onto other maps"
+        );
     }
 
     #[test]

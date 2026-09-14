@@ -268,9 +268,20 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         conn_id, map, old_x, old_y, heading
     );
 
-    // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
+    // AO20 HandleWalk: UserMod.CanMove — paralyzed/immobilized cannot walk. The message
+    // is sent once per paralysis (UltimoMensaje) and the client is snapped back.
     if paralyzed {
-        // Force client back to server position (prevents ghost movement on client)
+        let already_warned = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.paralysis_walk_warned)
+            .unwrap_or(false);
+        if !already_warned {
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                u.paralysis_walk_warned = true;
+            }
+            state.send_console(conn_id, "No podes moverte porque estas paralizado.", font_index::INFO);
+        }
         state.send_bytes(
             conn_id,
             &binary_packets::write_pos_update(old_x as i16, old_y as i16),
@@ -278,9 +289,15 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         return;
     }
 
-    // NOTE: VB6 defines PuedoPU() but NEVER calls it in the movement handler.
-    // Movement speed is controlled entirely client-side by animation timing.
-    // No server-side anti-flood for movement.
+    // AO20 HandleWalk: no walking while trading with an NPC or crafting.
+    let comerciando = state
+        .users
+        .get(&conn_id)
+        .map(|u| u.comerciando || u.trading)
+        .unwrap_or(false);
+    if comerciando {
+        return;
+    }
 
     // Validate heading (1=north, 2=east, 3=south, 4=west)
     if heading < 1 || heading > 4 {
@@ -315,15 +332,24 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         state.send_console(conn_id, "Te levantás.", font_index::INFO);
     }
 
-    // VB6 13.3: movement is blocked while traveling home
+    // AO20 HandleWalk: walking cancels the /HOGAR trip instead of being blocked.
     if traveling {
-        return;
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.traveling = false;
+            u.counter_go_home = 0;
+        }
+        state.send_console(conn_id, "Has cancelado el viaje a casa.", font_index::INFO);
     }
 
-    // VB6 13.3 parity (I3): speed-hack detection — max 30 steps per 5800ms (GMs exempt).
-    // 2-strike system: first detection stores timestamp; second detection within 30s kicks.
+    // Speed-hack detection (kept from 13.3: steps per 5800 ms window, 2 strikes) but the
+    // allowance follows AO20's expected cadence — IntervaloCaminar / speeding per step —
+    // so a boat, a mount or a ghost (1.4x) never trips it. GMs exempt.
     {
         let privileges = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
+        let speeding = state.users.get(&conn_id).map(|u| u.speeding).unwrap_or(1.0).max(0.01);
+        let min_step_ms = (state.intervals.caminar as f32 / speeding).max(1.0);
+        // +3 steps of slack for frame jitter (AO20 tolerates a MaximoSpeedHack=4 deficit).
+        let max_steps: i32 = (5800.0 / min_step_ms).ceil() as i32 + 3;
         if privileges == 0 {
             let now = std::time::Instant::now();
             let now_ms = std::time::SystemTime::now()
@@ -349,7 +375,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
                 if let Some(user) = state.users.get_mut(&conn_id) {
                     user.speed_steps = new_steps;
                 }
-                if new_steps > 30 {
+                if new_steps > max_steps {
                     let name = state
                         .users
                         .get(&conn_id)

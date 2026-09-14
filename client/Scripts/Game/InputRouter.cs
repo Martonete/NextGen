@@ -324,11 +324,12 @@ public class InputRouter
     private void HandleF12Toggle(SceneTree tree, Viewport viewport)
     {
         bool goFullscreen = DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen;
+        _state.Config.Fullscreen = goFullscreen;
+        ResolutionManager.SetFullscreenWorld(goFullscreen);
         if (goFullscreen)
             OnEnterFullscreen?.Invoke();
         else
             OnExitFullscreen?.Invoke();
-        _state.Config.Fullscreen = goFullscreen;
         _state.Config.Save(DataPath);
         viewport.SetInputAsHandled();
     }
@@ -343,7 +344,8 @@ public class InputRouter
         // Only handle clicks within the game viewport area
         if (clickX < 0 || clickX >= ResolutionManager.ViewportW || clickY < 0 || clickY >= ResolutionManager.ViewportH) return;
 
-        var viewPos = new Vector2(clickX, clickY);
+        var viewPos = new Vector2(clickX * ResolutionManager.RenderPixelW / ResolutionManager.ViewportW,
+            clickY * ResolutionManager.RenderPixelH / ResolutionManager.ViewportH);
 
         // Close context menu on any left-click in viewport
         if (mb.Pressed && mb.ButtonIndex == MouseButton.Left && _contextMenu != null && _contextMenu.IsOpen)

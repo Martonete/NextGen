@@ -130,7 +130,7 @@ public partial class SpellPanel : Control
     public override void _Draw()
     {
         // Dark background
-        DrawRect(new Rect2(0, 0, Size.X, Size.Y), new Color(0.08f, 0.08f, 0.12f, 0.95f));
+        DrawRect(new Rect2(0, 0, Size.X, Size.Y), SacredTheme.Ink);
 
         if (_state == null || _data == null) return;
 
@@ -151,7 +151,7 @@ public partial class SpellPanel : Control
             if (slot == _selectedSlot)
             {
                 DrawRect(new Rect2(2, lineY, Size.X - 4, LineHeight),
-                    new Color(0.3f, 0.3f, 0.8f, 0.6f));
+                    new Color("4c6155"));
             }
 
             // Spell name

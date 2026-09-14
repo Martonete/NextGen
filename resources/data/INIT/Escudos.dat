@@ -1,5 +1,5 @@
 [INIT]
-NumEscudos=46
+NumEscudos=48
 
 [ESC1]
 Dir1=4727
@@ -276,3 +276,15 @@ Dir1=31058
 Dir2=31060
 Dir3=31057
 Dir4=31059
+
+[ESC47]
+Dir1=33668
+Dir2=33669
+Dir3=33670
+Dir4=33671
+
+[ESC48]
+Dir1=33708
+Dir2=33709
+Dir3=33710
+Dir4=33711

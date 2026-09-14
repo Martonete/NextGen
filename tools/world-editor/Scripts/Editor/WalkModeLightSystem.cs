@@ -30,6 +30,11 @@ public class WalkModeLightSystem
     /// <c>Color.White</c> (no modulate) so sprites aren't pre-darkened.</summary>
     private bool _shaderHandlesEverything;
 
+    /// <summary>True when the map has advanced lights: per-tile colours are white and the
+    /// LightRenderer shader applies ambient + day/night itself, so callers must not
+    /// multiply those in again.</summary>
+    public bool ShaderHandlesEverything => _shaderHandlesEverything;
+
     public void Recalculate(MapData map, MapZoneData? zones)
     {
         _mapWidth = map.Width;

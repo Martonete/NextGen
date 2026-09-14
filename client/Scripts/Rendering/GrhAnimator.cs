@@ -112,6 +112,10 @@ public class GrhAnimator
 	/// </summary>
 	public int GetCurrentFrame(int grhIndex, GameData? data = null)
 	{
+		// Static GRHs (the vast majority of tiles) never have FX state: skip the dictionary probe.
+		if (data != null && grhIndex > 0 && grhIndex < data.Grhs.Length && data.Grhs[grhIndex].NumFrames <= 1)
+			return 0;
+
 		// Check one-shot FX first
 		if (_fxStates.TryGetValue(grhIndex, out var state))
 			return (int)state.FrameCounter;

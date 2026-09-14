@@ -146,6 +146,10 @@ public class GameState
 	public bool IsNight;
 	public byte UserClass;
 	public bool UserParalyzed;
+	/// <summary>AO20 UserInmovilizado / IsStun — separate flags in CanMove(). Our server folds
+	/// Inmovilizar into `paralyzed`, so these stay false unless a packet sets them.</summary>
+	public bool UserImmobilized;
+	public bool UserStunned;
 	public float ParalysisTimer;    // Countdown in seconds from server-provided duration
 	public float ParalysisMaxTimer; // Max duration for progress bar ratio
 	public ulong PingSentMs;       // VB6: TimerPing(1) — GetTickCount when /PING sent
@@ -189,6 +193,12 @@ public class GameState
 
 	// Spell training macro (auto-repeat spell casting)
 	public SpellMacro SpellMacro = new();
+
+	// AO20 timing: intervals from the server and the MainTimer that gates actions.
+	public GameIntervals Intervals = new();
+	public readonly MainTimer MainTimer = new();
+	/// <summary>Own speed multiplier (AO20 charlist(UserCharIndex).Speeding) — mirrored on the char too.</summary>
+	public float UserSpeeding = 1f;
 
 	// Camera scroll state (VB6 client-side prediction)
 	public bool UserMoving;        // True while camera is scrolling between tiles

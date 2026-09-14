@@ -9,7 +9,7 @@ namespace ArgentumNextgen.Diagnostics;
 /// <summary>Exercises the real movement update offline, without a connection or character save.</summary>
 public static class WalkMovementSmoke
 {
-    public static void Run(GameData data)
+    public static void Run(GameData data, params int[] bodies)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var main = new Main(); // Deliberately outside the tree: do not run login/UI setup.
@@ -19,7 +19,7 @@ public static class WalkMovementSmoke
             var state = (GameState)typeof(Main).GetField("_state", flags)!.GetValue(main)!;
             var update = (Action<float>)typeof(Main).GetMethod("UpdateMovement", flags)!
                 .CreateDelegate(typeof(Action<float>), main);
-            foreach (int body in new[] { 1, 512, 513 })
+            foreach (int body in bodies.Length == 0 ? new[] { 1, 512, 513 } : bodies)
             foreach (int fps in new[] { 20, 30, 60, 144, 240 })
             {
                 var ch = new Character { CharIndex = 1, Body = body, PosX = 50, PosY = 50 };
@@ -29,7 +29,14 @@ public static class WalkMovementSmoke
                 state.UserPosX = 50;
                 state.UserPosY = 50;
                 float delta = 1f / fps;
-                int expectedFrames = (int)Math.Ceiling(32f / (Math.Min(delta * 1000f, 50f) * .0172f * 8f));
+                float frameMs = delta * 1000f;
+                // AO20 engine.bas: 8.5 px * (frameMs * 0.018) per frame, done at >= 32 px.
+                // The overshoot of the last frame is dropped, so a step takes
+                // ceil(32 / (0.153 * frameMs)) frames: 209 ms at best, 209 + frameMs at worst.
+                const float PxPerMs = 8.5f * 0.018f;
+                const float StepMs = 32f / PxPerMs;
+                int expectedFrames = (int)Math.Ceiling(32f / (PxPerMs * frameMs) - 1e-4f);
+                int maxFrames = expectedFrames + 1;
                 for (int step = 0; step < 40; step++)
                 {
                     // Same start state as TryMove; walk a closed loop, including turns.
@@ -57,15 +64,18 @@ public static class WalkMovementSmoke
                         Require(Math.Abs(relativeX) < .001f && Math.Abs(relativeY) < .001f,
                             "Character/camera diverged during step");
                         Require(ch.WalkPoseActive, "Idle pose flashed at a tile boundary");
-                        Require(frames <= expectedFrames + 1, "Movement failed to complete");
+                        Require(frames <= maxFrames, "Movement failed to complete");
                     } while (state.UserMoving);
-                    Require(frames == expectedFrames, "Step duration changed");
+                    Require(frames == expectedFrames || frames == expectedFrames + 1,
+                        $"Step took {frames} frames at {fps} FPS, expected {expectedFrames}");
+                    Require(frames * frameMs >= StepMs - frameMs - 0.01f && frames * frameMs <= StepMs + frameMs + 0.01f,
+                        "Step duration outside AO20 cadence");
                     Require(state.PendingMoves == 0, "Pending movement did not clear");
                 }
                 Require(ch.PosX == 50 && ch.PosY == 50, "Turn path changed");
                 for (int i = 0; i < fps; i++) update(delta);
                 Require(!ch.WalkPoseActive && !ch.Moving, "Stop did not restore idle");
-                GD.Print($"[WALK-SMOKE] PASS body {body}, {fps} FPS: 40 steps, original duration, stable camera, turns and stop");
+                GD.Print($"[WALK-SMOKE] PASS body {body}, {fps} FPS: 40 steps of {expectedFrames} frames (AO20 8.5 px * ticks), stable camera, turns and stop");
             }
         }
         finally { main.Free(); }

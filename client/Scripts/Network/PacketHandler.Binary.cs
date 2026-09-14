@@ -803,6 +803,15 @@ public partial class PacketHandler
             case ServerPacketId.ZoneChange: // 252
                 HandleBinZoneChange(bq);
                 break;
+            case ServerPacketId.Intervals: // 235
+                HandleBinIntervals(bq);
+                break;
+            case ServerPacketId.VelocidadToggle: // 236
+                HandleBinVelocidadToggle(bq);
+                break;
+            case ServerPacketId.SpeedingAct: // 253
+                HandleBinSpeedingAct(bq);
+                break;
             case ServerPacketId.ArenaData: // 254
                 HandleBinArenaData(bq);
                 break;

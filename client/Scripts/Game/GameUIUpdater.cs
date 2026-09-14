@@ -48,6 +48,7 @@ public class GameUIUpdater
     private string _cachedFps = "";
     private string _cachedMacroText = "";
     private bool _cachedMacroVisible = false;
+    private ulong _lastLabelRefreshMs;
     private bool _cachedBtnCastiVisible = false;
 
     /// <summary>Callback to get WorldRenderer for arrow redraw.</summary>
@@ -110,25 +111,31 @@ public class GameUIUpdater
             atMaxLevel ? 1 : _state.Exp, atMaxLevel ? 1 : _state.ExpNext
         );
 
+        // Labels change at human speed: refresh them at 10 Hz. Stat bars above keep their own
+        // dirty check and stay per-frame.
+        ulong nowMs = Godot.Time.GetTicksMsec();
+        if (nowMs - _lastLabelRefreshMs < 100) return;
+        _lastLabelRefreshMs = nowMs;
+
         var newExp = atMaxLevel ? "Nivel Maximo" : $"EXP: {_state.Exp}/{_state.ExpNext}";
-        if (_expLabel!.Text != newExp) { _expLabel.Text = newExp; _cachedExp = newExp; }
+        if (_cachedExp != newExp) { _expLabel!.Text = newExp; _cachedExp = newExp; }
 
         var newGold = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
-        if (_goldLabel!.Text != newGold) { _goldLabel.Text = newGold; _cachedGold = newGold; }
+        if (_cachedGold != newGold) { _goldLabel!.Text = newGold; _cachedGold = newGold; }
 
         var newLevel = $"{_state.Level}";
-        if (_levelLabel!.Text != newLevel) { _levelLabel.Text = newLevel; _cachedLevel = newLevel; }
+        if (_cachedLevel != newLevel) { _levelLabel!.Text = newLevel; _cachedLevel = newLevel; }
 
         var newName = _state.UserName;
-        if (_nameLabel!.Text != newName) { _nameLabel.Text = newName; _cachedName = newName; }
+        if (_cachedName != newName) { _nameLabel!.Text = newName; _cachedName = newName; }
 
         var newOnline = $"Onlines: {_state.OnlineCount}";
-        if (_onlineLabel!.Text != newOnline) { _onlineLabel.Text = newOnline; _cachedOnline = newOnline; }
+        if (_cachedOnline != newOnline) { _onlineLabel!.Text = newOnline; _cachedOnline = newOnline; }
 
         // Zone name replaces map name when inside a zone
         string locationName = _state.CurrentZoneName.Length > 0 ? _state.CurrentZoneName : _state.MapName;
         var newCoords = $"{locationName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
-        if (_coordsLabel!.Text != newCoords) { _coordsLabel.Text = newCoords; _cachedCoords = newCoords; }
+        if (_cachedCoords != newCoords) { _coordsLabel!.Text = newCoords; _cachedCoords = newCoords; }
 
         // GM button visibility
         if (_btnCastiGM != null)
@@ -139,26 +146,26 @@ public class GameUIUpdater
 
         // Combat stat labels
         var newArmor = $"Armadura: {_state.ArmourLabel}";
-        if (_armorLabel!.Text != newArmor) { _armorLabel.Text = newArmor; _cachedArmor = newArmor; }
+        if (_cachedArmor != newArmor) { _armorLabel!.Text = newArmor; _cachedArmor = newArmor; }
 
         var newHelm = $"Casco: {_state.HelmLabel}";
-        if (_helmLabel!.Text != newHelm) { _helmLabel.Text = newHelm; _cachedHelm = newHelm; }
+        if (_cachedHelm != newHelm) { _helmLabel!.Text = newHelm; _cachedHelm = newHelm; }
 
         var newShield = $"Escudo: {_state.ShieldLabel}";
-        if (_shieldLabel!.Text != newShield) { _shieldLabel.Text = newShield; _cachedShield = newShield; }
+        if (_cachedShield != newShield) { _shieldLabel!.Text = newShield; _cachedShield = newShield; }
 
         var newWeapon = $"Arma: {_state.WeaponLabel}";
-        if (_weaponLabel!.Text != newWeapon) { _weaponLabel.Text = newWeapon; _cachedWeapon = newWeapon; }
+        if (_cachedWeapon != newWeapon) { _weaponLabel!.Text = newWeapon; _cachedWeapon = newWeapon; }
 
         var newFuerza = $"Fuerza: {_state.Strength}";
-        if (_fuerzaLabel!.Text != newFuerza) { _fuerzaLabel.Text = newFuerza; _cachedFuerza = newFuerza; }
+        if (_cachedFuerza != newFuerza) { _fuerzaLabel!.Text = newFuerza; _cachedFuerza = newFuerza; }
 
         var newAgilidad = $"Agilidad: {_state.Agility}";
-        if (_agilidadLabel!.Text != newAgilidad) { _agilidadLabel.Text = newAgilidad; _cachedAgilidad = newAgilidad; }
+        if (_cachedAgilidad != newAgilidad) { _agilidadLabel!.Text = newAgilidad; _cachedAgilidad = newAgilidad; }
 
         // FPS
         var newFps = $"FPS: {Engine.GetFramesPerSecond()}";
-        if (_fpsLabel!.Text != newFps) { _fpsLabel.Text = newFps; _cachedFps = newFps; }
+        if (_cachedFps != newFps) { _fpsLabel!.Text = newFps; _cachedFps = newFps; }
 
         // Macro status indicator
         if (_macroStatusLabel != null)

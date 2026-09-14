@@ -360,22 +360,3 @@ pub(crate) fn check_permanecer_oculto(user: &mut UserState) -> bool {
     true // Still hidden
 }
 
-/// Desarmar — Disarm skill (VB6: Trabajo.bas Desarmar).
-/// Chance to unequip victim's weapon based on Wresterling skill.
-pub(crate) fn try_desarmar(skill: i32) -> bool {
-    let suerte = match skill {
-        0..=10 => 35,
-        11..=20 => 30,
-        21..=30 => 28,
-        31..=40 => 24,
-        41..=50 => 22,
-        51..=60 => 20,
-        61..=70 => 18,
-        71..=80 => 15,
-        81..=90 => 10,
-        91..=100 => 5,
-        _ => 5,
-    };
-    let res = rand_range(1, suerte);
-    res <= 2
-}

@@ -15,6 +15,6 @@ mod use_item;
 
 pub(super) use click::*;
 pub(super) use doors::*;
-pub(super) use equip::*;
+pub(crate) use equip::*;
 pub(super) use ground::*;
 pub(super) use use_item::*;

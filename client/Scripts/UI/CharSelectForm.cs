@@ -36,7 +36,7 @@ public partial class CharSelectForm : RpgBaseForm
     public Action? OnCreatePressed;
 
     public CharSelectForm()
-        : base("Seleccionar Personaje", new Vector2(620, 530), "entry")
+        : base("Seleccionar Personaje", new Vector2(680, 560), "entry")
     {
         Draggable = false;
         ShowCloseButton = false;
@@ -52,7 +52,7 @@ public partial class CharSelectForm : RpgBaseForm
     {
         var root = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
         ContentContainer.AddChild(root);
-        root.AddChild(EntryTheme.Header("ARGENTUM NEXTGEN  /  TUS PERSONAJES", "Elegí tu destino", "Una nueva historia te espera del otro lado."));
+        root.AddChild(EntryTheme.Header("EL REINO  /  TUS PERSONAJES", "Elegí tu legado", "Cada nombre guarda una historia. Continuá la tuya."));
 
         // === ROW 1: CharList (left) | Preview + buttons (right) ===
         var row1 = RpgTheme.CreateRow(RpgTheme.SpacingLg);
@@ -72,6 +72,7 @@ public partial class CharSelectForm : RpgBaseForm
         _charList.AddThemeStyleboxOverride("selected", EntryTheme.Box("35453e", "c5a772", 6));
         _charList.AddThemeStyleboxOverride("selected_focus", EntryTheme.Box("35453e", "e0c797", 6));
         _charList.AddThemeFontSizeOverride("font_size", 15);
+        _charList.AddThemeFontOverride("font", GameFonts.AlegreyaBold);
         _charList.AddThemeConstantOverride("v_separation", 18);
         _charList.ItemActivated += (long idx) => { if (_enterButton?.Disabled == false) OnEnterPressed?.Invoke(); };
         _charList.ItemSelected += (long idx) => UpdatePreview((int)idx);
@@ -95,6 +96,9 @@ public partial class CharSelectForm : RpgBaseForm
         previewBg.MouseFilter = MouseFilterEnum.Ignore;
         previewWrapper.AddChild(previewBg);
         RpgTheme.FillParent(previewBg);
+        var seal = new SacredSeal { Modulate = new Color(1, 1, 1, .3f), MouseFilter = MouseFilterEnum.Ignore };
+        previewWrapper.AddChild(seal);
+        RpgTheme.FillParent(seal);
 
         _previewHintLabel = RpgTheme.CreateInfoLabel("Selecciona un\npersonaje", 9);
         _previewHintLabel.HorizontalAlignment = HorizontalAlignment.Center;
@@ -127,7 +131,7 @@ public partial class CharSelectForm : RpgBaseForm
         rightCol.AddChild(_selectedName);
 
         // Connect button
-        _enterButton = EntryTheme.Button("Entrar al mundo", true);
+        _enterButton = EntryTheme.Button("ENTRAR AL MUNDO  ›", true);
         _enterButton.CustomMinimumSize = new Vector2(0, 36);
         _enterButton.Pressed += () => OnEnterPressed?.Invoke();
         rightCol.AddChild(_enterButton);

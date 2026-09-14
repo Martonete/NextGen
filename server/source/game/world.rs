@@ -11,20 +11,19 @@ use std::collections::HashMap;
 pub const MAP_WIDTH: usize = 100;
 pub const MAP_HEIGHT: usize = 100;
 
-// Client viewport — extended ~35% past the 1920x1080 worst case (45x23) for a
-// wider visibility range (61x31 tiles visible).
+// Entity interest window, independent of client zoom and map traversal bounds.
 pub const X_WINDOW: i32 = 61;
 pub const Y_WINDOW: i32 = 31;
 
 // Border offsets (half viewport) — used for area queries and range checks
-pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 30
-pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 15
+pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 30, original entity range
+pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 15, independent of attack range
 
 // Extended visibility for objects (doors, ground items, particles, lights).
 // Kept at a small margin above MIN_X/Y_BORDER, same ratio as before.
 // Characters/NPCs still use MIN_X/Y_BORDER — they fade via client FOV system.
-pub const OBJ_X_BORDER: i32 = 31;
-pub const OBJ_Y_BORDER: i32 = 16;
+pub const OBJ_X_BORDER: i32 = MIN_X_BORDER + 1;
+pub const OBJ_Y_BORDER: i32 = MIN_Y_BORDER + 1;
 
 // Default zone size for area tracking
 const DEFAULT_ZONE_SIZE: i32 = 9;
@@ -212,13 +211,15 @@ impl MapGrid {
     }
 
     /// Get all users within viewport range around a point.
-    /// Checks 3x3 zone neighborhood, filters by exact viewport distance.
+    /// Visits every zone intersecting the interest window, then filters distance.
     pub fn get_nearby_users(&self, center_x: i32, center_y: i32) -> Vec<ConnectionId> {
         let czx = (center_x - 1) / self.zone_size;
         let czy = (center_y - 1) / self.zone_size;
         let mut users = Vec::new();
-        for dy in -1..=1i32 {
-            for dx in -1..=1i32 {
+        let radius_x = (MIN_X_BORDER + self.zone_size - 1) / self.zone_size;
+        let radius_y = (MIN_Y_BORDER + self.zone_size - 1) / self.zone_size;
+        for dy in -radius_y..=radius_y {
+            for dx in -radius_x..=radius_x {
                 let zx = czx + dx;
                 let zy = czy + dy;
                 if zx >= 0 && zx < self.zones_x && zy >= 0 && zy < self.zones_y {
@@ -510,17 +511,26 @@ mod tests {
 
     #[test]
     fn bounds_check_dynamic() {
-        // min_x = 1 + X_WINDOW/2 = 1 + 22 = 23
-        // min_y = 1 + Y_WINDOW/2 = 1 + 11 = 12
-        assert!(in_map_bounds_for(23, 12, 100, 100));
-        assert!(!in_map_bounds_for(22, 12, 100, 100));
-        // Larger map
-        assert!(in_map_bounds_for(23, 12, 200, 200));
-        assert!(in_map_bounds_for(178, 189, 200, 200));
-        assert!(!in_map_bounds_for(179, 12, 200, 200));
-        // 1000x1000 map — full range minus border
-        assert!(in_map_bounds_for(23, 12, 1000, 1000));
-        assert!(in_map_bounds_for(978, 989, 1000, 1000));
-        assert!(!in_map_bounds_for(979, 12, 1000, 1000));
+        // Traversal covers the full map, independently of the interest window.
+        for size in [100, 200, 1000] {
+            assert!(in_map_bounds_for(1, 1, size, size));
+            assert!(in_map_bounds_for(size, size, size, size));
+            assert!(!in_map_bounds_for(0, 1, size, size));
+            assert!(!in_map_bounds_for(1, 0, size, size));
+            assert!(!in_map_bounds_for(size + 1, size, size, size));
+            assert!(!in_map_bounds_for(size, size + 1, size, size));
+        }
+    }
+
+    #[test]
+    fn visibility_crosses_multiple_zones_without_exceeding_range() {
+        let mut grid = MapGrid::with_size(200, 200, DEFAULT_ZONE_SIZE);
+        grid.zone_add(50 + MIN_X_BORDER, 50 + MIN_Y_BORDER, 101);
+        grid.zone_add(50 + MIN_X_BORDER + 1, 50, 102);
+        grid.zone_add(50, 50 + MIN_Y_BORDER + 1, 103);
+        let nearby = grid.get_nearby_users(50, 50);
+        assert!(nearby.contains(&101));
+        assert!(!nearby.contains(&102));
+        assert!(!nearby.contains(&103));
     }
 }

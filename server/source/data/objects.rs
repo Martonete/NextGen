@@ -7,6 +7,16 @@
 use crate::config::IniFile;
 use std::path::Path;
 
+/// AO20 e_WeaponType (Declares.bas). Only the values SistemaCombate branches on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeaponType {
+    Sword = 1,
+    Dagger = 2,
+    Bow = 3,
+    Knuckle = 4,
+    GunPowder = 5,
+}
+
 /// Object type enum matching VB6 eOBJType.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -220,6 +230,23 @@ pub struct ObjData {
     // Backstab flag (VB6: Apuñala=1 — weapon enables backstab)
     pub apunala: bool,
 
+    // ── AO20 SistemaCombate fields (optional in obj.dat; defaults keep today's behaviour) ──
+    /// Shield block chance % (AO20 `Porcentaje`). Default 100 → rechazo = Defensa/(Defensa+Tacticas).
+    pub porcentaje: i32,
+    /// AO20 `WeaponType`: 1 sword/other, 2 dagger, 3 bow, 4 knuckle (unused here), 5 gunpowder.
+    /// Derived from Apuñala/proyectil when absent.
+    pub weapon_type: WeaponType,
+    /// AO20 `MinHitToNPC`/`MaxHitToNPC` — separate damage range vs creatures (0 = use MinHit/MaxHit).
+    pub min_hit_to_npc: i32,
+    pub max_hit_to_npc: i32,
+    /// AO20 `Velocidad` — movement speed multiplier for ships, mounts and armors (1.0 = none).
+    pub velocidad: f32,
+    /// AO20 `ExtraCritAndStabChance` — flat % added to stab/crit chance.
+    pub extra_crit_and_stab_chance: f32,
+    /// AO20 on-hit status flags for weapons/ammo (`Estupidiza`, `Incinera`, `Paraliza`).
+    pub estupidiza: bool,
+    pub incinera: bool,
+
     // Pirate throat-cut (VB6: Acuchilla — weapon flag for DoAcuchillar)
     pub acuchilla: bool,
 
@@ -305,6 +332,14 @@ impl Default for ObjData {
             staff_power: 0,
             staff_damage_bonus: 0,
             apunala: false,
+            porcentaje: 100,
+            weapon_type: WeaponType::Sword,
+            min_hit_to_npc: 0,
+            max_hit_to_npc: 0,
+            velocidad: 1.0,
+            extra_crit_and_stab_chance: 0.0,
+            estupidiza: false,
+            incinera: false,
             acuchilla: false,
             upgrade: 0,
             foro_id: String::new(),
@@ -410,12 +445,34 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             staff_power: get_int("StaffPower"),
             staff_damage_bonus: get_int("StaffDamageBonus"),
             apunala: get_bool("Apuñala"),
+            porcentaje: ini.get(&section, "Porcentaje").and_then(|s| s.parse().ok()).unwrap_or(100),
+            weapon_type: WeaponType::Sword, // resolved below once Apuñala/proyectil are known
+            min_hit_to_npc: get_int("MinHitToNPC"),
+            max_hit_to_npc: get_int("MaxHitToNPC"),
+            velocidad: ini.get(&section, "Velocidad").and_then(|s| s.replace(',', ".").parse().ok()).filter(|v: &f32| *v > 0.0).unwrap_or(1.0),
+            extra_crit_and_stab_chance: ini.get(&section, "ExtraCritAndStabChance").and_then(|s| s.replace(',', ".").parse().ok()).unwrap_or(0.0),
+            estupidiza: get_bool("Estupidiza"),
+            incinera: get_bool("Incinera"),
             acuchilla: get_bool("Acuchilla"),
             upgrade: get_int("Upgrade"),
             foro_id: get_str("ForoID"),
             mochila_type: get_int("MochilaType"),
             radio: get_int("Radio"),
             ..Default::default()
+        };
+
+        // AO20 WeaponType: explicit key wins; otherwise derive from the 13.3 flags
+        // (Apuñala → dagger, proyectil → bow, else sword). GetSkillRequiredForWeapon
+        // keys off this to pick Apuñalar/Proyectiles/Armas.
+        obj.weapon_type = match get_int("WeaponType") {
+            2 => WeaponType::Dagger,
+            3 => WeaponType::Bow,
+            4 => WeaponType::Knuckle,
+            5 => WeaponType::GunPowder,
+            1 => WeaponType::Sword,
+            _ if obj.apunala => WeaponType::Dagger,
+            _ if obj.proyectil => WeaponType::Bow,
+            _ => WeaponType::Sword,
         };
 
         // VB6: All equipment types use the same "Anim" field in Obj.dat,

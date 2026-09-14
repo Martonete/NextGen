@@ -14,6 +14,7 @@ public static partial class RpgTheme
         label.Text = text;
         label.HorizontalAlignment = HorizontalAlignment.Center;
         label.VerticalAlignment = VerticalAlignment.Center;
+        label.AddThemeFontOverride("font", SacredTheme.Display);
         label.AddThemeFontSizeOverride("font_size", fontSize);
         label.AddThemeColorOverride("font_color", new Color(0.95f, 0.9f, 0.75f));
         label.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.9f));
@@ -26,6 +27,7 @@ public static partial class RpgTheme
     {
         var label = new Label();
         label.Text = text;
+        label.AddThemeFontOverride("font", GameFonts.AlegreyaRegular);
         label.AddThemeFontSizeOverride("font_size", fontSize);
         label.AddThemeColorOverride("font_color", new Color(0.85f, 0.8f, 0.65f));
         label.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.6f));
@@ -107,23 +109,9 @@ public static partial class RpgTheme
 
     public static TextureButton CreateRpgButton(string text, bool isLong = true, int fontSize = 18)
     {
-        var btn = new TextureButton();
+        var btn = new SacredTextureButton();
         btn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
-        btn.FocusMode = Control.FocusModeEnum.None; // Never grab keyboard focus — prevents arrow keys from being captured by Godot focus navigation
-        if (isLong)
-        {
-            btn.TextureNormal = GetTex("long_button.png");
-            btn.TextureHover = GetTex("long_button_on.png");
-            btn.TexturePressed = GetTex("long_button_on.png");
-            btn.TextureDisabled = GetTex("long_button_off.png");
-        }
-        else
-        {
-            btn.TextureNormal = GetTex("mid_button.png");
-            btn.TextureHover = GetTex("mid_button_on.png");
-            btn.TexturePressed = GetTex("mid_button_on.png");
-            btn.TextureDisabled = GetTex("mid_button_off.png");
-        }
+        btn.FocusMode = Control.FocusModeEnum.None;
         btn.StretchMode = TextureButton.StretchModeEnum.Scale;
         btn.IgnoreTextureSize = true;
 
@@ -132,6 +120,7 @@ public static partial class RpgTheme
         label.HorizontalAlignment = HorizontalAlignment.Center;
         label.VerticalAlignment = VerticalAlignment.Center;
         label.ClipText = true;
+        label.AddThemeFontOverride("font", GameFonts.AlegreyaBold);
         label.AddThemeFontSizeOverride("font_size", fontSize);
         label.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
         label.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.8f));
@@ -384,6 +373,7 @@ public static partial class RpgTheme
         input.AddThemeColorOverride("caret_color", new Color(0.9f, 0.85f, 0.7f));
         input.AddThemeColorOverride("selection_color", new Color(0.4f, 0.35f, 0.2f, 0.5f));
 
+        SacredTheme.StyleInput(input);
         return input;
     }
 

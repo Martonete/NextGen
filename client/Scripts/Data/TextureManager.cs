@@ -15,6 +15,9 @@ public class TextureManager
 {
     private readonly IResourceProvider _resources;
     private readonly Dictionary<int, Texture2D> _cache = new();
+    // Texture dimensions cached at load: Texture2D.GetWidth/GetHeight are interop calls and the
+    // draw path used to make two of them per sprite (~14k per frame).
+    private readonly Dictionary<int, (int W, int H)> _sizes = new();
     private readonly LinkedList<int> _lruOrder = new();
     private readonly Dictionary<int, LinkedListNode<int>> _lruNodes = new(); // O(1) LRU removal
     private const int MaxCacheSize = 4096;
@@ -153,6 +156,30 @@ public class TextureManager
         return LoadAndCache(fileNum);
     }
 
+    /// <summary>Texture plus its cached dimensions in one lookup — the hot path for every sprite.</summary>
+    public bool TryGetTexture(int fileNum, out Texture2D texture, out int width, out int height)
+    {
+        texture = null!;
+        width = 0;
+        height = 0;
+        if (fileNum <= 0) return false;
+        var tex = GetTexture(fileNum);
+        if (tex == null) return false;
+        texture = tex;
+        if (_sizes.TryGetValue(fileNum, out var size))
+        {
+            width = size.W;
+            height = size.H;
+        }
+        else
+        {
+            width = tex.GetWidth();
+            height = tex.GetHeight();
+            _sizes[fileNum] = (width, height);
+        }
+        return true;
+    }
+
     /// <summary>
     /// Get the source rect for a GRH within its texture.
     /// </summary>
@@ -186,6 +213,7 @@ public class TextureManager
         }
 
         _cache[fileNum] = texture;
+        _sizes[fileNum] = (image.GetWidth(), image.GetHeight());
         var newNode = _lruOrder.AddFirst(fileNum);
         _lruNodes[fileNum] = newNode;
         return texture;
@@ -240,6 +268,7 @@ public class TextureManager
     public void Cleanup()
     {
         _cache.Clear();
+        _sizes.Clear();
         _lruOrder.Clear();
         _lruNodes.Clear();
     }

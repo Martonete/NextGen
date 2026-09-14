@@ -86,6 +86,20 @@ public class EditorState
     public bool InsertedMapSelection; // True when selection was created by Insert Map
     public int SelX1, SelY1, SelX2, SelY2;
 
+    /// <summary>
+    /// When a selection exists, brushes (paint/erase/block/trigger/particle/path/stamp)
+    /// only touch tiles inside it. Off = the old behaviour, brushes ignore the rect.
+    /// </summary>
+    public bool UseSelectionAsMask = true;
+
+    /// <summary>Painting on layer 3 blocks the tile (trees/objects are solid). Turn off for decor.</summary>
+    public bool AutoBlockLayer3 = true;
+
+    /// <summary>True if a brush may write this tile given the current selection mask.</summary>
+    public bool InSelectionMask(int x, int y)
+        => !UseSelectionAsMask || !HasSelection
+           || (x >= SelX1 && x <= SelX2 && y >= SelY1 && y <= SelY2);
+
     // Clipboard (copied tiles)
     public MapTile[,]? Clipboard;
     public int ClipWidth, ClipHeight;
@@ -106,6 +120,7 @@ public class EditorState
     public bool ShowGrid = true;
     public bool ShowBlocked = true;
     public bool ShowExits = true;
+    public bool ShowTriggers = true;
     public bool ShowLayer1 = true;
     public bool ShowLayer2 = true;
     public bool ShowLayer3 = true;
@@ -163,6 +178,24 @@ public class EditorState
 
     // Pick tool state
     public readonly PickState Pick = new();
+
+    // Player character preview walked around the viewport (J to place, arrows to move).
+    public readonly CharPreview Preview = new();
+    public bool ShowPreviewFrame = true;
+
+    // Orange frame for the outer band the server never lets a player walk on
+    // (EdgeStitcher margins). Hidden in the game view.
+    public bool ShowServerMargin = true;
+
+    // Tiles flagged by the last "Revisar mapa" run; drawn as markers while the panel is open.
+    public List<LintIssue> LintIssues = new();
+    public bool ShowLintMarkers;
+
+    // "Vista de juego": no editor overlays, zoom 1:1 locked on the preview character,
+    // game-faithful ambient/roof/tree rendering. Saved zoom/camera come back on exit.
+    public bool GameView;
+    public float GameViewSavedZoom = 1f;
+    public Vector2 GameViewSavedCamera = Vector2.Zero;
 
     // View
     public float Zoom = 1.0f;

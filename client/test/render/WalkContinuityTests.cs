@@ -33,14 +33,14 @@ static class WalkContinuityTests
             var ch = new Character { WalkFrame = 2.5f, WalkFrameHeading = 2,
                 PosX = 50, PosY = 50, MoveOffsetX = -10f };
             ch.UpdateWalkContinuity(true, 1000f / fps);
-            ch.UpdateWalkContinuity(false, 1000f / fps);
-            Require(ch.WalkPoseActive && ch.WalkFrame == 2.5f, "Tile boundary retains stride");
+            Require(ch.WalkPoseActive && ch.WalkFrame == 2.5f, "Advancing keeps the stride");
             Require(!ch.Moving, "Cosmetic continuity never sets gameplay moving flag");
             ch.Heading = 3;
             ch.UpdateWalkContinuity(true, 1000f / fps);
             Require(ch.WalkFrame == 2.5f, "Turning retains phase");
-            for (int i = 0; i < fps; i++) ch.UpdateWalkContinuity(false, 1000f / fps);
-            Require(!ch.WalkPoseActive && ch.WalkFrame == 0, "Stopping returns to rest");
+            // AO20 Char_Render: the first frame without a step freezes the walk series (Idle).
+            ch.UpdateWalkContinuity(false, 1000f / fps);
+            Require(!ch.WalkPoseActive && ch.WalkFrame == 0, "Stopping returns to rest at once");
             Require(ch.PosX == 50 && ch.PosY == 50 && ch.MoveOffsetX == -10f,
                 "Presentation cannot move character or alter speed");
             Console.WriteLine($"PASS: Walk continuity, turns, stop and unchanged position at {fps} FPS");

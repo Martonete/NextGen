@@ -198,7 +198,7 @@ public partial class InventoryPanel : Control
     {
         // VB6: Device_Box_Textured_Render(31570, 0, 0, 174, 174) — inventory background
         // Fallback to dark rect if GRH not available
-        DrawRect(new Rect2(0, 0, Size.X, Size.Y), new Color(0.08f, 0.08f, 0.12f, 0.95f));
+        DrawRect(new Rect2(0, 0, Size.X, Size.Y), SacredTheme.Ink);
 
         if (_state == null || _data == null) return;
 
@@ -231,16 +231,17 @@ public partial class InventoryPanel : Control
             if (row >= 1) y += row;
 
             // Slot background
-            DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0.15f, 0.15f, 0.2f, 0.8f));
+            DrawRect(new Rect2(x + 1, y + 1, SlotSize - 2, SlotSize - 2), new Color("1e272a"));
+            DrawLine(new Vector2(x + 3, y + 2), new Vector2(x + SlotSize - 3, y + 2), new Color("b99a662d"));
 
             if (slot == _selectedSlot)
             {
-                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0.4f, 0.35f, 0.2f, 0.35f));
+                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color("b99a6640"));
             }
             else if (_dragging && _dydEnabled && slot == _hoveredSlot && slot != _dragSourceSlot)
             {
                 // Drag destination highlight — green tint
-                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0f, 1f, 0f, 0.2f));
+                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color("7fae9b25"));
             }
 
             // Item icon — dimmed if this is the drag source
@@ -314,7 +315,7 @@ public partial class InventoryPanel : Control
             }
 
             // Slot border
-            DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0.4f, 0.4f, 0.5f, 0.6f), false, 1f);
+            DrawRect(new Rect2(x, y, SlotSize, SlotSize), SacredTheme.Edge, false, 1f);
         }
 
         // VB6: Draw dragged item at cursor position (Draw_GrhInv at MouseXInv, MouseYInv)
@@ -378,7 +379,9 @@ public partial class InventoryPanel : Control
 
                             _selectedSlot = slot;
                             _state.SelectedInvSlot = slot;
-                            _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
+                            // AO20 UserItemClick: gated by UseItemWithDblClick (gIntervals.UseItemClick)
+                            if (_state.MainTimer.Check(TimersIndex.UseItemWithDblClick))
+                                _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
                         }
                         else
                         {
@@ -415,7 +418,8 @@ public partial class InventoryPanel : Control
                     {
                         _selectedSlot = slot;
                         _state.SelectedInvSlot = slot;
-                        _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
+                        if (_state.MainTimer.Check(TimersIndex.UseItemWithDblClick))
+                            _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
                     }
                     else
                     {
@@ -434,7 +438,9 @@ public partial class InventoryPanel : Control
         {
             if (key.Keycode == Key.E && _selectedSlot >= 0)
             {
-                _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(_selectedSlot + 1)));
+                // AO20 frmMain.frm:3221: equip shares the UseItemWithU timer
+                if (_state.MainTimer.Check(TimersIndex.UseItemWithU))
+                    _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(_selectedSlot + 1)));
                 AcceptEvent();
             }
         }

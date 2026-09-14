@@ -20,7 +20,7 @@ public partial class AuraCollectionSmoke : Node2D
             var resources = ResourceProviderFactory.Create(ProjectSettings.GlobalizePath("res://Data"));
             _data.LoadAll(resources);
             _particles.LoadDefinitions(resources, "INIT/Particles.ini", _state);
-            if (_data.Auras.Length < 103 || _state.ParticleDefs.Length < 114) throw new Exception("Catalog incomplete");
+            if (_data.Auras.Length < 104 || _state.ParticleDefs.Length < 114) throw new Exception("Catalog incomplete");
             var previewCharacter = new Character { AuraIndexW = 12 };
             _state.Characters[_state.UserCharIndex] = previewCharacter;
             int sentPackets = 0;
@@ -38,6 +38,7 @@ public partial class AuraCollectionSmoke : Node2D
             if (previewCharacter.PreviewAuraIndex != 97) throw new Exception("Invalid preview changed selection");
             chat.OnChatSubmitted("/aura 102");
             if (previewCharacter.PreviewAuraIndex != 102) throw new Exception("Preview explicit ID mismatch");
+            if (_data.Auras[103].ProceduralStyle != 5) throw new Exception("GM teleport aura style mismatch");
             chat.OnChatSubmitted("/aura off");
             if (previewCharacter.PreviewAuraIndex != 0 || previewCharacter.AuraIndexW != 12 || sentPackets != 0)
                 throw new Exception("Preview altered equipment or sent packets");

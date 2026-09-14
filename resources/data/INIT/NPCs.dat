@@ -72,7 +72,7 @@ Inv mujer
 
 
 [INIT]
-NumNPCs=206
+NumNPCs=973
 
 [NPC1] 'NPC Aldeano
 Name=Aldeano
@@ -4007,3 +4007,61 @@ Comercia=0
 EscudoAnim=39
 CascoAnim=73
 ArmaAnim=72
+
+[NPC972]
+Name=Troll Coloso de la Cienaga
+Desc=Una bestia de piedra y musgo que aplasta a los intrusos con su garrote.
+Body=521
+Head=0
+Heading=3
+NpcType=0
+Movement=3
+Hostile=1
+Attackable=1
+ReSpawn=1
+Domable=0
+Alineacion=2
+MinHP=8500
+MaxHP=8500
+MinHIT=90
+MaxHIT=135
+DEF=35
+DEFm=15
+PoderAtaque=220
+PoderEvasion=65
+GiveEXP=14000
+GiveGLDMin=650
+GiveGLDMax=1100
+LanzaSpells=0
+NROITEMS=0
+AguaValida=0
+TierraInvalida=0
+
+[NPC973]
+Name=Gorath, Rey de la Cienaga
+Desc=Una bestia de piedra y musgo que aplasta a los intrusos con su garrote.
+Body=522
+Head=0
+Heading=3
+NpcType=0
+Movement=3
+Hostile=1
+Attackable=1
+ReSpawn=1
+Domable=0
+Alineacion=2
+MinHP=95000
+MaxHP=95000
+MinHIT=150
+MaxHIT=220
+DEF=55
+DEFm=30
+PoderAtaque=320
+PoderEvasion=65
+GiveEXP=120000
+GiveGLDMin=6000
+GiveGLDMax=10000
+LanzaSpells=0
+NROITEMS=0
+AguaValida=0
+TierraInvalida=0

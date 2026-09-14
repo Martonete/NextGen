@@ -49,7 +49,7 @@
 '7 Sta ;)
 
 [INIT]
-NumOBJs=1675
+NumOBJs=1682
 
 [OBJ1]
 Name=Manzana Roja
@@ -22852,3 +22852,74 @@ MinHIT=5
 MaxHIT=9
 StaffPower=1
 StaffDamageBonus=10
+
+[OBJ1676]
+Name=Tunica Guarnieri
+GrhIndex=33571
+ObjType=3
+NumRopaje=518
+CreaAura=104
+Agarrable=0
+MINDEF=16
+MAXDEF=22
+Valor=180000
+
+[OBJ1677]
+Name=Armadura del Juramento Volcanico
+GrhIndex=33608
+ObjType=3
+Agarrable=0
+NumRopaje=519
+MINDEF=28
+MAXDEF=35
+Valor=180000
+
+[OBJ1678]
+Name=Armadura del Centinela Glacial
+GrhIndex=33648
+ObjType=3
+Agarrable=0
+NumRopaje=520
+MINDEF=28
+MAXDEF=35
+Valor=180000
+
+[OBJ1679]
+Name=Escudo de la Caldera
+GrhIndex=33672
+ObjType=16
+Agarrable=0
+Anim=47
+MINDEF=5
+MAXDEF=8
+Valor=50000
+
+[OBJ1680]
+Name=Escudo de la Estrella Boreal
+GrhIndex=33712
+ObjType=16
+Agarrable=0
+Anim=48
+MINDEF=5
+MAXDEF=8
+Valor=50000
+
+[OBJ1681]
+Name=Yelmo de la Forja Negra
+GrhIndex=33736
+ObjType=17
+Agarrable=0
+Anim=113
+MINDEF=10
+MAXDEF=20
+Valor=50000
+
+[OBJ1682]
+Name=Yelmo de la Corona Invernal
+GrhIndex=33776
+ObjType=17
+Agarrable=0
+Anim=114
+MINDEF=10
+MAXDEF=20
+Valor=50000

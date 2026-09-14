@@ -1,9 +1,26 @@
 //! GM teleport commands: /TELEP, /GO, /IRA, /SUM, /IRCERCA, /HOME.
 
-use super::{send_warp_fx, warp_user, warp_user_exact};
+use super::{send_gm_warp_aura, send_warp_fx, send_warp_sound, warp_user, warp_user_exact};
 use crate::game::types::{GameState, privilege_level};
 use crate::net::ConnectionId;
 use crate::protocol::font_index;
+
+/// Arrival effects for every GM teleport command. Staff land with the halo
+/// alone — the classic warp sprite would sit on top of it — while a regular
+/// player moved by a GM still gets the VB6 effect.
+async fn send_teleport_fx(state: &mut GameState, conn_id: ConnectionId) {
+    let staff = state
+        .users
+        .get(&conn_id)
+        .is_some_and(|u| u.logged && u.privileges >= privilege_level::CONSEJERO);
+
+    if staff {
+        send_warp_sound(state, conn_id).await;
+        send_gm_warp_aura(state, conn_id).await;
+    } else {
+        send_warp_fx(state, conn_id).await;
+    }
+}
 
 /// After a GM warp, check if the destination tile has an exit and follow it.
 async fn follow_tile_exit_after_warp(state: &mut GameState, conn_id: ConnectionId) {
@@ -18,7 +35,7 @@ async fn follow_tile_exit_after_warp(state: &mut GameState, conn_id: ConnectionI
                 exit_y as i32,
             )
             .await;
-            send_warp_fx(state, conn_id).await;
+            send_teleport_fx(state, conn_id).await;
         }
     }
 }
@@ -98,7 +115,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
     };
 
     warp_user_exact(state, target_id, map, x, y).await;
-    send_warp_fx(state, target_id).await;
+    send_teleport_fx(state, target_id).await;
     follow_tile_exit_after_warp(state, target_id).await;
 
     // Notify
@@ -170,7 +187,7 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
     }
 
     warp_user_exact(state, conn_id, map, tx, ty).await;
-    send_warp_fx(state, conn_id).await;
+    send_teleport_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
 }
@@ -238,7 +255,7 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     }
 
     warp_user_exact(state, conn_id, map, x, y).await;
-    send_warp_fx(state, conn_id).await;
+    send_teleport_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_console(
         conn_id,
@@ -287,7 +304,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     };
 
     warp_user_exact(state, conn_id, map, x, y).await;
-    send_warp_fx(state, conn_id).await;
+    send_teleport_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
 }
@@ -321,7 +338,7 @@ pub(super) async fn handle_slash_sum(state: &mut GameState, conn_id: ConnectionI
     };
 
     warp_user(state, target_id, my_map, my_x, my_y).await;
-    send_warp_fx(state, target_id).await;
+    send_teleport_fx(state, target_id).await;
     state.send_console(
         conn_id,
         &format!("Invocaste a '{}'.", target),
@@ -410,7 +427,7 @@ pub(super) async fn handle_slash_ircerca(
                 let blocked = state.is_tile_blocked(tmap, ix, iy);
                 if !blocked && state.world.is_legal_pos(tmap, ix, iy, false) {
                     warp_user(state, conn_id, tmap, ix, iy).await;
-                    send_warp_fx(state, conn_id).await;
+                    send_teleport_fx(state, conn_id).await;
                     return;
                 }
             }

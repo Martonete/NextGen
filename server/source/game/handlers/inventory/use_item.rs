@@ -83,14 +83,7 @@ pub(crate) async fn handle_use_item_click(
         return;
     }
 
-    // Anti-cheat: PuedoClickear — checks interval_click AND sets both
-    // interval_click=6 and interval_poteo=8 (cross-locking, matches VB6)
-    if !puede_clickear(state, conn_id) {
-        return;
-    }
-
-    // Delegate to inner use-item with from_click=true so it skips
-    // puede_potear() (already set by puede_clickear above)
+    // Gates live in handle_use_item_inner (AO20 HandleUseItem, ByClick=1).
     handle_use_item_inner(state, conn_id, slot, true).await;
 }
 
@@ -147,6 +140,23 @@ pub(crate) async fn handle_use_item_inner(
         None => return,
     };
 
+    // AO20 HandleUseItem (InvUsuario.bas:1702-1716): non-projectile weapons are gated
+    // the other way round than everything else — copied verbatim.
+    let gate_ok = if obj_data.obj_type == ObjType::Weapon && !obj_data.proyectil {
+        if from_click {
+            intervalo_permite_usar(state, conn_id, true)
+        } else {
+            intervalo_permite_usar_click(state, conn_id, true)
+        }
+    } else if from_click {
+        intervalo_permite_usar_click(state, conn_id, true)
+    } else {
+        intervalo_permite_usar(state, conn_id, true)
+    };
+    if !gate_ok {
+        return;
+    }
+
     if is_dead
         && obj_data.obj_type != ObjType::ResurrectPotion
         && obj_data.obj_type != ObjType::Boat
@@ -157,9 +167,9 @@ pub(crate) async fn handle_use_item_inner(
 
     match obj_data.obj_type {
         ObjType::UseOnce | ObjType::Potion => {
-            // Anti-cheat: check potion cooldown
-            // When from_click=true, puede_clickear() already set both cooldowns
-            if !from_click && !puede_potear(state, conn_id) {
+            // AO20 InvUsuario.bas:1880 — no potion right after a melee hit.
+            if !intervalo_permite_golpe_usar(state, conn_id, false) {
+                state.send_console(conn_id, "¡¡Debes esperar unos momentos para tomar otra poción!!", font_index::INFO);
                 return;
             }
 
@@ -597,6 +607,8 @@ pub(crate) async fn handle_use_item_inner(
             // NVG broadcast to all players
             let pkt_nvg = binary_packets::write_navigate_broadcast(nav_ci as i16, nav_flag);
             state.send_data_bytes(SendTarget::ToAll, &pkt_nvg);
+            // AO20 DoNavega → ActualizarVelocidadDeUsuario (ship Velocidad on/off).
+            crate::game::handlers::actualizar_velocidad_de_usuario(state, conn_id);
         }
         ObjType::Instrument => {
             // VB6: Play music instrument — broadcast TW<Snd1> to area
@@ -991,6 +1003,11 @@ pub(crate) async fn handle_use_item_inner(
                 .unwrap_or(false);
             let pkt_usm = binary_packets::write_user_mount(char_index.0 as i16, mounted_now);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_usm);
+            // AO20 DoMontar → ActualizarVelocidadDeUsuario (saddle Velocidad on/off).
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                u.montado_obj = if mounted_now { obj_index } else { 0 };
+            }
+            crate::game::handlers::actualizar_velocidad_de_usuario(state, conn_id);
 
             // Send flying state (MVOL) if flying mount
             if is_flying {

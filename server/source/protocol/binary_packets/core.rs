@@ -92,6 +92,7 @@ pub fn write_character_create(
     name: &str,
     nick_color: u8,
     privileges: u8,
+    speeding: f32,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CharacterCreate.to_byte());
@@ -109,6 +110,9 @@ pub fn write_character_create(
     pkt.write_ascii_string(name);
     pkt.write_byte(nick_color);
     pkt.write_byte(privileges);
+    // AO20 CharacterCreate carries the char's Speeding (Real32) so a newly seen char
+    // walks at its own pace from the first step.
+    pkt.write_single(speeding);
     pkt.into_bytes()
 }
 
@@ -483,4 +487,50 @@ pub fn write_zone_change_wilderness(map_name: &str, is_safe: bool, music: i16) -
     write_zone_change(
         map_name, 0, is_safe, music, false, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     )
+}
+
+/// ID 235: Intervals — AO20 `HandleIntervals`: 16 Int32 in this exact order:
+/// Hit, Bow, Magic, ExtractWork, BuildWork, Walk, DropItem, UseItemKey, UseItemClick,
+/// HitMagic, MagicHit, HitUseItem, Hide, Talk, LeftClick, Meditate. All milliseconds.
+pub fn write_intervals(iv: &crate::game::types::IntervalSettings) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::Intervals.to_byte());
+    for v in [
+        iv.user_puede_atacar,
+        iv.flechas,
+        iv.lanza_hechizo,
+        iv.trabajar_extraer,
+        iv.trabajar_construir,
+        iv.caminar,
+        iv.tirar,
+        iv.usar_u,
+        iv.usar_click,
+        iv.golpe_magia,
+        iv.magia_golpe,
+        iv.golpe_usar,
+        iv.ocultarse,
+        iv.hablar,
+        iv.click_izquierdo,
+        iv.meditar,
+    ] {
+        pkt.write_long(v as i32);
+    }
+    pkt.into_bytes()
+}
+
+/// ID 236: VelocidadToggle — the receiver's own speed multiplier (AO20 `Speeding`, Real32).
+pub fn write_velocidad_toggle(speeding: f32) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::VelocidadToggle.to_byte());
+    pkt.write_single(speeding);
+    pkt.into_bytes()
+}
+
+/// ID 253: SpeedingACT — speed multiplier of any char in the area (charindex + Real32).
+pub fn write_speeding_act(char_index: i16, speeding: f32) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::SpeedingAct.to_byte());
+    pkt.write_integer(char_index);
+    pkt.write_single(speeding);
+    pkt.into_bytes()
 }

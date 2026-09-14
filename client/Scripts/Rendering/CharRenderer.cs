@@ -32,6 +32,8 @@ internal static class ByteToFloat
 public static partial class CharRenderer
 {
 	private const int TileSize = 32;
+	private const int GmTeleportAuraIndex = 103;
+	private const float GmTeleportAuraDuration = 0.9f;
 	// Helmets use the same head anchor as Cabezas.ind. Older code subtracted 34px here,
 	// which made TS AO helmets float above the character.
 	private const int HELMET_Y_OFFSET = 1;
@@ -564,9 +566,12 @@ public static partial class CharRenderer
 	}
 
 	/// <summary>
-	/// Collect aura draw data for a character and queue to WorldRenderer's aura layer.
-	/// The aura layer (z=1) draws ABOVE the content layer (z=0), so auras appear
-	/// on top of layer 3 tiles and characters, with additive blend.
+	/// Collect legacy GRH-sprite aura draws for a character and queue them to the
+	/// additive aura layer, which is added before ContentLayer — so they render after
+	/// L2 but behind characters AND behind trees, which is the look these have always had.
+	/// Their source art is a black-backed sprite that only keys out under additive blend,
+	/// so they must stay on that layer. Procedural auras take a different path:
+	/// DrawProceduralAurasInline, drawn with the character so trees occlude them too.
 	/// Position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - offset
 	/// Rotation: angle += 0.004 per frame if Giratoria, wraps at 180
 	/// </summary>
@@ -624,12 +629,86 @@ public static partial class CharRenderer
 		worldRenderer.QueueAuraDraw(aura.GrhIndex, frame, position, color, drawAngle);
 	}
 
+	/// <summary>
+	/// Procedural auras (ProceduralStyle > 0), drawn inline in the per-tile character pass
+	/// — the same spot DrawBindingEffect uses — instead of being queued onto the additive
+	/// aura layers. The front half used to live on AuraFrontLayer, which is added AFTER
+	/// ContentLayer and therefore painted straight over trees. Drawing here means a tree
+	/// emitted later in the tile loop covers the aura exactly like it covers the character.
+	///
+	/// Safe to leave the additive layer because these are vector strokes with real alpha,
+	/// unlike the legacy GRH sprite auras (black-backed art that needs additive to key out;
+	/// those stay on AuraAdditiveLayer, which already draws behind trees anyway).
+	/// </summary>
+	public static void DrawProceduralAurasInline(
+		CanvasItem canvas, Character ch, Vector2 pos,
+		GameData data, double globalTimeMs, float alphaOverride, bool front)
+	{
+		if (data.Auras == null || data.Auras.Length <= 1) return;
+		if (ch.Navigating) return; // No auras while on a boat
+
+		DrawGmTeleportAura(canvas, ch, pos, data, alphaOverride, globalTimeMs, front);
+
+		if (ch.PreviewAuraIndex > 0)
+		{
+			DrawProceduralAura(canvas, pos, data, ch.PreviewAuraIndex, globalTimeMs, alphaOverride, front);
+			return;
+		}
+
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexA, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexW, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexE, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexR, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.AuraIndexC, globalTimeMs, alphaOverride, front);
+		DrawProceduralAura(canvas, pos, data, ch.NpcAura, globalTimeMs, alphaOverride, front);
+	}
+
+	private static void DrawProceduralAura(
+		CanvasItem canvas, Vector2 pos, GameData data, int auraIndex,
+		double globalTimeMs, float alphaOverride, bool front)
+	{
+		if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
+		var aura = data.Auras[auraIndex];
+		if (aura.ProceduralStyle <= 0) return; // legacy GRH sprite — additive layer handles it
+		RunicAuraRenderer.Draw(canvas, aura, pos + new Vector2(16, 27 - aura.Offset),
+			globalTimeMs, alphaOverride, front);
+	}
+
+	/// <summary>
+	/// One-shot halo the server asks for with CreateFX 207 after a GM warp.
+	/// It is not one of the equipped aura slots: it runs on its own timer, so the
+	/// alpha is computed here (fade in, hold, fade out) instead of coming from
+	/// TryBuildAuraDraw. Procedural only, so it draws inline like the rest of them.
+	/// </summary>
+	private static void DrawGmTeleportAura(
+		CanvasItem canvas, Character ch, Vector2 pos, GameData data, float alphaOverride,
+		double globalTimeMs, bool front)
+	{
+		if (ch.GmTeleportAuraTime < 0f || GmTeleportAuraIndex >= data.Auras.Length) return;
+
+		var aura = data.Auras[GmTeleportAuraIndex];
+		if (aura.ProceduralStyle <= 0) return;
+
+		float age = ch.GmTeleportAuraTime;
+		float alpha = alphaOverride
+			* Math.Min(1f, age / 0.12f)
+			* Math.Min(1f, (GmTeleportAuraDuration - age) / 0.35f);
+		if (alpha <= 0.01f) return;
+
+		RunicAuraRenderer.Draw(canvas, aura, pos + new Vector2(16, 27 - aura.Offset),
+			globalTimeMs, alpha, front);
+	}
+
 	private static void CollectSingleAura(
 		WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
 		GameData data, int auraIndex, ref float angle, double globalTimeMs, float alphaOverride = 1f)
 	{
 		if (!TryBuildAuraDraw(data, auraIndex, pos, headOffset, globalTimeMs, alphaOverride, out var draw))
 			return;
+
+		// Procedural auras (negative index) draw inline with the character instead —
+		// see DrawProceduralAurasInline. Only GRH sprite auras belong on the additive layer.
+		if (draw.GrhIndex < 0) return;
 
 		if (draw.Rotating)
 			angle = draw.Angle;
@@ -774,6 +853,10 @@ public static partial class CharRenderer
 	/// </summary>
 	public static void UpdateCharacterFovOnly(Character ch, float deltaMs, GameState state)
 	{
+		// A one-shot warp halo far off-screen would otherwise sit frozen at age 0
+		// and replay the moment the character walks back into the viewport.
+		ch.GmTeleportAuraTime = -1f;
+
 		bool insideCore = IsInsideCoreViewport(ch.PosX, ch.PosY, state.UserPosX, state.UserPosY);
 		float fovTarget = insideCore ? 1f : 0f;
 		if (Math.Abs(ch.FovAlpha - fovTarget) > 0.001f)
@@ -790,6 +873,14 @@ public static partial class CharRenderer
 		// ── Combat hit flash decay ──
 		if (ch.HitFlashTimer > 0f)
 			ch.HitFlashTimer = Math.Max(0f, ch.HitFlashTimer - deltaMs / 1000f);
+
+		// ── GM teleport aura (FX 207): plays once and switches itself off ──
+		if (ch.GmTeleportAuraTime >= 0f)
+		{
+			ch.GmTeleportAuraTime += Math.Max(0f, deltaMs) / 1000f;
+			if (ch.GmTeleportAuraTime >= GmTeleportAuraDuration)
+				ch.GmTeleportAuraTime = -1f;
+		}
 
 		// ── FOV fade ──
 		int userX = state.UserPosX;

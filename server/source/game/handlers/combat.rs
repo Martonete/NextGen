@@ -3,17 +3,16 @@
 //! VB6 13.3 parity: UsuarioImpacto, UsuarioAtacaUsuario, UserDañoUser, CalcularDaño,
 //! PoderAtaqueArma, PoderEvasion, PoderEvasionEscudo, DoApuñalar, DoGolpeCritico.
 
-#[path = "combat_npc.rs"]
-mod combat_npc;
 #[path = "combat_pvp.rs"]
 mod combat_pvp;
 
-pub(crate) use combat_npc::*;
 use combat_pvp::*;
+pub(crate) use combat_pvp::{equipped_obj, obj_by_index, remove_user_invisibility};
+use super::combat_ao20 as ao20;
 
 use super::common::*;
 use super::npcs::fire_elemental_react;
-use super::skills::{skill_id, try_desarmar, try_level_skill, try_level_skill_with_hit};
+use super::skills::{skill_id, try_level_skill};
 use super::{check_user_level, send_full_inventory, user_attack_npc, warp_user};
 use crate::game::class_race::PlayerClass;
 use crate::game::constants::*;
@@ -28,261 +27,6 @@ use tracing::info;
 // =====================================================================
 
 // Combat constants imported from crate::game::constants
-
-// =====================================================================
-// VB6 Attack Power formulas (exact replicas)
-// =====================================================================
-
-/// VB6: PoderAtaqueArma — melee weapon attack power.
-/// `skill` = UserSkills(eSkill.Armas), `agility` = UserAtributos(Agilidad),
-/// `level` = ELV, `class_mod` = ModClase(clase).AtaqueArmas
-pub(super) fn poder_ataque_arma(skill: i32, agility: i32, level: i32, class_mod: f32) -> i64 {
-    // VB6: PoderAtaqueArma — use f64 arithmetic to match VB6 Single multiplication precision.
-    let temp = if skill < 31 {
-        (skill as f64 * class_mod as f64) as i64
-    } else if skill < 61 {
-        ((skill + agility) as f64 * class_mod as f64) as i64
-    } else if skill < 91 {
-        ((skill + 2 * agility) as f64 * class_mod as f64) as i64
-    } else {
-        ((skill + 3 * agility) as f64 * class_mod as f64) as i64
-    };
-    temp + (2.5 * (level - 12).max(0) as f64) as i64
-}
-
-/// VB6: PoderAtaqueProyectil — ranged weapon attack power.
-/// Same formula as PoderAtaqueArma but uses Proyectiles skill and ModClase.AtaqueProyectiles.
-pub(super) fn poder_ataque_proyectil(skill: i32, agility: i32, level: i32, class_mod: f32) -> i64 {
-    // Identical structure to PoderAtaqueArma
-    poder_ataque_arma(skill, agility, level, class_mod)
-}
-
-/// VB6: PoderAtaqueWrestling — unarmed attack power.
-/// Same formula but uses Wrestling skill and ModClase.AtaqueWrestling.
-pub(super) fn poder_ataque_wrestling(skill: i32, agility: i32, level: i32, class_mod: f32) -> i64 {
-    poder_ataque_arma(skill, agility, level, class_mod)
-}
-
-/// VB6: PoderEvasion — evasion power.
-/// Formula: (Tacticas + (Tacticas\33) * Agility) * ModClase.Evasion + 2.5 * max(0, Level-12)
-/// Note: VB6 uses integer division (backslash operator) for Tacticas\33.
-pub(super) fn poder_evasion(tacticas: i32, agility: i32, level: i32, class_mod: f32) -> i64 {
-    let temp = (tacticas as f64 + ((tacticas / 33) as f64 * agility as f64)) * class_mod as f64;
-    temp as i64 + (2.5 * (level - 12).max(0) as f64) as i64
-}
-
-/// VB6: PoderEvasionEscudo — shield evasion bonus.
-/// Formula: (SkillDefensa * ModClase.Escudo) / 2
-pub(super) fn poder_evasion_escudo(skill_defensa: i32, class_mod_escudo: f32) -> i64 {
-    ((skill_defensa as f64 * class_mod_escudo as f64) / 2.0) as i64
-}
-
-// =====================================================================
-// VB6 CalcularDaño (exact replica)
-// =====================================================================
-
-/// VB6: CalcularDaño — damage calculation for user attacks.
-/// Returns damage based on weapon type (melee/ranged/wrestling).
-///
-/// For weapons: `(3 * WeaponDmg + (WeaponMaxHIT/5 * max(0, STR-15)) + UserHIT) * ModClase`
-/// For wrestling (no weapon): base 4-9 damage, uses ModClase.DañoWrestling
-///
-/// Parameters:
-/// - `weapon_obj_index`: equipped weapon object index (0 = unarmed)
-/// - `weapon_is_proyectil`: whether equipped weapon is ranged
-/// - `weapon_min_hit`, `weapon_max_hit`: weapon's MinHIT/MaxHIT from ObjData
-/// - `ammo_min_hit`, `ammo_max_hit`: munition's MinHIT/MaxHIT (if weapon uses ammo)
-/// - `has_ammo`: whether weapon uses munition and munition is equipped
-/// - `user_min_hit`, `user_max_hit`: user's MinHIT/MaxHIT (Stats.MinHIT/MaxHIT)
-/// - `strength`: user's Fuerza attribute
-/// - `class_mod`: appropriate ModClase damage modifier for the weapon type
-pub(super) fn calcular_dano(
-    weapon_obj_index: i32,
-    weapon_is_proyectil: bool,
-    weapon_min_hit: i32,
-    weapon_max_hit: i32,
-    has_ammo: bool,
-    ammo_min_hit: i32,
-    ammo_max_hit: i32,
-    user_min_hit: i32,
-    user_max_hit: i32,
-    strength: i32,
-    class_mod: f64,
-    _ring_obj_index: i32,
-    _ring_is_guante: bool,
-    _ring_min_hit: i32,
-    _ring_max_hit: i32,
-) -> i64 {
-    let (dano_arma, dano_max_arma);
-
-    if weapon_obj_index > 0 {
-        // Has weapon equipped
-        let mut dmg = rand_range(weapon_min_hit.max(1), weapon_max_hit.max(1)) as i64;
-        let max_dmg = weapon_max_hit as i64;
-
-        if weapon_is_proyectil && has_ammo {
-            dmg += rand_range(ammo_min_hit.max(0), ammo_max_hit.max(0)) as i64;
-            // VB6: does NOT add ammo max to DañoMaxArma (commented out in VB6 source)
-        }
-
-        dano_arma = dmg;
-        dano_max_arma = max_dmg;
-    } else {
-        // Wrestling (unarmed) — base damage 4-9
-        // VB6: Plus de guantes (en slot de anillo)
-        let mut min_dmg = 4i64;
-        let mut max_dmg = 9i64;
-
-        if _ring_is_guante {
-            min_dmg += _ring_min_hit as i64;
-            max_dmg += _ring_max_hit as i64;
-        }
-
-        dano_arma = rand_range(min_dmg as i32, max_dmg as i32) as i64;
-        dano_max_arma = max_dmg;
-    }
-
-    let dano_usuario = rand_range(user_min_hit.max(0), user_max_hit.max(1)) as i64;
-
-    // VB6: (3 * DañoArma + (DañoMaxArma/5 * max(0, Fuerza-15)) + DañoUsuario) * ModifClase
-    let raw = 3 * dano_arma + (dano_max_arma / 5 * (strength - 15).max(0) as i64) + dano_usuario;
-    (raw as f64 * class_mod) as i64
-}
-
-// =====================================================================
-// VB6 DoApuñalar (exact polynomial formula)
-// =====================================================================
-
-/// VB6: DoApuñalar — backstab attack.
-/// Returns additional damage dealt and whether it succeeded.
-/// Uses polynomial luck formula per class, then applies damage multiplier.
-pub(super) fn do_apunalar(
-    skill: i32,
-    class: PlayerClass,
-    base_damage: i64,
-    is_npc_target: bool,
-) -> Option<i64> {
-    let s = skill as f64;
-
-    // VB6 polynomial luck formula per class
-    let suerte = match class {
-        PlayerClass::Asesino => ((0.00003 * s - 0.002) * s + 0.098) * s + 4.25,
-        PlayerClass::Clerigo | PlayerClass::Paladin | PlayerClass::Pirata => {
-            ((0.000003 * s + 0.0006) * s + 0.0107) * s + 4.93
-        }
-        PlayerClass::Bardo => ((0.000002 * s + 0.0002) * s + 0.032) * s + 4.81,
-        _ => 0.0361 * s + 4.39,
-    };
-
-    let suerte = suerte as i32;
-
-    if rand_range(0, 100) < suerte {
-        let dmg = if is_npc_target {
-            base_damage * 2
-        } else {
-            if class == PlayerClass::Asesino {
-                (base_damage as f64 * 1.4).round() as i64
-            } else {
-                (base_damage as f64 * 1.5).round() as i64
-            }
-        };
-        Some(dmg)
-    } else {
-        None
-    }
-}
-
-/// VB6: PuedeApuñalar — check if user can backstab.
-/// Requirements: weapon.Apuñala == 1 AND (skill >= MIN_APUÑALAR OR class == Asesino).
-pub(super) fn puede_apunalar(
-    class: PlayerClass,
-    weapon_apunala: bool,
-    skill_apunalar: i32,
-) -> bool {
-    weapon_apunala && (skill_apunalar > 0 || class == PlayerClass::Asesino)
-}
-
-// =====================================================================
-// VB6 DoGolpeCritico (Bandido + Espada Vikinga only)
-// =====================================================================
-
-/// VB6: DoGolpeCritico — critical hit, ONLY for Bandido class with Espada Vikinga.
-/// Returns additional damage dealt if critical succeeds.
-pub(super) fn do_golpe_critico(
-    class: PlayerClass,
-    weapon_obj_index: i32,
-    wrestling_skill: i32,
-    base_damage: i64,
-) -> Option<i64> {
-    // VB6: Only Bandido with Espada Vikinga can do critical hits
-    if class != PlayerClass::Bandido {
-        return None;
-    }
-    if weapon_obj_index != ESPADA_VIKINGA {
-        return None;
-    }
-
-    let s = wrestling_skill as f64;
-    let suerte = (((0.00000003 * s + 0.000006) * s + 0.000107) * s + 0.0893) * 100.0;
-    let suerte = suerte as i32;
-
-    if rand_range(1, 100) <= suerte {
-        let dmg = (base_damage as f64 * 0.75) as i64;
-        Some(dmg)
-    } else {
-        None
-    }
-}
-
-// =====================================================================
-// VB6 DoDesequipar — unequip victim's item (shield → weapon → helmet)
-// =====================================================================
-
-/// VB6: DoDesequipar — try to unequip victim's shield, weapon, or helmet.
-/// Uses 3 sequential rolls: first shield, if miss try weapon, if miss try helmet.
-/// VB6 formula: prob = wrestling * 0.2 + level * 0.66
-/// Returns true if something was unequipped.
-async fn do_desequipar(state: &mut GameState, victim_id: ConnectionId, prob: i32) -> bool {
-    if let Some(victim) = state.users.get_mut(&victim_id) {
-        // Roll 1: Try shield
-        if victim.equip.shield > 0 && rand_range(1, 100) <= prob {
-            victim.equip.shield = 0;
-            return true;
-        }
-        // Roll 2: Try weapon
-        if victim.equip.weapon > 0 && rand_range(1, 100) <= prob {
-            victim.equip.weapon = 0;
-            return true;
-        }
-        // Roll 3: Try helmet
-        if victim.equip.helmet > 0 && rand_range(1, 100) <= prob {
-            victim.equip.helmet = 0;
-            return true;
-        }
-    }
-    false
-}
-
-// =====================================================================
-// VB6 DoAcuchillar (Pirate throat cut — Trabajo.bas:1991)
-// =====================================================================
-
-/// VB6: PuedeAcuchillar — checks Pirate class + weapon Acuchilla flag.
-pub(super) fn puede_acuchillar(class: PlayerClass, weapon_acuchilla: bool) -> bool {
-    class == PlayerClass::Pirata && weapon_acuchilla
-}
-
-/// VB6: DoAcuchillar — Pirate throat cut attack.
-/// 20% chance, deals 20% of base damage as additional damage.
-/// Works on both user and NPC targets.
-pub(super) fn do_acuchillar(base_damage: i64) -> Option<i64> {
-    if rand_range(1, 100) <= PROB_ACUCHILLAR {
-        let dmg = (base_damage as f64 * DANO_ACUCHILLAR) as i64;
-        Some(dmg)
-    } else {
-        None
-    }
-}
 
 // =====================================================================
 // Helper: get weapon info from user state
@@ -399,29 +143,6 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
     }
 }
 
-/// Get ring/glove info for wrestling bonus.
-/// VB6: If ring slot has GUANTE_HURTO (873), its MinHIT/MaxHIT add to wrestling damage.
-pub(super) fn get_ring_info(state: &GameState, conn_id: ConnectionId) -> (i32, bool, i32, i32) {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return (0, false, 0, 0),
-    };
-    if user.equip.ring == 0 || user.equip.ring > MAX_INVENTORY_SLOTS {
-        return (0, false, 0, 0);
-    }
-    let obj_idx = user.inventory[user.equip.ring - 1].obj_index;
-    // VB6: GUANTE_HURTO (873) adds min_hit/max_hit to wrestling base damage (4-9)
-    if obj_idx == GUANTE_HURTO {
-        let (g_min, g_max) = state
-            .get_object(obj_idx)
-            .map(|o| (o.min_hit, o.max_hit))
-            .unwrap_or((0, 0));
-        (obj_idx, true, g_min, g_max)
-    } else {
-        (obj_idx, false, 0, 0)
-    }
-}
-
 // =====================================================================
 // AT — Melee/ranged attack handler
 // =====================================================================
@@ -458,20 +179,20 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         x,
         y,
         heading,
-        char_index,
+        _char_index,
         dead,
-        safe_on,
+        _safe_on,
         level,
         strength,
         agility,
         min_hit,
         max_hit,
         skill_armas,
-        skill_proyectiles,
+        _skill_proyectiles,
         _skill_tacticas,
         _skill_defensa,
-        skill_wrestling,
-        skill_apunalar,
+        _skill_wrestling,
+        _skill_apunalar,
         attacker_name,
         class,
     ) = user_data;
@@ -490,39 +211,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
-    // VB6 13.3 parity: Attacking reveals hidden (stealth) but NOT invisible (spell).
-    // Spell invisibility runs on its own timer and is NOT broken by combat.
-    let was_hidden = state
-        .users
-        .get(&conn_id)
-        .map(|u| u.hidden && !u.admin_invisible)
-        .unwrap_or(false);
-    if was_hidden {
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.hidden = false;
-            user.counter_oculto = 0;
-        }
-        // Send CC+CD only to non-clanmates (they had CharacterRemove).
-        // Clanmates get SetInvisible(false) — avoids animation reset/tosqueo.
-        let ci = char_index.0 as i16;
-        let nover = binary_packets::write_set_invisible(ci, false, 0);
-        if let Some(u) = state.users.get(&conn_id) {
-            let cc = u.build_cc_binary();
-            let cd = build_cd_binary(u);
-            let (px, py) = (u.pos_x, u.pos_y);
-            let area_users = state.get_area_users(map, px, py, conn_id);
-            for other_id in area_users {
-                if same_clan(state, conn_id, other_id) {
-                    state.send_bytes(other_id, &nover);
-                } else {
-                    state.send_bytes(other_id, &cc);
-                    state.send_bytes(other_id, &cd);
-                }
-            }
-        }
-        state.send_bytes(conn_id, &nover);
-        state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
-    }
+    // AO20 UsuarioAtaca does not reveal a hidden attacker by itself: stealth/invisibility
+    // is dropped in UsuarioAtacaUsuario (RemoveUserInvisibility), never when hitting NPCs.
 
     // VB6: If equipped weapon is ranged, block melee attack — "No puedes usar así este arma."
     {
@@ -550,8 +240,14 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         }
     }
 
-    // Anti-cheat: check melee cooldown
-    if !puede_pegar(state, conn_id) {
+    // AO20 UsuarioAtaca: bow interval (peek) → spell→melee interval (peek) → melee interval.
+    if !intervalo_permite_usar_arcos(state, conn_id, false) {
+        return;
+    }
+    if !intervalo_permite_magia_golpe(state, conn_id, false) {
+        return;
+    }
+    if !intervalo_permite_atacar(state, conn_id, true) {
         return;
     }
 
@@ -561,7 +257,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         if min_sta < 10 {
             state.send_console(
                 conn_id,
-                "No tienes suficiente energía para atacar.",
+                "Estás muy cansado.", // AO20 Msg93
                 font_index::INFO,
             );
             return;
@@ -590,685 +286,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &swing_pkt);
 
     if let Some(victim_id) = target_conn {
-        // PvP attack — check guild war bypass before safety toggle
-        let (attacker_guild, attacker_seguro) = state
-            .users
-            .get(&conn_id)
-            .map(|u| (u.guild_index, u.seguro_clan))
-            .unwrap_or((0, false));
-        let victim_guild = state
-            .users
-            .get(&victim_id)
-            .map(|u| u.guild_index)
-            .unwrap_or(0);
-
-        // Guild war bypasses safety toggle
-        let guilds_at_war = attacker_guild > 0
-            && victim_guild > 0
-            && attacker_guild != victim_guild
-            && super::guilds_handler::get_guild_relation(state, attacker_guild, victim_guild)
-                == super::guilds_handler::GUILD_REL_WAR;
-
-        if safe_on && !guilds_at_war {
-            // VB6 13.3 parity: safety toggle only blocks attacking citizens (non-criminals).
-            // Attacking criminals is always allowed.
-            let victim_is_criminal = state
-                .users
-                .get(&victim_id)
-                .map(|u| u.criminal)
-                .unwrap_or(false);
-            if !victim_is_criminal {
-                state.send_msg_id(conn_id, 207, "");
-                return;
-            }
-        }
-
-        // Clan safe check
-        if attacker_guild > 0 && attacker_guild == victim_guild && attacker_seguro {
-            state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO);
-            return;
-        }
-
-        // VB6: Safe zone check — dueling players bypass safe zone restriction
-        let in_duel = state
-            .users
-            .get(&conn_id)
-            .map(|u| u.atacable_por == victim_id)
-            .unwrap_or(false)
-            && state
-                .users
-                .get(&victim_id)
-                .map(|u| u.atacable_por == conn_id)
-                .unwrap_or(false);
-
-        if !in_duel {
-            // Zone-aware safe check (Trigger > Zone > Map hierarchy)
-            if is_safe_at(state, map, x, y) {
-                state.send_msg_id(conn_id, 163, "");
-                return;
-            }
-            let victim_pos = state
-                .users
-                .get(&victim_id)
-                .map(|v| (v.pos_x, v.pos_y))
-                .unwrap_or((0, 0));
-            if is_safe_at(state, map, victim_pos.0, victim_pos.1) {
-                state.send_msg_id(conn_id, 163, "");
-                return;
-            }
-        }
-
-        // VB6 13.3: ZONAPELEA — if BOTH players are in CombatZone, allow PvP without criminal penalty.
-        // If only one is in CombatZone, block PvP entirely.
-        let attacker_in_arena =
-            get_map_tile_trigger(state, map, x, y) == crate::data::maps::Trigger::CombatZone;
-        let victim_arena_pos = state
-            .users
-            .get(&victim_id)
-            .map(|v| (v.pos_map, v.pos_x, v.pos_y))
-            .unwrap_or((0, 0, 0));
-        let victim_in_arena = get_map_tile_trigger(
-            state,
-            victim_arena_pos.0,
-            victim_arena_pos.1,
-            victim_arena_pos.2,
-        ) == crate::data::maps::Trigger::CombatZone;
-
-        if attacker_in_arena != victim_in_arena {
-            // One player is in the arena, the other is not — block combat entirely.
-            state.send_console(
-                conn_id,
-                "Ambos jugadores deben estar en la zona de pelea.",
-                font_index::INFO,
-            );
-            return;
-        }
-        let both_in_arena = attacker_in_arena && victim_in_arena;
-
-        let victim_data = match state.users.get(&victim_id) {
-            Some(v) if v.logged => (
-                v.dead,
-                v.privileges,
-                v.char_name.clone(),
-                v.level,
-                v.attributes[1], // Victim agility
-                v.skills[3],     // SK4 = Tacticas
-                v.skills[4],     // SK5 = Defensa
-                v.max_hp,
-                v.min_hp,
-                v.class.clone(),
-                v.heading,
-                v.char_index,
-                v.meditating,
-            ),
-            _ => return,
-        };
-        let (
-            v_dead,
-            v_privs,
-            victim_name,
-            v_level,
-            v_agility,
-            v_tacticas,
-            v_defensa,
-            _v_max_hp,
-            _v_min_hp,
-            v_class,
-            _v_heading,
-            v_char_index,
-            v_meditating,
-        ) = victim_data;
-
-        if v_dead {
-            state.send_msg_id(conn_id, 154, "");
-            return;
-        }
-        if v_privs > 0 {
-            state.send_msg_id(conn_id, 155, "");
-            return;
-        }
-
-        // Check if victim has shield equipped
-        let v_has_shield = state
-            .users
-            .get(&victim_id)
-            .map(|v| v.equip.shield > 0 && v.equip.shield <= MAX_INVENTORY_SLOTS)
-            .unwrap_or(false);
-
-        // Get weapon info to determine attack type
-        let weapon = get_weapon_info(state, conn_id);
-
-        // VB6: UsuarioImpacto — calculate attack power based on weapon type
-        let (attack_power, attack_skill_idx) = if weapon.obj_index > 0 {
-            if weapon.is_proyectil {
-                let mod_atk = state
-                    .game_data
-                    .balance
-                    .class_mod_ataque_proyectiles_e(class);
-                (
-                    poder_ataque_proyectil(skill_proyectiles, agility, level, mod_atk),
-                    skill_id::PROYECTILES as usize,
-                ) // eSkill.Proyectiles
-            } else {
-                let mod_atk = state.game_data.balance.class_mod_ataque_armas_e(class);
-                (
-                    poder_ataque_arma(skill_armas, agility, level, mod_atk),
-                    skill_id::ARMAS as usize,
-                ) // eSkill.Armas
-            }
-        } else {
-            let mod_atk = state.game_data.balance.class_mod_ataque_wrestling_e(class);
-            (
-                poder_ataque_wrestling(skill_wrestling, agility, level, mod_atk),
-                skill_id::WRESTERLING as usize,
-            ) // eSkill.Wrestling
-        };
-
-        // VB6: PoderEvasion for victim
-        let v_evasion_mod = state.game_data.balance.class_mod_evasion_e(v_class);
-        let mut victim_evasion = poder_evasion(v_tacticas, v_agility, v_level, v_evasion_mod);
-
-        // VB6: Add shield evasion if victim has shield
-        let victim_shield_evasion = if v_has_shield {
-            let shield_mod = state.game_data.balance.class_mod_escudo_e(v_class);
-            poder_evasion_escudo(v_defensa, shield_mod)
-        } else {
-            0
-        };
-        victim_evasion += victim_shield_evasion;
-
-        // VB6 13.3 parity: any PvP targeting cancels victim meditation (before hit/miss)
-        let victim_meditating = state
-            .users
-            .get(&victim_id)
-            .map(|u| u.meditating)
-            .unwrap_or(false);
-        if victim_meditating {
-            if let Some(victim) = state.users.get_mut(&victim_id) {
-                victim.meditating = false;
-            }
-        }
-
-        // VB6: ProbExito = clamp(50 + (PoderAtaque - UserPoderEvasion) * 0.4, 10, 90)
-        let mut prob_exito = (50.0 + (attack_power - victim_evasion) as f64 * 0.4) as i32;
-        prob_exito = prob_exito.clamp(10, 90);
-
-        // VB6: Meditation reduces evasion by 25%
-        if v_meditating {
-            let prob_evadir = ((100 - prob_exito) as f64 * 0.75) as i32;
-            prob_exito = (100 - prob_evadir).min(90);
-        }
-
-        let hit = rand_range(1, 100) <= prob_exito;
-
-        // VB6: Desarmar (Ladrón class — disarm) runs regardless of hit or miss
-        if class == PlayerClass::Ladron {
-            let wresterling_skill = state
-                .users
-                .get(&conn_id)
-                .and_then(|u| u.skills.get(20).copied())
-                .unwrap_or(0);
-            if wresterling_skill > 0 && try_desarmar(wresterling_skill) {
-                if let Some(victim) = state.users.get_mut(&victim_id) {
-                    if victim.equip.weapon > 0 {
-                        victim.equip.weapon = 0;
-                    }
-                }
-                state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT);
-                state.send_console(
-                    conn_id,
-                    &format!("Has desarmado a {}!", victim_name),
-                    font_index::FIGHT,
-                );
-                if let Some(u) = state.users.get_mut(&conn_id) {
-                    try_level_skill(u, 20);
-                }
-            }
-        }
-
-        if !hit {
-            // VB6: Shield block check — separate from evasion
-            if v_has_shield {
-                let suma_skills = (v_defensa + v_tacticas).max(1);
-                let prob_rechazo = ((100 * v_defensa / suma_skills) as i32).clamp(10, 90);
-                let rechazo = rand_range(1, 100) <= prob_rechazo;
-
-                if rechazo {
-                    // Shield block — VB6: SND_ESCUDO + messages
-                    let (vx, vy) = state
-                        .users
-                        .get(&victim_id)
-                        .map(|v| (v.pos_x, v.pos_y))
-                        .unwrap_or((0, 0));
-                    let snd = binary_packets::write_play_wave(37, vx as i16, vy as i16); // SND_ESCUDO
-                    state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &snd);
-
-                    let pkt_atk = binary_packets::write_multi_msg_simple(
-                        crate::protocol::packets::MultiMessageID::BlockedWithShieldOther,
-                    );
-                    state.send_bytes(conn_id, &pkt_atk);
-                    let pkt_vic = binary_packets::write_multi_msg_simple(
-                        crate::protocol::packets::MultiMessageID::BlockedWithShieldUser,
-                    );
-                    state.send_bytes(victim_id, &pkt_vic);
-
-                    // VB6: SubirSkill Defensa on block success
-                    if let Some(victim) = state.users.get_mut(&victim_id) {
-                        try_level_skill_with_hit(victim, 4, true); // Defensa skill
-                    }
-                } else {
-                    // Failed block — still skill gain (failure)
-                    if let Some(victim) = state.users.get_mut(&victim_id) {
-                        try_level_skill_with_hit(victim, 4, false);
-                    }
-                }
-            }
-
-            // Miss
-            let snd = binary_packets::write_play_wave(2, x as i16, y as i16);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
-            let pkt = binary_packets::write_multi_user_attacked_swing(char_index.0 as i16);
-            state.send_bytes(victim_id, &pkt);
-            let pkt = binary_packets::write_multi_msg_simple(
-                crate::protocol::packets::MultiMessageID::UserSwing,
-            );
-            state.send_bytes(conn_id, &pkt);
-            state.send_chat_over_head_to(
-                SendTarget::ToArea { map, x, y },
-                "\u{00A1}Fallo!",
-                v_char_index.0 as i16,
-                255,
-            );
-
-            // VB6: SubirSkill (attacker skill on miss)
-            if let Some(u) = state.users.get_mut(&conn_id) {
-                try_level_skill_with_hit(u, attack_skill_idx, false);
-            }
-            // VB6: SubirSkill Tacticas (victim gains on dodge)
-            if let Some(victim) = state.users.get_mut(&victim_id) {
-                try_level_skill_with_hit(victim, 3, true); // Tacticas
-            }
-            return;
-        }
-
-        // HIT — VB6: UsuarioAtacaUsuario flow after UsuarioImpacto = True
-
-        // VB6: SND_IMPACTO to area
-        let snd = binary_packets::write_play_wave(10, x as i16, y as i16);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
-
-        // VB6: Blood FX on victim (if not navigating)
-        // (client handles this via MultiMessage)
-
-        // VB6: DoDesequipar — requires Bandido class + pickpocket gloves (ring=873) + unarmed
-        {
-            let (has_gloves, is_unarmed, wrestling_sk, attacker_level, is_bandido) = state
-                .users
-                .get(&conn_id)
-                .map(|u| {
-                    let ring_idx = if u.equip.ring > 0 && u.equip.ring <= MAX_INVENTORY_SLOTS {
-                        u.inventory[u.equip.ring - 1].obj_index
-                    } else {
-                        0
-                    };
-                    (
-                        ring_idx == GUANTE_HURTO,
-                        u.equip.weapon == 0,
-                        u.skills[(skill_id::WRESTERLING - 1) as usize],
-                        u.level,
-                        u.class == PlayerClass::Bandido,
-                    )
-                })
-                .unwrap_or((false, false, 0, 0, false));
-
-            if is_bandido && has_gloves && is_unarmed {
-                // VB6: Probabilidad = Wrestling*0.2 + Level*0.66
-                let prob = (wrestling_sk as f64 * 0.2 + attacker_level as f64 * 0.66) as i32;
-
-                // VB6: 3 sequential rolls (shield, weapon, helmet) inside do_desequipar
-                let unequipped = do_desequipar(state, victim_id, prob).await;
-                if unequipped {
-                    // Send CP to area to update victim appearance
-                    if let Some(v) = state.users.get(&victim_id) {
-                        let cp = binary_packets::write_character_change(
-                            v.char_index.0 as i16,
-                            v.body as i16,
-                            v.head as i16,
-                            v.heading as u8,
-                            v.weapon_anim as i16,
-                            v.shield_anim as i16,
-                            v.casco_anim as i16,
-                            0,
-                            0,
-                        );
-                        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
-                    }
-                    state.send_console(
-                        conn_id,
-                        &format!("Has desarmado a {}!", victim_name),
-                        font_index::FIGHT,
-                    );
-                    state.send_console(victim_id, "Te han quitado un equipo!", font_index::FIGHT);
-                }
-            }
-
-            // VB6: DoHandInmo — Thief only + gloves, paralyze for half duration
-            if has_gloves && class == PlayerClass::Ladron {
-                let v_paralyzed = state
-                    .users
-                    .get(&victim_id)
-                    .map(|u| u.paralyzed)
-                    .unwrap_or(true);
-                if !v_paralyzed {
-                    // VB6: prob = Wrestling / 4
-                    let prob = wrestling_sk / 4;
-                    if rand_range(0, 100) < prob {
-                        let half_para = state.intervals.paralizado / 2;
-                        if let Some(victim) = state.users.get_mut(&victim_id) {
-                            victim.paralyzed = true;
-                            victim.counter_paralisis = half_para;
-                            victim.paralyzed_by = Some(conn_id);
-                        }
-                        let para_secs = (half_para as f32 * 0.04) as i16;
-                        let pkt = binary_packets::write_paralize_ok(para_secs);
-                        state.send_bytes(victim_id, &pkt);
-                        if let Some(u) = state.users.get(&victim_id) {
-                            let pu =
-                                binary_packets::write_pos_update(u.pos_x as i16, u.pos_y as i16);
-                            state.send_bytes(victim_id, &pu);
-                        }
-                        state.send_console(
-                            conn_id,
-                            &format!("Has paralizado a {}!", victim_name),
-                            font_index::FIGHT,
-                        );
-                        state.send_console(victim_id, "Has sido paralizado!", font_index::FIGHT);
-                    }
-                }
-            }
-        }
-
-        // VB6: SubirSkill Tacticas (victim on hit — failure)
-        if let Some(victim) = state.users.get_mut(&victim_id) {
-            try_level_skill_with_hit(victim, 3, false); // Tacticas failed
-        }
-
-        // === VB6: UserDañoUser ===
-
-        // Calculate damage using VB6 CalcularDaño
-        let class_mod_damage = if weapon.obj_index > 0 {
-            if weapon.is_proyectil {
-                state.game_data.balance.class_mod_dano_proyectiles_e(class) as f64
-            } else {
-                state.game_data.balance.class_mod_dano_armas_e(class) as f64
-            }
-        } else {
-            state.game_data.balance.class_mod_dano_wrestling_e(class) as f64
-        };
-
-        let (ring_idx, ring_guante, ring_min, ring_max) = get_ring_info(state, conn_id);
-        let mut damage = calcular_dano(
-            weapon.obj_index,
-            weapon.is_proyectil,
-            weapon.min_hit,
-            weapon.max_hit,
-            weapon.has_ammo,
-            weapon.ammo_min_hit,
-            weapon.ammo_max_hit,
-            min_hit,
-            max_hit,
-            strength,
-            class_mod_damage,
-            ring_idx,
-            ring_guante,
-            ring_min,
-            ring_max,
-        );
-
-        // VB6: EspadaMataDragonesIndex (402) — always deals 1 damage to players
-        if weapon.obj_index == ESPADA_MATA_DRAGONES {
-            damage = 1;
-        } else {
-            // VB6: Weapon Refuerzo (penetration) adds to damage
-            damage += weapon.refuerzo as i64;
-        }
-
-        // VB6: Body part hit (1=head, 2-6=body)
-        let lugar = rand_range(BODY_PART_HEAD, BODY_PART_TORSO);
-
-        // VB6: Armor absorption (skip for Dragon Slayer — always 1)
-        if weapon.obj_index != ESPADA_MATA_DRAGONES {
-            let (head_defense, body_defense) = calc_pvp_armor_absorption(state, victim_id, lugar);
-            damage = damage - head_defense as i64 - body_defense as i64;
-        }
-
-        // VB6: if damage < 0 then damage = 1
-        if damage < 0 {
-            damage = 1;
-        }
-
-        // Send hit messages
-        let n4_pkt = binary_packets::write_multi_user_hitted_by_user(
-            char_index.0 as i16,
-            lugar as u8,
-            damage as i16,
-        );
-        state.send_bytes(victim_id, &n4_pkt);
-        let n5_pkt = binary_packets::write_multi_user_hitted_user(
-            v_char_index.0 as i16,
-            lugar as u8,
-            damage as i16,
-        );
-        state.send_bytes(conn_id, &n5_pkt);
-
-        // VB6: floating yellow damage number
-        state.send_chat_over_head_to(
-            SendTarget::ToArea { map, x, y },
-            &format!("-{}", damage),
-            v_char_index.0 as i16,
-            65535,
-        );
-
-        // Apply damage to victim
-        super::weapon_visuals::confirmed_hit(state, conn_id, v_char_index.0 as i16, false, weapon.is_proyectil);
-        if let Some(victim) = state.users.get_mut(&victim_id) {
-            victim.min_hp = victim.min_hp.saturating_sub(damage as i32);
-        }
-
-        // VB6 13.3 parity: send meditation cancel packets if victim was meditating when targeted
-        // (victim.meditating was already set to false earlier, before the hit/miss roll)
-        if v_meditating {
-            state.send_bytes(victim_id, &binary_packets::write_meditate_toggle());
-            if let Some(v) = state.users.get(&victim_id) {
-                let fx_clear = binary_packets::write_create_fx(v.char_index.0 as i16, 0, 0);
-                state.send_data_bytes(
-                    SendTarget::ToArea {
-                        map: v.pos_map,
-                        x: v.pos_x,
-                        y: v.pos_y,
-                    },
-                    &fx_clear,
-                );
-            }
-        }
-
-        // VB6: Weapon poison application (60% chance if weapon has Envenena=1)
-        if weapon.envenena && rand_range(1, 100) < 60 {
-            let already_poisoned = state
-                .users
-                .get(&victim_id)
-                .map(|u| u.poisoned)
-                .unwrap_or(true);
-            if !already_poisoned {
-                if let Some(victim) = state.users.get_mut(&victim_id) {
-                    victim.poisoned = true;
-                    victim.counter_poison = 0;
-                    victim.poisoned_by = Some(conn_id);
-                    victim.poisoned_skill_id = if weapon.is_proyectil {
-                        skill_id::PROYECTILES
-                    } else {
-                        skill_id::ARMAS
-                    };
-                }
-                state.send_msg_id(victim_id, 171, &attacker_name);
-                state.send_msg_id(conn_id, 172, &victim_name);
-            }
-        }
-
-        // VB6: SubirSkill (attacker weapon skill on hit)
-        // VB6: if .flags.Hambre = 0 And .flags.Sed = 0 — we don't track hunger/thirst flags yet
-        {
-            if weapon.obj_index > 0 {
-                if weapon.is_proyectil {
-                    if let Some(u) = state.users.get_mut(&conn_id) {
-                        try_level_skill_with_hit(u, skill_id::PROYECTILES as usize, true);
-                    }
-                } else {
-                    if let Some(u) = state.users.get_mut(&conn_id) {
-                        try_level_skill_with_hit(u, skill_id::ARMAS as usize, true);
-                    }
-                }
-            } else {
-                if let Some(u) = state.users.get_mut(&conn_id) {
-                    try_level_skill_with_hit(u, skill_id::WRESTERLING as usize, true);
-                }
-            }
-
-            // VB6: DoApuñalar (backstab attempt)
-            if puede_apunalar(class, weapon.apunala, skill_apunalar) {
-                if let Some(stab_dmg) = do_apunalar(skill_apunalar, class, damage, false) {
-                    if let Some(victim) = state.users.get_mut(&victim_id) {
-                        victim.min_hp = victim.min_hp.saturating_sub(stab_dmg as i32);
-                    }
-                    state.send_console(
-                        conn_id,
-                        &format!("Has apuñalado a {} por {}", victim_name, stab_dmg),
-                        font_index::FIGHT,
-                    );
-                    state.send_console(
-                        victim_id,
-                        &format!("Te ha apuñalado {} por {}", attacker_name, stab_dmg),
-                        font_index::FIGHT,
-                    );
-                    if let Some(u) = state.users.get_mut(&conn_id) {
-                        try_level_skill_with_hit(u, skill_id::APUNALAR as usize, true);
-                    }
-                } else {
-                    state.send_console(
-                        conn_id,
-                        "\u{00A1}No has logrado apuñalar a tu enemigo!",
-                        font_index::FIGHT,
-                    );
-                    if let Some(u) = state.users.get_mut(&conn_id) {
-                        try_level_skill_with_hit(u, skill_id::APUNALAR as usize, false);
-                    }
-                }
-            }
-
-            // Early death check — stop further damage if victim already dead after backstab
-            if state
-                .users
-                .get(&victim_id)
-                .map(|u| u.min_hp <= 0)
-                .unwrap_or(false)
-            {
-                // Skip remaining special attacks (crit + cut) — victim is already dead
-            } else {
-                // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
-                let wrestling_sk = state
-                    .users
-                    .get(&conn_id)
-                    .map(|u| u.skills[(skill_id::WRESTERLING - 1) as usize])
-                    .unwrap_or(0);
-                if let Some(crit_dmg) =
-                    do_golpe_critico(class, weapon.obj_index, wrestling_sk, damage)
-                {
-                    super::weapon_visuals::confirmed_hit(state, conn_id, v_char_index.0 as i16, true, false);
-                    if let Some(victim) = state.users.get_mut(&victim_id) {
-                        victim.min_hp = victim.min_hp.saturating_sub(crit_dmg as i32);
-                    }
-                    state.send_console(
-                        conn_id,
-                        &format!(
-                            "Has golpeado críticamente a {} por {}.",
-                            victim_name, crit_dmg
-                        ),
-                        font_index::FIGHT,
-                    );
-                    state.send_console(
-                        victim_id,
-                        &format!(
-                            "{} te ha golpeado críticamente por {}.",
-                            attacker_name, crit_dmg
-                        ),
-                        font_index::FIGHT,
-                    );
-                }
-
-                // Early death check — stop further damage if victim already dead after crit
-                if !state
-                    .users
-                    .get(&victim_id)
-                    .map(|u| u.min_hp <= 0)
-                    .unwrap_or(false)
-                {
-                    // VB6: DoAcuchillar (Pirate throat cut — projectile PvP + melee NPC)
-                    // In PvP: only on projectile attacks (VB6 SistemaCombate.bas:1272)
-                    if weapon.is_proyectil && puede_acuchillar(class, weapon.acuchilla) {
-                        if let Some(cut_dmg) = do_acuchillar(damage) {
-                            if let Some(victim) = state.users.get_mut(&victim_id) {
-                                victim.min_hp = victim.min_hp.saturating_sub(cut_dmg as i32);
-                            }
-                            state.send_console(
-                                conn_id,
-                                &format!("Has acuchillado a {} por {}", victim_name, cut_dmg),
-                                font_index::FIGHT,
-                            );
-                            state.send_console(
-                                victim_id,
-                                &format!("{} te ha acuchillado por {}", attacker_name, cut_dmg),
-                                font_index::FIGHT,
-                            );
-                        }
-                    }
-                } // end early death check after crit
-            } // end early death check after backstab
-        }
-
-        // VB6: Fire Elemental reacts to PvP
-        fire_elemental_react(state, victim_id, &attacker_name);
-
-        // Update victim HP
-        send_stats_hp(state, victim_id).await;
-
-        // VB6 13.3: PvP hit reputation update
-        // Attack citizen: rep_bandido += 100, rep_noble halved
-        // Attack criminal: rep_noble += 5
-        // ZONAPELEA: skip all reputation changes when both players are in CombatZone
-        if !both_in_arena {
-            let victim_is_criminal = state
-                .users
-                .get(&victim_id)
-                .map(|u| u.criminal)
-                .unwrap_or(false);
-            if victim_is_criminal {
-                if let Some(attacker) = state.users.get_mut(&conn_id) {
-                    attacker.rep_noble += 5;
-                }
-            } else {
-                if let Some(attacker) = state.users.get_mut(&conn_id) {
-                    attacker.rep_bandido += 100;
-                    attacker.rep_noble = (attacker.rep_noble as f32 * 0.5) as i32;
-                }
-            }
-            recalc_criminal(state, conn_id);
-        }
-
-        // Check death
-        let v_hp = state.users.get(&victim_id).map(|u| u.min_hp).unwrap_or(0);
-        if v_hp <= 0 {
-            user_die(state, victim_id, Some(conn_id)).await;
-        }
+        let Some(both_in_arena) = puede_atacar(state, conn_id, victim_id).await else { return };
+        usuario_ataca_usuario(state, conn_id, victim_id, ao20::AttackType::Melee, both_in_arena).await;
     } else {
         // Zone-aware safe check for NPC attacks
         if is_safe_at(state, map, x, y) {
@@ -1302,6 +321,15 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 class,
             )
             .await;
+        } else {
+            // AO20 UserAttackPosition (:879-885): swinging at air while paralyzed or
+            // immobilized shaves AirHitReductParalisisTime (seconds) off the counters.
+            let reduct = state.game_data.balance.backstab.air_hit_reduct_paralisis_time.max(0) * 25;
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                if u.paralyzed || u.immobilized {
+                    u.counter_paralisis = (u.counter_paralisis - reduct).max(0);
+                }
+            }
         }
     }
 }
@@ -1389,7 +417,10 @@ pub(super) async fn user_die(
         user.aura_c = 0;
         // Resurrection cooldown
         user.time_revivir = 20;
+        user.montado_obj = 0;
     }
+    // AO20 UserDie → ActualizarVelocidadDeUsuario (VelocidadMuerto = 1.4).
+    crate::game::handlers::actualizar_velocidad_de_usuario(state, conn_id);
 
     // Clear duel state on death
     let duel_partner = state
@@ -1813,5 +844,519 @@ pub(super) async fn user_die(
             victim_name, exit_map, exit_x, exit_y
         );
         warp_user(state, conn_id, exit_map, exit_x, exit_y).await;
+    }
+}
+
+// =====================================================================
+// AO20 UsuarioAtacaUsuario — shared by melee (HandleAttack) and ranged (WorkLeftClick)
+// =====================================================================
+
+/// AO20 `UsuarioAtacaUsuario` (SistemaCombate.bas:1037) after `PuedeAtacar` passed:
+/// distance check, `UsuarioAtacadoPorUsuario`, `UsuarioImpacto`, `UserDamageToUser`,
+/// `UserDañoEspecial`, then our reputation update and the death check.
+pub(crate) async fn usuario_ataca_usuario(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    victim_id: ConnectionId,
+    _atype: ao20::AttackType,
+    both_in_arena: bool,
+) {
+    let (map, x, y, heading, char_index, level, strength, agility, min_hit, max_hit, attacker_name, class) =
+        match state.users.get(&conn_id) {
+            Some(u) => (
+                u.pos_map,
+                u.pos_x,
+                u.pos_y,
+                u.heading,
+                u.char_index,
+                u.level,
+                u.attributes[0],
+                u.attributes[1],
+                u.min_hit,
+                u.max_hit,
+                u.char_name.clone(),
+                u.class,
+            ),
+            None => return,
+        };
+    let (victim_name, v_level, v_agility, v_tacticas, v_defensa, v_class, v_char_index, v_meditating) =
+        match state.users.get(&victim_id) {
+            Some(v) if v.logged && !v.dead => (
+                v.char_name.clone(),
+                v.level,
+                v.attributes[1],
+                v.skills[(skill_id::TACTICAS - 1) as usize],
+                v.skills[(skill_id::DEFENSA - 1) as usize],
+                v.class,
+                v.char_index,
+                v.meditating,
+            ),
+            _ => return,
+        };
+    {
+        // ===== AO20 UsuarioAtacaUsuario (SistemaCombate.bas:1037) =====
+        let (vx, vy) = state
+            .users
+            .get(&victim_id)
+            .map(|v| (v.pos_x, v.pos_y))
+            .unwrap_or((0, 0));
+        if ao20::distancia(x, y, vx, vy) > ao20::MAX_DISTANCIA_ARCO {
+            state.send_console(conn_id, "Estás demasiado lejos.", font_index::INFO); // AO20 Msg8
+            return;
+        }
+
+        // UsuarioAtacadoPorUsuario: a targeted victim stops meditating (packets below on hit/miss).
+        if v_meditating {
+            if let Some(victim) = state.users.get_mut(&victim_id) {
+                victim.meditating = false;
+            }
+            state.send_bytes(victim_id, &binary_packets::write_meditate_toggle());
+            let fx_clear = binary_packets::write_create_fx(v_char_index.0 as i16, 0, 0);
+            state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &fx_clear);
+        }
+
+        // ── UsuarioImpacto (:942) ──
+        let weapon_obj = equipped_obj(state, conn_id, |u| u.equip.weapon);
+        let attacker_skills = state.users.get(&conn_id).map(|u| u.skills).unwrap_or([0; 22]);
+        let (poder_ataque, attack_skill) = ao20::poder_ataque_for_weapon(
+            weapon_obj.as_ref(),
+            |s| attacker_skills[(s - 1) as usize],
+            agility,
+            level,
+            state.game_data.balance.class_mod_ataque_armas_e(class),
+            state.game_data.balance.class_mod_ataque_proyectiles_e(class),
+        );
+        let attack_skill_idx = attack_skill as usize;
+
+        let shield_obj = equipped_obj(state, victim_id, |u| u.equip.shield);
+        let shield_porcentaje = shield_obj.as_ref().map(|s| s.porcentaje).unwrap_or(0);
+        let mut user_poder_evasion =
+            ao20::poder_evasion(v_tacticas, v_agility, v_level, state.game_data.balance.class_mod_evasion_e(v_class));
+        if shield_obj.is_some() && shield_porcentaje > 0 {
+            user_poder_evasion += ao20::poder_evasion_escudo(
+                v_defensa,
+                state.game_data.balance.class_mod_escudo_e(v_class),
+                shield_porcentaje,
+            );
+        }
+        let prob_rechazo = ao20::prob_rechazo_escudo_user(shield_obj.is_some(), shield_porcentaje, v_defensa, v_tacticas);
+        let prob_exito = ao20::prob_impacto_user(poder_ataque, user_poder_evasion, v_meditating, 0);
+        let hit = rand_range(1, 100) <= prob_exito;
+
+        if !hit {
+            if rand_range(1, 100) <= prob_rechazo {
+                // Se rechazó el ataque con el escudo: sonido, EscudoMov, mensajes, FX 88, sube Defensa.
+                let snd = binary_packets::write_play_wave(37, vx as i16, vy as i16); // SND_ESCUDO
+                state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &snd);
+                let pkt_atk = binary_packets::write_multi_msg_simple(
+                    crate::protocol::packets::MultiMessageID::BlockedWithShieldOther,
+                );
+                state.send_bytes(conn_id, &pkt_atk);
+                let pkt_vic = binary_packets::write_multi_msg_simple(
+                    crate::protocol::packets::MultiMessageID::BlockedWithShieldUser,
+                );
+                state.send_bytes(victim_id, &pkt_vic);
+                let fx = binary_packets::write_create_fx(v_char_index.0 as i16, 88, 0);
+                state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &fx);
+                if let Some(victim) = state.users.get_mut(&victim_id) {
+                    try_level_skill(victim, skill_id::DEFENSA as usize);
+                }
+            } else {
+                // "¡X te atacó y falló!" (1930) / "¡Has fallado el golpe!" (1043)
+                let pkt = binary_packets::write_multi_user_attacked_swing(char_index.0 as i16);
+                state.send_bytes(victim_id, &pkt);
+                let pkt = binary_packets::write_multi_msg_simple(
+                    crate::protocol::packets::MultiMessageID::UserSwing,
+                );
+                state.send_bytes(conn_id, &pkt);
+            }
+            // Bandido with Ocultarse < 100 loses stealth even on a miss; everyone else always.
+            let keep_stealth = class == PlayerClass::Bandido
+                && attacker_skills[(skill_id::OCULTARSE - 1) as usize] >= 100;
+            if !keep_stealth {
+                remove_user_invisibility(state, conn_id).await;
+            }
+            // CharSwing to the area (or only to a hidden attacker)
+            let snd = binary_packets::write_play_wave(2, x as i16, y as i16);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
+            state.send_chat_over_head_to(
+                SendTarget::ToArea { map, x, y },
+                "\u{00A1}Fallo!",
+                v_char_index.0 as i16,
+                255,
+            );
+            return;
+        }
+
+        // ── Hit ── SubirSkillDeArmaActual
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill(u, attack_skill_idx);
+        }
+        // FXSANGRE on the victim unless sailing AND mounted (AO20: `Navegando = 0 Or Montado = 0`)
+        {
+            let (v_nav, v_mount) = state
+                .users
+                .get(&victim_id)
+                .map(|v| (v.navigating, v.montado))
+                .unwrap_or((false, false));
+            if !v_nav || !v_mount {
+                let fx = binary_packets::write_create_fx(v_char_index.0 as i16, 14, 0);
+                state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &fx);
+            }
+        }
+        // RemoveUserInvisibility — Hunter keeps it only with a camouflage armor at Ocultarse 100
+        // (no `Camouflage` armor flag in our obj.dat → hunters lose it like everyone).
+        remove_user_invisibility(state, conn_id).await;
+
+        // ── UserDamageToUser (:1104) ──
+        let ammo_obj = equipped_obj(state, conn_id, |u| u.equip.municion);
+        let (nav, mounted, ship_obj, saddle_obj) = {
+            let u = state.users.get(&conn_id);
+            let nav = u.map(|u| u.navigating).unwrap_or(false);
+            let mounted = u.map(|u| u.montado).unwrap_or(false);
+            (
+                nav,
+                mounted,
+                if nav { equipped_obj(state, conn_id, |u| u.barco_slot) } else { None },
+                if mounted { obj_by_index(state, state.users.get(&conn_id).map(|u| u.montado_obj).unwrap_or(0)) } else { None },
+            )
+        };
+        let base_damage = ao20::get_user_damage_with_item(&ao20::DamageInputs {
+            user_min_hit: min_hit,
+            user_max_hit: max_hit,
+            fuerza: strength,
+            weapon: weapon_obj.as_ref(),
+            ammo: ammo_obj.as_ref(),
+            vs_npc: false,
+            dano_armas: state.game_data.balance.class_mod_dano_armas_e(class),
+            dano_proyectiles: state.game_data.balance.class_mod_dano_proyectiles_e(class),
+            dano_wrestling: state.game_data.balance.class_mod_dano_wrestling_e(class),
+            ship_or_saddle: ship_obj.as_ref().or(saddle_obj.as_ref()),
+            navigating: nav,
+            mounted,
+        });
+
+        let lugar = ao20::lugar_golpe_user();
+        let mut defensa: i64 = 0;
+        if lugar == ao20::B_CABEZA {
+            if let Some(c) = equipped_obj(state, victim_id, |u| u.equip.helmet) {
+                defensa += rand_range(c.min_def, c.max_def.max(c.min_def)) as i64;
+            }
+        } else {
+            if let Some(a) = equipped_obj(state, victim_id, |u| u.equip.armor) {
+                defensa += rand_range(a.min_def, a.max_def.max(a.min_def)) as i64;
+            }
+            if let Some(e) = shield_obj.as_ref() {
+                defensa += rand_range(e.min_def, e.max_def.max(e.min_def)) as i64;
+            }
+        }
+        // Defensa del barco de la víctima, o de la montura
+        {
+            let (v_nav, v_mount, v_saddle) = state
+                .users
+                .get(&victim_id)
+                .map(|v| (v.navigating, v.montado, v.montado_obj))
+                .unwrap_or((false, false, 0));
+            if v_nav {
+                if let Some(b) = equipped_obj(state, victim_id, |u| u.barco_slot) {
+                    defensa += rand_range(b.min_def, b.max_def.max(b.min_def)) as i64;
+                }
+            } else if v_mount {
+                if let Some(m) = obj_by_index(state, v_saddle) {
+                    defensa += rand_range(m.min_def, m.max_def.max(m.min_def)) as i64;
+                }
+            }
+        }
+        // AO20 armor_penetration_feature: off → ArmorPen = 0.
+        let mut damage = (base_damage - defensa).max(0);
+        let mut bonus_damage: i64 = 0;
+
+        let n4_pkt = binary_packets::write_multi_user_hitted_by_user(char_index.0 as i16, lugar as u8, damage as i16);
+        state.send_bytes(victim_id, &n4_pkt);
+        let n5_pkt = binary_packets::write_multi_user_hitted_user(v_char_index.0 as i16, lugar as u8, damage as i16);
+        state.send_bytes(conn_id, &n5_pkt);
+
+        let bs = state.game_data.balance.backstab;
+        let weapon_extra = weapon_obj.as_ref().map(|w| w.extra_crit_and_stab_chance).unwrap_or(0.0);
+        let v_heading = state.users.get(&victim_id).map(|v| v.heading).unwrap_or(0);
+        let back_bonus = ao20::back_hit_bonus(heading, v_heading, ao20::distancia(x, y, vx, vy), &bs);
+        let skill_apunalar = attacker_skills[(skill_id::APUNALAR - 1) as usize];
+        let skill_wrestling = attacker_skills[(skill_id::WRESTERLING - 1) as usize];
+
+        if ao20::puede_golpe_critico(class, weapon_obj.as_ref()) {
+            // Golpe crítico (ignora defensa): Bandido con nudillos
+            let chance = (ao20::critical_chance_base(skill_wrestling, &bs, weapon_extra) + back_bonus).clamp(0.0, 100.0);
+            if rand_range(1, 100) as f32 <= chance {
+                bonus_damage = (damage as f64 * bs.critical_hit_dmg_modifier as f64) as i64;
+                state.send_console(conn_id, &format!("Has golpeado críticamente a {} por {}.", victim_name, bonus_damage), font_index::FIGHT);
+                state.send_console(victim_id, &format!("{} te ha golpeado críticamente por {}.", attacker_name, bonus_damage), font_index::FIGHT);
+                let snd = binary_packets::write_play_wave(10, x as i16, y as i16); // SND_IMPACTO_CRITICO ≈ impacto
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
+            }
+        } else if ao20::puede_apunalar(class, skill_apunalar, weapon_obj.as_ref()) {
+            let chance = (ao20::stabbing_chance_base(class, skill_apunalar, &bs, weapon_extra) + back_bonus).clamp(0.0, 100.0);
+            if rand_range(1, 100) as f32 <= chance {
+                bonus_damage = (damage as f64 * state.game_data.balance.mod_apunalar[class.index()] as f64) as i64;
+                // 210 / 211
+                state.send_console(conn_id, &format!("Has apuñalado a {} por {}", victim_name, bonus_damage), font_index::FIGHT);
+                state.send_console(victim_id, &format!("{} te ha apuñalado por {}", attacker_name, bonus_damage), font_index::FIGHT);
+                super::weapon_visuals::confirmed_hit(state, conn_id, v_char_index.0 as i16, true, false);
+                let fx = binary_packets::write_create_fx(v_char_index.0 as i16, 89, 0);
+                state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &fx);
+                let snd = binary_packets::write_play_wave(10, x as i16, y as i16);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
+            }
+            // Sube skills en apuñalar (siempre que pudo intentar)
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                try_level_skill(u, skill_id::APUNALAR as usize);
+            }
+        }
+
+        // Desequipar de un golpe (Bandido / Ladrón sin arma)
+        if ao20::puede_desequipar_de_un_golpe(class, weapon_obj.as_ref()) {
+            let skill_for_weapon = attacker_skills[(ao20::skill_required_for_weapon(weapon_obj.as_ref()) - 1) as usize];
+            if rand_range(1, 100) <= ao20::prob_desequipar(class, skill_for_weapon) {
+                desequipar_objeto_de_un_golpe(state, conn_id, victim_id, lugar, &attacker_name, &victim_name).await;
+            }
+        }
+
+        let (v_min_hp, v_max_hp) = state
+            .users
+            .get(&victim_id)
+            .map(|v| (v.min_hp, v.max_hp))
+            .unwrap_or((0, 0));
+        damage = ao20::apply_bonus_damage(damage, bonus_damage, v_min_hp, v_max_hp);
+
+        // DoDamageOrHeal
+        super::weapon_visuals::confirmed_hit(state, conn_id, v_char_index.0 as i16, false, weapon_obj.as_ref().map(|w| w.proyectil).unwrap_or(false));
+        state.send_chat_over_head_to(
+            SendTarget::ToArea { map, x, y },
+            &format!("-{}", damage),
+            v_char_index.0 as i16,
+            65535,
+        );
+        if let Some(victim) = state.users.get_mut(&victim_id) {
+            victim.min_hp = victim.min_hp.saturating_sub(damage as i32);
+        }
+        let still_alive = state.users.get(&victim_id).map(|v| v.min_hp > 0).unwrap_or(false);
+        if still_alive {
+            let snd = binary_packets::write_play_wave(10, x as i16, y as i16); // SND_IMPACTO
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
+            let fx = binary_packets::write_create_fx(v_char_index.0 as i16, 14, 0); // FX_BLOOD
+            state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &fx);
+            user_dano_especial(state, conn_id, victim_id, weapon_obj.as_ref(), ammo_obj.as_ref(), &attacker_name, &victim_name).await;
+        }
+
+        // VB6: Fire Elemental reacts to PvP
+        fire_elemental_react(state, victim_id, &attacker_name);
+
+        // Update victim HP
+        send_stats_hp(state, victim_id).await;
+
+        // VB6 13.3: PvP hit reputation update
+        // Attack citizen: rep_bandido += 100, rep_noble halved
+        // Attack criminal: rep_noble += 5
+        // ZONAPELEA: skip all reputation changes when both players are in CombatZone
+        if !both_in_arena {
+            let victim_is_criminal = state
+                .users
+                .get(&victim_id)
+                .map(|u| u.criminal)
+                .unwrap_or(false);
+            if victim_is_criminal {
+                if let Some(attacker) = state.users.get_mut(&conn_id) {
+                    attacker.rep_noble += 5;
+                }
+            } else {
+                if let Some(attacker) = state.users.get_mut(&conn_id) {
+                    attacker.rep_bandido += 100;
+                    attacker.rep_noble = (attacker.rep_noble as f32 * 0.5) as i32;
+                }
+            }
+            recalc_criminal(state, conn_id);
+        }
+
+        // Check death
+        let v_hp = state.users.get(&victim_id).map(|u| u.min_hp).unwrap_or(0);
+        if v_hp <= 0 {
+            user_die(state, victim_id, Some(conn_id)).await;
+        }
+    }
+}
+
+/// AO20 `PuedeAtacar` (SistemaCombate.bas:1352) as this server implements it (guild war,
+/// seguro, seguro clan, duelo, zona segura, arena/ZONAPELEA, muerto, GM). Shared by melee
+/// and ranged. Returns `Some(both_in_arena)` when the attack may proceed.
+pub(crate) async fn puede_atacar(state: &mut GameState, conn_id: ConnectionId, victim_id: ConnectionId) -> Option<bool> {
+    let (map, x, y, safe_on, a_dead, a_party, a_cursed, a_montado) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.safe_toggle, u.dead, u.party_index, u.cursed, u.montado),
+        None => return None,
+    };
+    // AO20 PuedeAtacar, in its order: dead attacker, dead victim, same group,
+    // curse, mount. (Retos, consulta, teams and GM ranks have no counterpart here.)
+    if a_dead {
+        state.send_console(conn_id, "¡¡Estás muerto!!", font_index::INFO);
+        return None;
+    }
+    let (v_dead, v_party) = match state.users.get(&victim_id) {
+        Some(v) => (v.dead, v.party_index),
+        None => return None,
+    };
+    if v_dead {
+        state.send_console(conn_id, "No podés atacar a un espiritu.", font_index::INFO);
+        return None;
+    }
+    if a_party > 0 && a_party == v_party {
+        state.send_console(conn_id, "No podés atacar a un miembro de tu grupo.", font_index::INFO);
+        return None;
+    }
+    if a_cursed {
+        state.send_console(conn_id, "¡Estás maldito! No podes atacar.", font_index::INFO);
+        return None;
+    }
+    if a_montado {
+        state.send_console(conn_id, "No podés atacar usando una montura.", font_index::INFO);
+        return None;
+    }
+    {
+        // PvP attack — check guild war bypass before safety toggle
+        let (attacker_guild, attacker_seguro) = state
+            .users
+            .get(&conn_id)
+            .map(|u| (u.guild_index, u.seguro_clan))
+            .unwrap_or((0, false));
+        let victim_guild = state
+            .users
+            .get(&victim_id)
+            .map(|u| u.guild_index)
+            .unwrap_or(0);
+
+        // Guild war bypasses safety toggle
+        let guilds_at_war = attacker_guild > 0
+            && victim_guild > 0
+            && attacker_guild != victim_guild
+            && super::guilds_handler::get_guild_relation(state, attacker_guild, victim_guild)
+                == super::guilds_handler::GUILD_REL_WAR;
+
+        if safe_on && !guilds_at_war {
+            // VB6 13.3 parity: safety toggle only blocks attacking citizens (non-criminals).
+            // Attacking criminals is always allowed.
+            let victim_is_criminal = state
+                .users
+                .get(&victim_id)
+                .map(|u| u.criminal)
+                .unwrap_or(false);
+            if !victim_is_criminal {
+                state.send_msg_id(conn_id, 207, "");
+                return None;
+            }
+        }
+
+        // Clan safe check
+        if attacker_guild > 0 && attacker_guild == victim_guild && attacker_seguro {
+            state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO);
+            return None;
+        }
+
+        // VB6: Safe zone check — dueling players bypass safe zone restriction
+        let in_duel = state
+            .users
+            .get(&conn_id)
+            .map(|u| u.atacable_por == victim_id)
+            .unwrap_or(false)
+            && state
+                .users
+                .get(&victim_id)
+                .map(|u| u.atacable_por == conn_id)
+                .unwrap_or(false);
+
+        if !in_duel {
+            // Zone-aware safe check (Trigger > Zone > Map hierarchy)
+            if is_safe_at(state, map, x, y) {
+                state.send_msg_id(conn_id, 163, "");
+                return None;
+            }
+            let victim_pos = state
+                .users
+                .get(&victim_id)
+                .map(|v| (v.pos_x, v.pos_y))
+                .unwrap_or((0, 0));
+            if is_safe_at(state, map, victim_pos.0, victim_pos.1) {
+                state.send_msg_id(conn_id, 163, "");
+                return None;
+            }
+        }
+
+        // VB6 13.3: ZONAPELEA — if BOTH players are in CombatZone, allow PvP without criminal penalty.
+        // If only one is in CombatZone, block PvP entirely.
+        let attacker_in_arena =
+            get_map_tile_trigger(state, map, x, y) == crate::data::maps::Trigger::CombatZone;
+        let victim_arena_pos = state
+            .users
+            .get(&victim_id)
+            .map(|v| (v.pos_map, v.pos_x, v.pos_y))
+            .unwrap_or((0, 0, 0));
+        let victim_in_arena = get_map_tile_trigger(
+            state,
+            victim_arena_pos.0,
+            victim_arena_pos.1,
+            victim_arena_pos.2,
+        ) == crate::data::maps::Trigger::CombatZone;
+
+        if attacker_in_arena != victim_in_arena {
+            // One player is in the arena, the other is not — block combat entirely.
+            state.send_console(
+                conn_id,
+                "Ambos jugadores deben estar en la zona de pelea.",
+                font_index::INFO,
+            );
+            return None;
+        }
+        let both_in_arena = attacker_in_arena && victim_in_arena;
+
+        let victim_data = match state.users.get(&victim_id) {
+            Some(v) if v.logged => (
+                v.dead,
+                v.privileges,
+                v.char_name.clone(),
+                v.level,
+                v.attributes[1], // Victim agility
+                v.skills[3],     // SK4 = Tacticas
+                v.skills[4],     // SK5 = Defensa
+                v.max_hp,
+                v.min_hp,
+                v.class.clone(),
+                v.heading,
+                v.char_index,
+                v.meditating,
+            ),
+            _ => return None,
+        };
+        let (
+            v_dead,
+            v_privs,
+            _victim_name,
+            _v_level,
+            _v_agility,
+            _v_tacticas,
+            _v_defensa,
+            _v_max_hp,
+            _v_min_hp,
+            _v_class,
+            _v_heading,
+            _v_char_index,
+            _v_meditating,
+        ) = victim_data;
+
+        if v_dead {
+            state.send_msg_id(conn_id, 154, "");
+            return None;
+        }
+        if v_privs > 0 {
+            state.send_msg_id(conn_id, 155, "");
+            return None;
+        }
+
+        Some(both_in_arena)
     }
 }

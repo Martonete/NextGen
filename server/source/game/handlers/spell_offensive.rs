@@ -499,14 +499,19 @@ pub(super) async fn apply_spell_status_npc(
 ) {
     use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
 
-    // VB6: Elementals are immune to paralysis/immobilize (modHechizos.bas line 993)
-    if spell.paraliza {
-        let npc_num = state
+    // VB6 HechizoEstadoNPC: Paralizar and Inmovilizar share one branch. Elementals
+    // and NPCs flagged AfectaParalisis=1 in NPCs.dat are immune to both.
+    if spell.paraliza || spell.inmoviliza {
+        let (npc_num, immune_flag) = state
             .get_npc(npc_idx)
-            .map(|n| n.npc_number as i32)
-            .unwrap_or(0);
-        if npc_num == ELEMENTAL_AGUA || npc_num == ELEMENTAL_FUEGO || npc_num == ELEMENTAL_TIERRA {
-            state.send_msg_id(caster_id, 846, ""); // Immune
+            .map(|n| (n.npc_number as i32, n.afecta_paralisis))
+            .unwrap_or((0, false));
+        if immune_flag
+            || npc_num == ELEMENTAL_AGUA
+            || npc_num == ELEMENTAL_FUEGO
+            || npc_num == ELEMENTAL_TIERRA
+        {
+            state.send_msg_id(caster_id, 848, ""); // "El npc es inmune a este hechizo."
             return;
         }
     }
@@ -519,7 +524,9 @@ pub(super) async fn apply_spell_status_npc(
         if spell.cura_veneno {
             npc.veneno = false;
         }
-        if spell.paraliza {
+        // NPC AI has a single "can't move or attack" gate (`paralyzed`); VB6 also
+        // freezes an immobilized NPC in place, so both spells set it.
+        if spell.paraliza || spell.inmoviliza {
             npc.paralyzed = true;
             // VB6: NPCs use the same paralysis duration as users (IntervaloParalizado)
             npc.counter_paralisis = paralisis_interval;
@@ -759,6 +766,7 @@ pub(super) async fn apply_spell_status(
         if spell.paraliza || spell.inmoviliza {
             if !target.paralyzed {
                 target.paralyzed = true;
+                target.paralysis_walk_warned = false;
                 if spell.inmoviliza {
                     target.immobilized = true;
                 }
