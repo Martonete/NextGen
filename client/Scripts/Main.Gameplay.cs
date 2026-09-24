@@ -164,6 +164,11 @@ public partial class Main
 	{
 		var root = GetTree().Root;
 		var native = DisplayServer.ScreenGetSize(root.CurrentScreen);
+		// Headless/startup transitions can briefly expose 0x0. Use the same minimum
+		// accepted by ResolutionManager so the resolution-change callback cannot
+		// recursively reapply an impossible native size.
+		native.X = Math.Max(ResolutionManager.DesignWidth, native.X);
+		native.Y = Math.Max(ResolutionManager.DesignHeight, native.Y);
 		root.Mode = Window.ModeEnum.Fullscreen;
 		if (ResolutionManager.WindowWidth != native.X || ResolutionManager.WindowHeight != native.Y)
 			ResolutionManager.ApplyResolution(native.X, native.Y, true);
@@ -208,6 +213,7 @@ public partial class Main
 	/// </summary>
 	private void ApplyConfigToSystems()
 	{
+		ResolutionManager.SetClassicHud(_state.Config.ClassicHud);
 		var cfg = _state.Config;
 
 		// Sync ShowNames to GameState (used by CharRenderer directly)
@@ -252,13 +258,14 @@ public partial class Main
 		// Apply minimap visibility + resize console accordingly
 		if (_minimapWindow != null)
 		{
-			_minimapWindow.Visible = cfg.ShowMinimap;
+			_minimapWindow.Visible = cfg.ShowMinimap && !cfg.ClassicHud;
 			SaveHudLayout();
 		}
 
 		// Apply form transparency
 		float formAlpha = cfg.FormTransparency ? cfg.FormTransparencyAlpha / 100f : 1.0f;
 		RpgBaseForm.ApplyGlobalAlpha(formAlpha);
+		LayoutFloatingHud();
 
 		GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Fullscreen={cfg.Fullscreen}, Aspect={cfg.AspectRatioMode}");
 	}
@@ -487,6 +494,8 @@ public partial class Main
 		_state.IsLogged = false;
 		_state.Paused = false;
 		_state.LoginError = "";
+		_state.PendingDisconnect = false;
+		_state.DisconnectReason = "";
 		_state.CoordCipher = null;
 		_state.ServerNotice = "";
 		_state.SecurityCode = "";
@@ -508,8 +517,14 @@ public partial class Main
 		_state.UserCharIndex = 0;
 		_state.UserName = "";
 		_state.UserParalyzed = false;
+		_state.UserImmobilized = false;
+		_state.UserStunned = false;
 		_state.ParalysisTimer = 0;
+		_state.ParalysisMaxTimer = 0;
 		_state.UserNavigating = false;
+		_state.UserMounted = false;
+		_state.UserBlind = false;
+		_state.UserDumb = false;
 		_state.UserStopped = false;
 		_state.UsingSkill = 0;
 		_state.ChatActive = false;
@@ -525,6 +540,12 @@ public partial class Main
 		_state.SeguroResu = false;
 		_state.DropDialogOpen = false;
 		_state.ShowTravelPanel = false;
+		_state.QuickbarEditing = false;
+		_state.OptionsPanelOpen = false;
+		_state.EscapeMenuOpen = false;
+		_state.KeyBindPanelOpen = false;
+		_state.MacroPanelOpen = false;
+		_state.StatsPanelOpen = false;
 		_state.UserMoving = false;
 		_state.AddToUserPosX = 0;
 		_state.AddToUserPosY = 0;
@@ -537,6 +558,12 @@ public partial class Main
 		_state.Characters.Clear();
 		_state.WeaponImpacts.Clear();
 		_state.GroundObjects.Clear();
+		_state.ActiveArrows.Clear();
+		_state.ActiveBeams.Clear();
+		_state.MapParticles.Clear();
+		_state.ClearMapLights();
+		_state.TileLightColors = null;
+		_state.LightsDirty = true;
 
 		// Stats
 		_state.MaxHp = 0; _state.MinHp = 0;
@@ -575,6 +602,17 @@ public partial class Main
 		_state.NpcShopCount = 0;
 		for (int i = 0; i < 50; i++)
 			_state.NpcShopItems[i] = new NpcShopItem();
+		_state.MyTradeSlotCount = 0;
+		_state.MyTradeGold = 0;
+		_state.PartnerTradeSlotCount = 0;
+		_state.PartnerTradeGold = 0;
+		_state.TradePartnerName = "";
+		_state.TradeJustOpened = false;
+		_state.TradePartnerAccepted = false;
+		for (int i = 0; i < _state.MyTradeSlots.Length; i++)
+			_state.MyTradeSlots[i] = new TradeOfferSlot();
+		for (int i = 0; i < _state.PartnerTradeSlots.Length; i++)
+			_state.PartnerTradeSlots[i] = new TradeOfferSlot();
 
 		// Bank
 		_state.BankItemCount = 0;
@@ -591,6 +629,39 @@ public partial class Main
 			_state.GuildBankItems[i] = new GuildBankSlot();
 		for (int i = 0; i < 40; i++)
 			_state.BankItems[i] = new BankItem();
+
+		// One-shot panel flags must not survive a reconnect. PanelStateSync resets its
+		// edge detectors after disconnect, so a stale true value would reopen the old
+		// trade/guild/quest/GM window as soon as the new character enters the world.
+		_state.ShowBlacksmithForm = false;
+		_state.ShowCarpenterForm = false;
+		_state.ShowGuildPanel = false;
+		_state.ShowGuildFoundation = false;
+		_state.ShowPartyPanel = false;
+		_state.ShowForumPanel = false;
+		_state.ShowQuestPanel = false;
+		_state.ShowTrainerPanel = false;
+		_state.ShowNpcDialog = false;
+		_state.ShowChangePassword = false;
+		_state.ShowCharInfo = false;
+		_state.ShowSignal = false;
+		_state.GmPanelOpen = false;
+		_state.ShowSpawnList = false;
+		_state.ShowSosPanel = false;
+		_state.ShowPeaceProposal = false;
+		_state.ShowGuildAlignment = false;
+		_state.ShowMotdEditor = false;
+		_state.ShowGuildMember = false;
+		_state.ShowLoadingScreen = false;
+		_state.ShowTutorial = false;
+		_state.ShowContextMenu = false;
+		_state.ShowSelectList = false;
+		_state.ShowMiniTop = false;
+		_state.ForumPosts.Clear();
+		_state.PetList.Clear();
+		_state.SmithWeapons.Clear();
+		_state.SmithArmors.Clear();
+		_state.CarpItems.Clear();
 
 		// Chat queue and history
 		_state.ChatMessages.Clear();

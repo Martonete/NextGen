@@ -22,6 +22,7 @@ public class ByteQueue
     private byte[] _data;
     private int _writePos;
     private int _readPos;
+    private int _readBase;
 
     /// <summary>Create an empty ByteQueue for writing.</summary>
     public ByteQueue()
@@ -29,6 +30,7 @@ public class ByteQueue
         _data = new byte[256];
         _writePos = 0;
         _readPos = 0;
+        _readBase = 0;
     }
 
     /// <summary>Create a ByteQueue from raw bytes for reading.</summary>
@@ -37,6 +39,7 @@ public class ByteQueue
         _data = data;
         _writePos = data.Length;
         _readPos = 0;
+        _readBase = 0;
     }
 
     /// <summary>Create a ByteQueue from a portion of a byte array.</summary>
@@ -46,6 +49,7 @@ public class ByteQueue
         Array.Copy(data, offset, _data, 0, length);
         _writePos = length;
         _readPos = 0;
+        _readBase = 0;
     }
 
     /// <summary>
@@ -56,6 +60,7 @@ public class ByteQueue
     {
         _data = data;
         _readPos = offset;
+        _readBase = offset;
         _writePos = offset + length;
     }
 
@@ -66,7 +71,7 @@ public class ByteQueue
     public int ReadPosition => _readPos;
 
     /// <summary>Restore read position (rollback on partial packet).</summary>
-    public void RestorePosition(int pos) => _readPos = pos;
+    public void RestorePosition(int pos) => _readPos = Math.Clamp(pos, _readBase, _writePos);
 
     // ── Write methods ──────────────────────────────────────────
 
@@ -123,11 +128,11 @@ public class ByteQueue
 
     public void WriteString(string val)
     {
-        byte[] strBytes = Encoding.Latin1.GetBytes(val);
-        WriteInteger((short)strBytes.Length);
-        EnsureCapacity(strBytes.Length);
-        Array.Copy(strBytes, 0, _data, _writePos, strBytes.Length);
-        _writePos += strBytes.Length;
+        int length = Math.Min(val.Length, short.MaxValue);
+        WriteInteger((short)length);
+        EnsureCapacity(length);
+        int written = Encoding.Latin1.GetBytes(val.AsSpan(0, length), _data.AsSpan(_writePos, length));
+        _writePos += written;
     }
 
     // ── Read methods ───────────────────────────────────────────

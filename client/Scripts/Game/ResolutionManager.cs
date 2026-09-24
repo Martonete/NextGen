@@ -50,7 +50,7 @@ public static class ResolutionManager
     public static int ViewportH { get; private set; } = DesignViewportH;
     public static int ViewportPixelW => ViewportW;
     public static int ViewportPixelH => ViewportH;
-    public const float WorldZoom = 1.06f;
+    public const float WorldZoom = 1.00f;
     public static int RenderPixelW => Math.Max(1, (int)MathF.Round(ViewportW / WorldZoom));
     public static int RenderPixelH => Math.Max(1, (int)MathF.Round(ViewportH / WorldZoom));
 
@@ -89,14 +89,46 @@ public static class ResolutionManager
 
     public static Action? OnResolutionChanged;
 
-    public static void ApplyResolution(int width, int height, bool fullscreenWorld = false)
+    public static bool ClassicHud { get; private set; }
+    public const int ClassicSidebarWidth = 300;
+    public static float ClassicScale => Math.Clamp(WindowHeight / 800f, 0.75f, 1.35f);
+    public static void SetClassicHud(bool enabled)
     {
+        // Recalculate even when the flag already has the requested value. Window mode
+        // and native resolution may have changed since the last call (fullscreen
+        // transitions do this), leaving stale viewport/sidebar dimensions otherwise.
+        ApplyResolution(WindowWidth, WindowHeight, FullscreenWorld, enabled);
+    }
+
+    public static void ApplyResolution(int width, int height, bool fullscreenWorld = false, bool? classicHud = null)
+    {
+        // Some display backends briefly report 0x0 while a fullscreen window is being
+        // created or restored. Never let that transient value collapse the SubViewport
+        // to 1x1 and poison all subsequent input/layout calculations.
+        width = Math.Max(DesignWidth, width);
+        height = Math.Max(DesignHeight, height);
         WindowWidth = width;
         WindowHeight = height;
         FullscreenWorld = fullscreenWorld;
+        if (classicHud.HasValue) ClassicHud = classicHud.Value;
 
         // UIScale based on height (more balanced than width for AO's layout)
         UIScale = height / (float)DesignHeight;
+
+        if (ClassicHud)
+        {
+            LeftMargin = 0; TopMargin = 0;
+            ActualSidebarWidth = (int)MathF.Round(ClassicSidebarWidth * ClassicScale);
+            ActualBottomBarHeight = 0;
+            SidebarX = width - ActualSidebarWidth;
+            ViewportW = Math.Max(1, SidebarX - 1); ViewportH = height;
+            BottomBarY = height;
+            ConsoleRight = Math.Min(SidebarX - 12, S(480));
+            UpdateRenderTiles();
+            ResizeWindowIfNeeded(width, height);
+            OnResolutionChanged?.Invoke();
+            return;
+        }
 
         // Original VB6 RenderScreen uses the full configured back buffer. The
         // UI remains an overlay and must never take pixels from the world.

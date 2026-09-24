@@ -27,6 +27,11 @@ public partial class FloatingHudSmoke : Node
             Field<Control>("_gameUI").Show();
             Field<Control>("_viewportContainer").Show();
             var state = Field<GameState>("_state");
+            // This scene validates the floating layout specifically. The production
+            // default may be ClassicHud, so force the intended mode instead of letting
+            // a saved/default preference reparent the minimap into the docked sidebar.
+            state.Config.ClassicHud = false;
+            ResolutionManager.SetClassicHud(false);
             state.AccountName = "offline-hud-test"; state.UserName = "preview"; state.IsLogged = true;
             state.CurrentMap = 28; state.UserPosX = 33; state.UserPosY = 61; state.OnlineCount = 17;
             state.Strength = 21; state.Agility = 18; state.Gold = 47964300;

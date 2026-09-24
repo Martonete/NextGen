@@ -167,17 +167,18 @@ public partial class Main : Control
 		// Fullscreen console: lower-left panel matching the Eternal-style game
 		// composition. Its design rect is x=50..586, y=425..562 at 800x600;
 		// this keeps it clear of both the player view and right-side HUD.
-		int consoleLeft = ResolutionManager.FullscreenWorld ? S(50) : ResolutionManager.LeftMargin + S(5);
-		int consoleTop = ResolutionManager.FullscreenWorld
+		bool overlayWorld = ResolutionManager.FullscreenWorld && !ResolutionManager.ClassicHud;
+		int consoleLeft = overlayWorld ? S(50) : ResolutionManager.LeftMargin + S(5);
+		int consoleTop = overlayWorld
 			? S(425)
 			: ResolutionManager.TopMargin + S(6);
-		int consoleBottom = ResolutionManager.FullscreenWorld
+		int consoleBottom = overlayWorld
 			? S(540)
 			: ResolutionManager.TopMargin + S(100);
-		int chatTop = ResolutionManager.FullscreenWorld
+		int chatTop = overlayWorld
 			? S(544)
 			: ResolutionManager.TopMargin + S(108);
-		int chatBottom = ResolutionManager.FullscreenWorld
+		int chatBottom = overlayWorld
 			? S(562)
 			: ResolutionManager.TopMargin + S(124);
 		if (_consoleLabel != null)
@@ -483,6 +484,8 @@ public partial class Main : Control
 	private LoadingScreen? _startupLoadingScreen;
 	private IEnumerator<int>? _texturePreloadIter;
 	private bool _startupPreloadDone;
+	private Action? _resolutionChangedHandler;
+	private Action? _loginBackdropResolutionHandler;
 
 	/// <summary>
 	/// Creates a fresh PacketHandler and wires all callbacks.
@@ -542,6 +545,7 @@ public partial class Main : Control
 
 	public override void _Ready()
 	{
+		GetWindow().Title = "Leros Online";
 		GD.Print("=== Argentum Nextgen — Godot 4 Client ===");
 		// Establish the actual window mode before the synchronous data load.
 		GetTree().Root.Mode = Window.ModeEnum.Fullscreen;
@@ -587,7 +591,7 @@ public partial class Main : Control
 
 		// Apply dynamic resolution (window size + tile calculation)
 		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight,
-			_state.Config.Fullscreen);
+			_state.Config.Fullscreen, _state.Config.ClassicHud);
 
 		// Load key bindings (Teclas.ao)
 		_state.Keys = KeyBindings.Load(dataPath);
@@ -615,7 +619,7 @@ public partial class Main : Control
 
 		// Wire resolution change: reposition all UI in-place (no scene reload)
 		// In fullscreen, update ContentScaleSize so the new layout fills the screen.
-		ResolutionManager.OnResolutionChanged += () =>
+		_resolutionChangedHandler = () =>
 		{
 			if (_state.Config.Fullscreen)
 				EnterFullscreen();
@@ -624,6 +628,7 @@ public partial class Main : Control
 			// Defer repositioning to next frame so window resize has taken effect
 			Callable.From(RepositionUI).CallDeferred();
 		};
+		ResolutionManager.OnResolutionChanged += _resolutionChangedHandler;
 
 		// Apply initial SubViewport size
 		_viewportContainer.Stretch = false;
@@ -658,7 +663,8 @@ public partial class Main : Control
 		_loginBackdrop.Name = "LoginBackdrop";
 		GetNode("UILayer").AddChild(_loginBackdrop);
 		_loginBackdrop.Init(_gameData, _resources);
-		ResolutionManager.OnResolutionChanged += () => _loginBackdrop?.OnResolutionChanged();
+		_loginBackdropResolutionHandler = () => _loginBackdrop?.OnResolutionChanged();
+		ResolutionManager.OnResolutionChanged += _loginBackdropResolutionHandler;
 		// The app opens on Login and _lastScreen already starts there, so
 		// HandleScreenChange never fires for it — activate the backdrop here.
 		_loginBackdrop.SetActive(_state.CurrentScreen != Screen.Game);
@@ -1589,6 +1595,12 @@ public partial class Main : Control
 
 	public override void _ExitTree()
 	{
+		if (_resolutionChangedHandler != null)
+			ResolutionManager.OnResolutionChanged -= _resolutionChangedHandler;
+		if (_loginBackdropResolutionHandler != null)
+			ResolutionManager.OnResolutionChanged -= _loginBackdropResolutionHandler;
+		_resolutionChangedHandler = null;
+		_loginBackdropResolutionHandler = null;
 		_tcp?.Dispose();
 		_gameData?.Textures?.Cleanup();
 	}
