@@ -88,10 +88,7 @@ public partial class RpgBaseForm : Control
         switch (FormStyle)
         {
             case "entry": BuildEntry(); break;
-            case "v2": BuildV2(); break;
-            case "v3": BuildV3(); break;
-            case "v4": BuildV4(); break;
-            default:   BuildV1(); break;
+            default: BuildSacred(); break;
         }
 
         BuildContent();
@@ -99,7 +96,7 @@ public partial class RpgBaseForm : Control
         // --- Close button (TOP z-order) ---
         if (ShowCloseButton)
         {
-            var closeBtn = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(28, 28));
+            var closeBtn = SacredTheme.CloseButton();
             closeBtn.Pressed += HideForm;
             AddChild(closeBtn);
             closeBtn.AnchorLeft = 1.0f;
@@ -143,15 +140,35 @@ public partial class RpgBaseForm : Control
 
     private void BuildEntry()
     {
-        var panel = new Panel { MouseFilter = MouseFilterEnum.Ignore };
-        var style = EntryTheme.Box("101a20f5", "9e855c", 0);
-        style.SetBorderWidthAll(2);
-        panel.AddThemeStyleboxOverride("panel", style);
+        var panel = SacredTheme.Frame(true);
         AddChild(panel);
         RpgTheme.FillParent(panel);
         ContentContainer = new MarginContainer { MouseFilter = MouseFilterEnum.Ignore };
         foreach (string edge in new[] { "left", "right", "top", "bottom" })
             ContentContainer.AddThemeConstantOverride("margin_" + edge, 28);
+        AddChild(ContentContainer);
+        RpgTheme.FillParent(ContentContainer);
+    }
+
+    private void BuildSacred()
+    {
+        var frame = SacredTheme.Frame();
+        AddChild(frame);
+        RpgTheme.FillParent(frame);
+        if (FormStyle != "v4")
+        {
+            var title = RpgTheme.CreateTitleLabel(TitleText, 17);
+            title.MouseFilter = MouseFilterEnum.Ignore;
+            AddChild(title);
+            title.SetAnchorsAndOffsetsPreset(LayoutPreset.TopWide);
+            title.OffsetLeft = 25; title.OffsetRight = -42;
+            title.OffsetTop = 9; title.OffsetBottom = 35;
+        }
+        ContentContainer = new MarginContainer { MouseFilter = MouseFilterEnum.Ignore };
+        ContentContainer.AddThemeConstantOverride("margin_top", FormStyle == "v4" ? 20 : 54);
+        ContentContainer.AddThemeConstantOverride("margin_left", 30);
+        ContentContainer.AddThemeConstantOverride("margin_right", 30);
+        ContentContainer.AddThemeConstantOverride("margin_bottom", 22);
         AddChild(ContentContainer);
         RpgTheme.FillParent(ContentContainer);
     }
@@ -258,6 +275,8 @@ public partial class RpgBaseForm : Control
         {
             areaSize = GetViewportRect().Size;
         }
+        float fit = System.Math.Min(FormScale, System.Math.Min((areaSize.X - 24) / Size.X, (areaSize.Y - 24) / Size.Y));
+        Scale = Vector2.One * System.Math.Max(.5f, fit);
         Position = (areaSize - Size * Scale) / 2.0f;
         MoveToFront();
     }

@@ -1,5 +1,8 @@
 # Discrepancias VB6 13.3 vs Rust Server + Godot Client
 
+> **2026-09-12:** movimiento, intervalos de acciones y fórmulas de combate ya no siguen 13.3:
+> replican Argentum 20. Ver `docs/PARIDAD-AO20.md`.
+
 Auditoria original: 2026-04-01 (archivo por archivo del servidor VB6 13.3 contra Rust + Godot C#).
 **Re-auditoria: 2026-07-06** — se verificaron las 50 discrepancias contra el codigo actual.
 

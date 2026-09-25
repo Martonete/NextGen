@@ -87,6 +87,7 @@ public partial class PacketHandler
     public bool StreamCorrupted { get; private set; }
 
     /// Receive buffer for accumulating partial binary packets across TCP reads.
+    private const int MaxReceiveBufferSize = 1024 * 1024;
     private byte[] _recvBuf = new byte[65536];
     private int _recvStart;
     private int _recvLen;
@@ -110,9 +111,15 @@ public partial class PacketHandler
     /// <summary>
     /// Append incoming TCP data to the receive buffer, compacting if needed.
     /// </summary>
-    private void RecvAppend(byte[] data)
+    private bool RecvAppend(byte[] data)
     {
         int count = data.Length;
+        if (count > MaxReceiveBufferSize - _recvLen)
+        {
+            GD.PrintErr($"[PKT] Receive buffer exceeded {MaxReceiveBufferSize} bytes — disconnecting");
+            StreamCorrupted = true;
+            return false;
+        }
         if (_recvStart + _recvLen + count > _recvBuf.Length)
         {
             if (_recvLen + count > _recvBuf.Length)
@@ -130,6 +137,7 @@ public partial class PacketHandler
         }
         Buffer.BlockCopy(data, 0, _recvBuf, _recvStart + _recvLen, count);
         _recvLen += count;
+        return true;
     }
 
     /// <summary>
@@ -147,7 +155,7 @@ public partial class PacketHandler
     /// </summary>
     public void HandleBinaryData(byte[] data)
     {
-        RecvAppend(data);
+        if (StreamCorrupted || data.Length == 0 || !RecvAppend(data)) return;
 
         int safetyLimit = 500;
         while (_recvLen > 0 && safetyLimit-- > 0 && !StreamCorrupted)

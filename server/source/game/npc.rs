@@ -152,6 +152,9 @@ pub struct NpcState {
 
     // Status effects
     pub veneno: bool, // Poisons on hit
+    pub afecta_paralisis: bool, // Immune to paralysis/immobilize
+    /// AO20 Char.speeding: 210 / IntervaloMovimiento — the client glides the tile over the move interval.
+    pub speeding: f32,
     pub paralyzed: bool,
     pub counter_paralisis: i32, // Ticks remaining (decremented in game tick)
 
@@ -272,6 +275,8 @@ impl NpcState {
             agua_valida: data.agua_valida,
             tierra_invalida: data.tierra_invalida,
             veneno: data.veneno,
+            afecta_paralisis: data.afecta_paralisis,
+            speeding: 1.0,
             paralyzed: false,
             counter_paralisis: 0,
             lanza_spells: data.lanza_spells,
@@ -314,6 +319,7 @@ impl NpcState {
             "", // NPCs have no name in CC
             0,
             0, // nick_color, privileges — not used for NPCs
+            self.speeding,
         )
     }
 

@@ -199,6 +199,9 @@ public partial class PacketHandler
         string name = bq.ReadString();
         byte nickColor = bq.ReadByte();
         byte privileges = bq.ReadByte();
+        // AO20: CharacterCreate carries Speeding (Real32); 0 means "not set" → 1.
+        float speeding = bq.ReadSingle();
+        if (!(speeding > 0f)) speeding = 1f;
 
         var ch = new Character
         {
@@ -214,6 +217,7 @@ public partial class PacketHandler
             Name = name,
             Criminal = nickColor == 2,
             Privileges = privileges,
+            Speeding = speeding,
         };
 
         ch.Dead = IsDeadHead(head);
@@ -277,6 +281,8 @@ public partial class PacketHandler
         {
             int ltIdx = name.IndexOf('<');
             _state.UserGuildName = ltIdx >= 0 ? name[(ltIdx + 1)..] : "";
+            _state.UserSpeeding = speeding;
+            _state.MainTimer.ApplyWalkSpeed(_state.Intervals.Walk, speeding);
         }
 
         if (body <= 0)

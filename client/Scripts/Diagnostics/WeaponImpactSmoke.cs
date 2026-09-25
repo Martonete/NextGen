@@ -49,6 +49,11 @@ public partial class WeaponImpactSmoke : Node2D
         state.WeaponImpacts.Clear();
         for (byte kind = 201; kind <= 206; kind++) Send(kind);
         Check(state.WeaponImpacts.Count == 6, "All six styles decode");
+        Send(207);
+        Check(ch.GmTeleportAuraTime == 0f && state.WeaponImpacts.Count == 6 && ch.ActiveFxSlots[0] == 0,
+            "GM teleport aura decodes outside weapon and classic FX slots");
+        Send(0);
+        Check(ch.GmTeleportAuraTime < 0f, "Clearing classic FX also clears GM teleport aura");
         ch.Invisible = true; Send(201);
         Check(state.WeaponImpacts.Count == 6, "Invisible target cannot emit a strike");
         ch.Invisible = false;

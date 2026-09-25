@@ -59,8 +59,8 @@ public partial class FogOverlayLayer : Node2D
     /// </summary>
     public void RebuildFogTexture()
     {
-        int vpW = ResolutionManager.ViewportW;
-        int vpH = ResolutionManager.ViewportH;
+        int vpW = ResolutionManager.RenderPixelW;
+        int vpH = ResolutionManager.RenderPixelH;
         if (vpW != _cachedVpW || vpH != _cachedVpH || _maskTex == null)
         {
             _maskTex = BuildFogMask(vpW, vpH);

@@ -110,10 +110,10 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
-    // VB6: LanzarHechizo range check — target must be within visible area (8x6 tiles)
+    // Expanded player attack area, independent of camera zoom and entity streaming.
     // Self-target spells skip this check (TargetType::Self_ uses caster's own position)
-    const RANGO_VISION_X: i32 = 8;
-    const RANGO_VISION_Y: i32 = 6;
+    const RANGO_VISION_X: i32 = 14;
+    const RANGO_VISION_Y: i32 = 10;
     if (target_x - x).abs() > RANGO_VISION_X || (target_y - y).abs() > RANGO_VISION_Y {
         state.send_console(
             conn_id,

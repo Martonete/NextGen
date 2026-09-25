@@ -60,6 +60,11 @@ public partial class SafeZoneBorderLayer : Node2D
             _safeY2 = _state.CurrentZoneY2;
             _hasSafeZone = true;
         }
+        else if (!_state.CurrentZoneSafe)
+        {
+            // Leaving the safe zone: stop redrawing every frame once the warning has faded.
+            _hasSafeZone = false;
+        }
 
         // Update zone transition state machine (must run in _Process, not _Draw)
         if (_hasSafeZone)
@@ -160,8 +165,8 @@ public partial class SafeZoneBorderLayer : Node2D
         float uY  = cam.UserY;
         int hX  = ResolutionManager.HalfTilesX;
         int hY  = ResolutionManager.HalfTilesY;
-        int vpW = ResolutionManager.ViewportW;
-        int vpH = ResolutionManager.ViewportH;
+        int vpW = ResolutionManager.RenderPixelW;
+        int vpH = ResolutionManager.RenderPixelH;
 
         float offX = cam.PixelOffsetX;
         float offY = cam.PixelOffsetY;

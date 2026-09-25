@@ -93,11 +93,10 @@ internal static class Ao20ShadowRenderer
     {
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
-        var texture = data.Textures?.GetTexture(resolved.FileNum);
-        if (texture == null) return;
+        if (data.Textures == null || !data.Textures.TryGetTexture(resolved.FileNum, out var texture, out int texW, out int texH)) return;
 
         Vector2 drawPosition = GetDrawPosition(resolved, position, center);
-        DrawTextureShadow(canvas, texture, resolved.SX, resolved.SY, resolved.PixelWidth,
+        DrawTextureShadow(canvas, texture, texW, texH, resolved.SX, resolved.SY, resolved.PixelWidth,
             resolved.PixelHeight, drawPosition, light, offset);
     }
 
@@ -136,7 +135,7 @@ internal static class Ao20ShadowRenderer
         }
 
         // VB6 PresentComposedTexture: x = x - 256/2 + 16, y = y - 256 + 32.
-        DrawTextureShadow(canvas, cache.Texture, 0, 0, CompositeSize, CompositeSize,
+        DrawTextureShadow(canvas, cache.Texture, CompositeSize, CompositeSize, 0, 0, CompositeSize, CompositeSize,
             screenPosition - CompositeAnchor, light, Vector2.Zero);
     }
 
@@ -201,10 +200,9 @@ internal static class Ao20ShadowRenderer
         target.BlendRect(image, source, destination);
     }
 
-    private static void DrawTextureShadow(CanvasItem canvas, Texture2D texture, int sx, int sy,
+    private static void DrawTextureShadow(CanvasItem canvas, Texture2D texture, int texW, int texH, int sx, int sy,
         int width, int height, Vector2 position, CornerColors light, Vector2 offset)
     {
-        int texW = texture.GetWidth(), texH = texture.GetHeight();
         if (!TryGetSourceRect(sx, sy, width, height, texW, texH, out var source)) return;
 
         float u0 = (source.Position.X + 0.25f) / texW;
@@ -224,21 +222,42 @@ internal static class Ao20ShadowRenderer
         _uvs[3] = new Vector2(u0, v0);
 
         // clsBatch.DrawShadow repeats the same flattened parallelogram in a
-        // 1px cardinal cross to soften the silhouette's edge.
+        // 1px cardinal cross to soften the silhouette's edge. The four quads go
+        // out as ONE triangle array (the compat renderer rebuilds a vertex buffer
+        // per DrawPolygon call, so 4 calls per shadow added up fast on tree maps).
         ReadOnlySpan<Vector2> nudges = stackalloc Vector2[]
         {
             new(0, -1), new(1, 0), new(0, 1), new(-1, 0)
         };
-        foreach (Vector2 nudge in nudges)
+        for (int q = 0; q < 4; q++)
         {
-            Vector2 origin = position + offset + nudge;
-            _vertices[0] = new Vector2(origin.X, origin.Y + h - 2f);             // BL / SW
-            _vertices[1] = new Vector2(origin.X + w, origin.Y + h - 2f);         // BR / SE
-            _vertices[2] = new Vector2(origin.X + w + h * 0.25f, origin.Y + h * 0.25f - 2f); // TR / NE
-            _vertices[3] = new Vector2(origin.X + h * 0.25f, origin.Y + h * 0.25f - 2f);     // TL / NW
-            canvas.DrawPolygon(_vertices, _colors, _uvs, texture);
+            Vector2 origin = position + offset + nudges[q];
+            int b = q * 4;
+            _batchVertices[b + 0] = new Vector2(origin.X, origin.Y + h - 2f);             // BL / SW
+            _batchVertices[b + 1] = new Vector2(origin.X + w, origin.Y + h - 2f);         // BR / SE
+            _batchVertices[b + 2] = new Vector2(origin.X + w + h * 0.25f, origin.Y + h * 0.25f - 2f); // TR / NE
+            _batchVertices[b + 3] = new Vector2(origin.X + h * 0.25f, origin.Y + h * 0.25f - 2f);     // TL / NW
+            for (int i = 0; i < 4; i++)
+            {
+                _batchColors[b + i] = _colors[i];
+                _batchUvs[b + i] = _uvs[i];
+            }
         }
+        RenderingServer.CanvasItemAddTriangleArray(canvas.GetCanvasItem(), _batchIndices, _batchVertices,
+            _batchColors, _batchUvs, null, null, texture.GetRid());
     }
+
+    // 4 quads × 4 vertices, two triangles each (fan order BL, BR, TR, TL).
+    private static readonly Vector2[] _batchVertices = new Vector2[16];
+    private static readonly Vector2[] _batchUvs = new Vector2[16];
+    private static readonly Color[] _batchColors = new Color[16];
+    private static readonly int[] _batchIndices =
+    {
+        0, 1, 2, 0, 2, 3,
+        4, 5, 6, 4, 6, 7,
+        8, 9, 10, 8, 10, 11,
+        12, 13, 14, 12, 14, 15,
+    };
 
     private static Color ShadowColor(Color light)
     {

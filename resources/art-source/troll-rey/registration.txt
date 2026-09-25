@@ -1,0 +1,8 @@
+NPC=973
+Body=522
+Texture=45014
+FirstGrh=33813
+LastGrh=33848
+Cell=256x352
+Frames=8x4
+CycleMs=1100

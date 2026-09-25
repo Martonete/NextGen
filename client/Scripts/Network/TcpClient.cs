@@ -19,10 +19,12 @@ public class AoTcpClient : IDisposable
     private NetworkStream? _stream;
     private CancellationTokenSource? _cts;
     private const int MaxInboundQueueSize = 1000;
+    private const int MaxOutboundQueueBytes = 256 * 1024;
     private readonly ConcurrentQueue<byte[]> _inboundQueue = new();
     private readonly byte[] _readBuffer = new byte[8192];
     private volatile bool _connected;
     private readonly List<byte[]> _outboundQueue = new();
+    private int _outboundBytes;
     private readonly object _writeLock = new();
     private readonly object _disconnectLock = new();
     private long _lastReceiveMs;
@@ -36,6 +38,9 @@ public class AoTcpClient : IDisposable
     /// </summary>
     public async Task ConnectAsync(string host, int port, int timeoutMs = 12000)
     {
+        // A reused instance must never carry packets from the previous session.
+        Disconnect();
+        while (_inboundQueue.TryDequeue(out _)) { }
         _cts = new CancellationTokenSource();
         long deadlineMs = System.Environment.TickCount64 + timeoutMs;
         Exception? lastError = null;
@@ -106,11 +111,22 @@ public class AoTcpClient : IDisposable
     public bool SendPacket(byte[] data)
     {
         if (!_connected || _stream == null || data.Length == 0) return false;
+        bool overflow = false;
         lock (_writeLock)
         {
-            _outboundQueue.Add(data);
+            if (data.Length > MaxOutboundQueueBytes - _outboundBytes)
+                overflow = true;
+            else
+            {
+                _outboundQueue.Add(data);
+                _outboundBytes += data.Length;
+            }
         }
-        return true;
+        if (!overflow) return true;
+
+        GD.PrintErr("[TCP] Outbound queue exceeded 256 KB — disconnecting to preserve packet order");
+        Disconnect();
+        return false;
     }
 
     /// <summary>
@@ -127,6 +143,7 @@ public class AoTcpClient : IDisposable
             if (_outboundQueue.Count == 0) return;
             toSend = _outboundQueue.ToArray();
             _outboundQueue.Clear();
+            _outboundBytes = 0;
         }
 
         try
@@ -191,7 +208,14 @@ public class AoTcpClient : IDisposable
                 if (_inboundQueue.Count < MaxInboundQueueSize)
                     _inboundQueue.Enqueue(data);
                 else
-                    GD.PrintErr("[TCP] Inbound queue full — dropping packet");
+                {
+                    // TCP is a byte stream: dropping one arbitrary read chunk makes every
+                    // following opcode undecodable. A clean reconnect is the only safe
+                    // recovery and also bounds memory while the main thread is stalled.
+                    GD.PrintErr("[TCP] Inbound queue full — disconnecting before the stream desynchronizes");
+                    Disconnect();
+                    return;
+                }
             }
         }
         catch (OperationCanceledException)
@@ -223,6 +247,12 @@ public class AoTcpClient : IDisposable
             _cts = null;
             _stream = null;
             _client = null;
+        }
+
+        lock (_writeLock)
+        {
+            _outboundQueue.Clear();
+            _outboundBytes = 0;
         }
 
         try { cts?.Cancel(); } catch { }

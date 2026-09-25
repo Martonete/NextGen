@@ -34,7 +34,7 @@ public partial class LoginForm : RpgBaseForm
     public Action? OnCreateAccountPressed;
 
     public LoginForm(GameState state, string dataPath)
-        : base("Argentum Nextgen", new Vector2(390, 520), "entry")
+        : base("Tierras Sagradas", new Vector2(430, 620), "entry")
     {
         _state = state;
         _dataPath = dataPath;
@@ -44,9 +44,9 @@ public partial class LoginForm : RpgBaseForm
 
     protected override void BuildContent()
     {
-        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingLg);
+        var vbox = RpgTheme.CreateColumn(8);
         ContentContainer.AddChild(vbox);
-        vbox.AddChild(EntryTheme.Header("ARGENTUM NEXTGEN  /  TIERRAS SAGRADAS", "Tu aventura continúa", "Ingresá a tu cuenta para volver al mundo."));
+        vbox.AddChild(EntryTheme.Header("ARGENTUM ONLINE  /  ACCESO AL REINO", "Tu historia continúa", "El mundo sigue vivo. Volvé a ser parte."));
 
         // Account
         vbox.AddChild(EntryTheme.Text("CUENTA", 11));
@@ -64,11 +64,13 @@ public partial class LoginForm : RpgBaseForm
         // Remember check
         var remember = new CheckButton { Text = "Recordar mi cuenta" };
         remember.AddThemeFontSizeOverride("font_size", 12);
+        remember.AddThemeFontOverride("font", GameFonts.AlegreyaRegular);
+        remember.AddThemeColorOverride("font_color", SacredTheme.Muted);
         _rememberCheck = remember;
         vbox.AddChild(remember);
 
         // Buttons
-        _connectButton = EntryTheme.Button("Ingresar a mi cuenta", true);
+        _connectButton = EntryTheme.Button("INGRESAR AL REINO  ›", true);
         _connectButton.CustomMinimumSize = new Vector2(0, 40);
         _connectButton.Pressed += OnConnectPressed;
         vbox.AddChild(_connectButton);
@@ -91,7 +93,7 @@ public partial class LoginForm : RpgBaseForm
         if (_connecting) return;
 
         string account = _accountInput!.Text.Trim();
-        string password = _passwordInput!.Text.Trim();
+        string password = _passwordInput!.Text;
 
         if (string.IsNullOrEmpty(account) || string.IsNullOrEmpty(password))
         {

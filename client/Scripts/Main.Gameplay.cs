@@ -17,9 +17,20 @@ namespace ArgentumNextgen;
 /// </summary>
 public partial class Main
 {
-	// VB6 movement constants
-	private const float EngineBaseSpeed = 0.0172f;   // VB6 timerTicksPerFrame = deltaMs * 0.0172
-	private const float ScrollPixelsPerFrame = 8f;   // VB6 ScrollPixelsPerFrameX/Y
+	// AO20 engine.bas (engine_init / ShowNextFrame / Char_Render):
+	//   engineBaseSpeed = 0.018            → timerTicksPerFrame = elapsedMs * 0.018
+	//   ScrollPixelsPerFrameX/Y = 8.5      → pixels per frame = 8.5 * ticks * Speeding
+	//   OffsetLimitScreen = 32             → the step is over once |offset| >= 32
+	// That is 0.153 px/ms per unit of Speeding: a 32 px tile in ~209 ms, applied with
+	// the real frame delta. Whatever overshoots 32 is dropped, exactly like AO20 does.
+	private const float EngineBaseSpeed = 0.018f;
+	private const float ScrollPixelsPerFrame = 8.5f;
+	private const float OffsetLimitScreen = 32f;
+	// A stall (alt-tab, loading) must not turn into a teleport when the frame resumes.
+	// AO20 has no such clamp; 500 ms covers a full step at any speed the game uses.
+	private const float MaxFrameMs = 500f;
+	// AO20 ApplySpeedingToChar clamps the per-frame walk animation time to [40, 220] ms.
+	private const float WalkFrameMsMin = 40f, WalkFrameMsMax = 220f;
 
 	private void HandleScreenChange(Screen newScreen)
 	{
@@ -152,14 +163,21 @@ public partial class Main
 	private void EnterFullscreen()
 	{
 		var root = GetTree().Root;
+		var native = DisplayServer.ScreenGetSize(root.CurrentScreen);
+		// Headless/startup transitions can briefly expose 0x0. Use the same minimum
+		// accepted by ResolutionManager so the resolution-change callback cannot
+		// recursively reapply an impossible native size.
+		native.X = Math.Max(ResolutionManager.DesignWidth, native.X);
+		native.Y = Math.Max(ResolutionManager.DesignHeight, native.Y);
+		root.Mode = Window.ModeEnum.Fullscreen;
+		if (ResolutionManager.WindowWidth != native.X || ResolutionManager.WindowHeight != native.Y)
+			ResolutionManager.ApplyResolution(native.X, native.Y, true);
 		// Set content scale to match the current resolution layout.
 		// This tells Godot to scale our WindowWidth x WindowHeight content to fill the screen.
 		root.ContentScaleSize = new Vector2I(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 		root.ContentScaleMode = Window.ContentScaleModeEnum.CanvasItems;
 		root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
-		root.ContentScaleAspect = _state.Config.AspectRatioMode == 0
-			? Window.ContentScaleAspectEnum.Keep
-			: Window.ContentScaleAspectEnum.Ignore;
+		root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
 		// Keep Godot's Window state in sync with the native window. Direct
 		// DisplayServer changes can be overwritten by Window on the next frame.
 		root.Borderless = false;
@@ -172,6 +190,9 @@ public partial class Main
 	private void ExitFullscreen()
 	{
 		var root = GetTree().Root;
+		if (ResolutionManager.WindowWidth != _state.Config.ResolutionWidth ||
+			ResolutionManager.WindowHeight != _state.Config.ResolutionHeight)
+			ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight, false);
 		// Disable content scaling — in windowed mode we use real pixels
 		root.ContentScaleSize = new Vector2I(0, 0);
 		root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
@@ -192,6 +213,7 @@ public partial class Main
 	/// </summary>
 	private void ApplyConfigToSystems()
 	{
+		ResolutionManager.SetClassicHud(_state.Config.ClassicHud);
 		var cfg = _state.Config;
 
 		// Sync ShowNames to GameState (used by CharRenderer directly)
@@ -234,15 +256,16 @@ public partial class Main
 		_worldRenderer?.RebuildFogOverlay();
 
 		// Apply minimap visibility + resize console accordingly
-		if (_minimapPanel != null)
+		if (_minimapWindow != null)
 		{
-			_minimapPanel.Visible = cfg.ShowMinimap;
-			UpdateConsoleWidth();
+			_minimapWindow.Visible = cfg.ShowMinimap && !cfg.ClassicHud;
+			SaveHudLayout();
 		}
 
 		// Apply form transparency
 		float formAlpha = cfg.FormTransparency ? cfg.FormTransparencyAlpha / 100f : 1.0f;
 		RpgBaseForm.ApplyGlobalAlpha(formAlpha);
+		LayoutFloatingHud();
 
 		GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Fullscreen={cfg.Fullscreen}, Aspect={cfg.AspectRatioMode}");
 	}
@@ -471,6 +494,8 @@ public partial class Main
 		_state.IsLogged = false;
 		_state.Paused = false;
 		_state.LoginError = "";
+		_state.PendingDisconnect = false;
+		_state.DisconnectReason = "";
 		_state.CoordCipher = null;
 		_state.ServerNotice = "";
 		_state.SecurityCode = "";
@@ -492,8 +517,14 @@ public partial class Main
 		_state.UserCharIndex = 0;
 		_state.UserName = "";
 		_state.UserParalyzed = false;
+		_state.UserImmobilized = false;
+		_state.UserStunned = false;
 		_state.ParalysisTimer = 0;
+		_state.ParalysisMaxTimer = 0;
 		_state.UserNavigating = false;
+		_state.UserMounted = false;
+		_state.UserBlind = false;
+		_state.UserDumb = false;
 		_state.UserStopped = false;
 		_state.UsingSkill = 0;
 		_state.ChatActive = false;
@@ -509,6 +540,12 @@ public partial class Main
 		_state.SeguroResu = false;
 		_state.DropDialogOpen = false;
 		_state.ShowTravelPanel = false;
+		_state.QuickbarEditing = false;
+		_state.OptionsPanelOpen = false;
+		_state.EscapeMenuOpen = false;
+		_state.KeyBindPanelOpen = false;
+		_state.MacroPanelOpen = false;
+		_state.StatsPanelOpen = false;
 		_state.UserMoving = false;
 		_state.AddToUserPosX = 0;
 		_state.AddToUserPosY = 0;
@@ -521,6 +558,12 @@ public partial class Main
 		_state.Characters.Clear();
 		_state.WeaponImpacts.Clear();
 		_state.GroundObjects.Clear();
+		_state.ActiveArrows.Clear();
+		_state.ActiveBeams.Clear();
+		_state.MapParticles.Clear();
+		_state.ClearMapLights();
+		_state.TileLightColors = null;
+		_state.LightsDirty = true;
 
 		// Stats
 		_state.MaxHp = 0; _state.MinHp = 0;
@@ -559,6 +602,17 @@ public partial class Main
 		_state.NpcShopCount = 0;
 		for (int i = 0; i < 50; i++)
 			_state.NpcShopItems[i] = new NpcShopItem();
+		_state.MyTradeSlotCount = 0;
+		_state.MyTradeGold = 0;
+		_state.PartnerTradeSlotCount = 0;
+		_state.PartnerTradeGold = 0;
+		_state.TradePartnerName = "";
+		_state.TradeJustOpened = false;
+		_state.TradePartnerAccepted = false;
+		for (int i = 0; i < _state.MyTradeSlots.Length; i++)
+			_state.MyTradeSlots[i] = new TradeOfferSlot();
+		for (int i = 0; i < _state.PartnerTradeSlots.Length; i++)
+			_state.PartnerTradeSlots[i] = new TradeOfferSlot();
 
 		// Bank
 		_state.BankItemCount = 0;
@@ -576,6 +630,39 @@ public partial class Main
 		for (int i = 0; i < 40; i++)
 			_state.BankItems[i] = new BankItem();
 
+		// One-shot panel flags must not survive a reconnect. PanelStateSync resets its
+		// edge detectors after disconnect, so a stale true value would reopen the old
+		// trade/guild/quest/GM window as soon as the new character enters the world.
+		_state.ShowBlacksmithForm = false;
+		_state.ShowCarpenterForm = false;
+		_state.ShowGuildPanel = false;
+		_state.ShowGuildFoundation = false;
+		_state.ShowPartyPanel = false;
+		_state.ShowForumPanel = false;
+		_state.ShowQuestPanel = false;
+		_state.ShowTrainerPanel = false;
+		_state.ShowNpcDialog = false;
+		_state.ShowChangePassword = false;
+		_state.ShowCharInfo = false;
+		_state.ShowSignal = false;
+		_state.GmPanelOpen = false;
+		_state.ShowSpawnList = false;
+		_state.ShowSosPanel = false;
+		_state.ShowPeaceProposal = false;
+		_state.ShowGuildAlignment = false;
+		_state.ShowMotdEditor = false;
+		_state.ShowGuildMember = false;
+		_state.ShowLoadingScreen = false;
+		_state.ShowTutorial = false;
+		_state.ShowContextMenu = false;
+		_state.ShowSelectList = false;
+		_state.ShowMiniTop = false;
+		_state.ForumPosts.Clear();
+		_state.PetList.Clear();
+		_state.SmithWeapons.Clear();
+		_state.SmithArmors.Clear();
+		_state.CarpItems.Clear();
+
 		// Chat queue and history
 		_state.ChatMessages.Clear();
 		_state.ChatHistory.Clear();
@@ -585,46 +672,48 @@ public partial class Main
 	}
 
 	/// <summary>
-	/// VB6-accurate movement interpolation.
-	/// timerTicksPerFrame = deltaMs * EngineBaseSpeed (0.0172)
-	/// scrollPixels = ScrollPixelsPerFrame (8) * timerTicksPerFrame
-	/// Full tile (32px) ≈ 14 frames ≈ 233ms at 60fps.
-	///
-	/// Delta is capped to prevent lag spikes from completing scrolls in one frame,
-	/// which would let the client send moves faster than intended.
-	/// VB6 timer was fixed ~17ms; we allow up to 50ms (3 frames) for flexibility.
+	/// AO20 ShowNextFrame + the `.Moving` block of Char_Render, once per rendered frame
+	/// with the real elapsed time: the camera and every walking character advance
+	/// 8.5 * ticks * Speeding pixels, where ticks = elapsedMs * 0.018.
 	/// </summary>
 	private void UpdateMovement(float delta)
 	{
-		// Cap delta to prevent lag-spike acceleration (VB6 timer was ~17ms fixed)
-		float deltaMs = Math.Min(delta * 1000f, 50f);
-		float ticksPerFrame = deltaMs * EngineBaseSpeed;
-		float scrollPixels = ScrollPixelsPerFrame * ticksPerFrame;
+		float deltaMs = Math.Clamp(delta * 1000f, 0f, MaxFrameMs);
+		float ticks = deltaMs * EngineBaseSpeed;
+
+		foreach (var ch in _state.Characters.Values)
+			ch.WalkAdvancedThisFrame = false;
 		bool selfAdvancedThisFrame = _state.UserMoving;
 
-		// Camera scroll (VB6 ShowNextFrame → OffsetCounterX/Y)
+		// ── Camera (ShowNextFrame) ──
 		if (_state.UserMoving)
 		{
-			_state.ScreenOffsetX += ScrollPixelsPerFrame * _state.AddToUserPosX * ticksPerFrame;
-			_state.ScreenOffsetY += ScrollPixelsPerFrame * _state.AddToUserPosY * ticksPerFrame;
-
-			// Complete when offset reaches a full tile (32px)
-			bool doneX = _state.AddToUserPosX == 0 || Math.Abs(_state.ScreenOffsetX) >= 32f;
-			bool doneY = _state.AddToUserPosY == 0 || Math.Abs(_state.ScreenOffsetY) >= 32f;
-
-			if (doneX && doneY)
+			float selfSpeeding = _state.UserSpeeding;
+			if (_state.AddToUserPosX != 0)
 			{
-				_state.ScreenOffsetX = 0;
-				_state.ScreenOffsetY = 0;
-				_state.AddToUserPosX = 0;
-				_state.AddToUserPosY = 0;
-				_state.UserMoving = false;
-
-				// Scroll completed — assume server accepted the move
+				_state.ScreenOffsetX += ScrollPixelsPerFrame * _state.AddToUserPosX * ticks * selfSpeeding;
+				if (Math.Abs(_state.ScreenOffsetX) >= Math.Abs(OffsetLimitScreen * _state.AddToUserPosX))
+				{
+					_state.ScreenOffsetX = 0;
+					_state.AddToUserPosX = 0;
+					_state.UserMoving = false;
+				}
+			}
+			if (_state.AddToUserPosY != 0)
+			{
+				_state.ScreenOffsetY += ScrollPixelsPerFrame * _state.AddToUserPosY * ticks * selfSpeeding;
+				if (Math.Abs(_state.ScreenOffsetY) >= Math.Abs(OffsetLimitScreen * _state.AddToUserPosY))
+				{
+					_state.ScreenOffsetY = 0;
+					_state.AddToUserPosY = 0;
+					_state.UserMoving = false;
+				}
+			}
+			if (!_state.UserMoving)
+			{
 				if (_state.PendingMoves > 0)
 					_state.PendingMoves--;
-
-				// Sync: force self char's MoveOffset to complete too (avoid 1-frame glitch)
+				// The own char's sprite lands with the camera (avoids a 1-frame glitch).
 				if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
 				{
 					selfCh.MoveOffsetX = 0;
@@ -636,74 +725,20 @@ public partial class Main
 			}
 		}
 
-		// Character sprite interpolation + per-character walk animation
+		// ── Characters (Char_Render .Moving / .TranslationActive) ──
 		foreach (var kvp in _state.Characters)
 		{
 			var ch = kvp.Value;
+			if (ch.Moving) ch.WalkAdvancedThisFrame = true;
 
-			// Include the finishing frame: camera completion clears Moving above,
-			// but that is a tile boundary, not necessarily the end of the walk.
-			// Only a real stop resets the stride; turns keep the current phase.
-			bool advancedThisFrame = ch.Moving || (kvp.Key == _state.UserCharIndex && selfAdvancedThisFrame);
-			ch.UpdateWalkContinuity(advancedThisFrame, deltaMs);
-			if (advancedThisFrame && ch.Body > 0)
-			{
-				int heading = ch.Heading;
-				if (heading < 1 || heading > 4) heading = 3;
-
-				// Starting to walk: begin the cycle. Previously the counter ran
-				// forever, so a character set off on an arbitrary frame.
-				if (ch.WalkFrameHeading == 0)
-				{
-					ch.WalkFrame = 0f;
-					ch.WalkFrameHeading = heading;
-				}
-				else if (ch.WalkFrameHeading != heading)
-				{
-					// Turned while walking: carry the phase across.
-					ch.WalkFrameHeading = heading;
-				}
-
-				// The stride is tracked even for a body outside the catalogue: the
-				// bounds check used to skip this whole block, leaving WalkPoseActive
-				// false, so such a character flashed its idle pose while walking.
-				int walkGrh = ch.Body < _gameData.Bodies.Length
-					? _gameData.Bodies[ch.Body].Walk[heading]
-					: 0;
-				if (walkGrh > 0 && walkGrh < _gameData.Grhs.Length)
-				{
-					var grh = _gameData.Grhs[walkGrh];
-					if (grh.NumFrames > 1)
-					{
-						if (ch.WalkFrameCount > 1 && ch.WalkFrameCount != grh.NumFrames)
-							ch.WalkFrame = ch.WalkFrame / ch.WalkFrameCount * grh.NumFrames;
-						ch.WalkFrameCount = grh.NumFrames;
-						float speed = grh.Speed > 0 ? grh.Speed : 100f;
-						// Graficos.ind defines the complete cycle duration for each body.
-						// Keep that cadence intact: bodies such as the Nigromante have
-						// 16 frames (instead of the usual 4-6), so a global slowdown
-						// makes their walk look unnaturally sluggish.
-						ch.WalkFrame += deltaMs * grh.NumFrames / speed * ch.Speeding;
-						if (ch.WalkFrame >= grh.NumFrames)
-							ch.WalkFrame %= grh.NumFrames;
-					}
-				}
-			}
-
-			// Time-based translation takes precedence over walking speed:
-			// AO2020 checks Moving first, then TranslationActive as an
-			// alternative branch (engine.bas:1404-1418).
 			if (ch.TranslationActive)
 			{
 				ch.TranslationElapsedMs += deltaMs;
 				float t = ch.TranslationTimeMs > 0f
 					? Math.Min(ch.TranslationElapsedMs / ch.TranslationTimeMs, 1f)
 					: 1f;
-
-				// Interpolate from the full offset back to zero.
 				ch.MoveOffsetX = ch.TranslationFromX * (1f - t);
 				ch.MoveOffsetY = ch.TranslationFromY * (1f - t);
-
 				if (t >= 1f)
 				{
 					ch.MoveOffsetX = 0f;
@@ -711,6 +746,7 @@ public partial class Main
 					ch.ScrollDirectionX = 0;
 					ch.ScrollDirectionY = 0;
 					ch.TranslationActive = false;
+					ch.Moving = false;
 				}
 				continue;
 			}
@@ -718,38 +754,90 @@ public partial class Main
 			if (!ch.Moving && ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
 				continue;
 
-			// Interpolate X using ScrollDirection.
-			// AO2020: MoveOffsetX + ScrollPixelsPerFrameX * Sgn(dir) * ticks * .Speeding
-			if (ch.MoveOffsetX != 0)
+			if (ch.ScrollDirectionX != 0)
 			{
-				ch.MoveOffsetX += scrollPixels * ch.ScrollDirectionX * ch.Speeding;
-				// Complete when offset crosses zero (moved past destination)
-				if ((ch.ScrollDirectionX > 0 && ch.MoveOffsetX >= 0) ||
-					(ch.ScrollDirectionX < 0 && ch.MoveOffsetX <= 0) ||
-					ch.ScrollDirectionX == 0)
+				ch.MoveOffsetX += ScrollPixelsPerFrame * Math.Sign(ch.ScrollDirectionX) * ticks * ch.Speeding;
+				if ((ch.ScrollDirectionX > 0 && ch.MoveOffsetX >= 0) || (ch.ScrollDirectionX < 0 && ch.MoveOffsetX <= 0))
 				{
 					ch.MoveOffsetX = 0;
+					ch.ScrollDirectionX = 0;
 				}
 			}
-
-			// Interpolate Y using ScrollDirection
-			if (ch.MoveOffsetY != 0)
+			if (ch.ScrollDirectionY != 0)
 			{
-				ch.MoveOffsetY += scrollPixels * ch.ScrollDirectionY * ch.Speeding;
-				if ((ch.ScrollDirectionY > 0 && ch.MoveOffsetY >= 0) ||
-					(ch.ScrollDirectionY < 0 && ch.MoveOffsetY <= 0) ||
-					ch.ScrollDirectionY == 0)
+				ch.MoveOffsetY += ScrollPixelsPerFrame * Math.Sign(ch.ScrollDirectionY) * ticks * ch.Speeding;
+				if ((ch.ScrollDirectionY > 0 && ch.MoveOffsetY >= 0) || (ch.ScrollDirectionY < 0 && ch.MoveOffsetY <= 0))
 				{
 					ch.MoveOffsetY = 0;
+					ch.ScrollDirectionY = 0;
 				}
 			}
-
-			if (ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
+			if (ch.ScrollDirectionX == 0 && ch.ScrollDirectionY == 0)
 			{
+				ch.MoveOffsetX = 0;
+				ch.MoveOffsetY = 0;
 				ch.Moving = false;
-				ch.ScrollDirectionX = 0;
-				ch.ScrollDirectionY = 0;
 			}
+		}
+
+		UpdateWalkAnimation(deltaMs, selfAdvancedThisFrame);
+	}
+
+	/// <summary>
+	/// Advances the walk cycle on render time for every character that moved
+	/// during this frame. A character that finished its step still counts, so the
+	/// stride carries across a tile boundary instead of blinking back to idle.
+	/// </summary>
+	private void UpdateWalkAnimation(float deltaMs, bool selfAdvancedThisFrame)
+	{
+		foreach (var kvp in _state.Characters)
+		{
+			var ch = kvp.Value;
+
+			bool advancedThisFrame = ch.WalkAdvancedThisFrame || ch.Moving
+				|| (kvp.Key == _state.UserCharIndex && (selfAdvancedThisFrame || _state.UserMoving));
+			ch.UpdateWalkContinuity(advancedThisFrame, deltaMs);
+			if (!advancedThisFrame || ch.Body <= 0) continue;
+
+			int heading = ch.Heading;
+			if (heading < 1 || heading > 4) heading = 3;
+
+			// Starting to walk: begin the cycle. Previously the counter ran
+			// forever, so a character set off on an arbitrary frame.
+			if (ch.WalkFrameHeading == 0)
+			{
+				ch.WalkFrame = 0f;
+				ch.WalkFrameHeading = heading;
+			}
+			else if (ch.WalkFrameHeading != heading)
+			{
+				// Turned while walking: carry the phase across.
+				ch.WalkFrameHeading = heading;
+			}
+
+			// The stride is tracked even for a body outside the catalogue: the
+			// bounds check used to skip this whole block, leaving WalkPoseActive
+			// false, so such a character flashed its idle pose while walking.
+			int walkGrh = ch.Body < _gameData.Bodies.Length
+				? _gameData.Bodies[ch.Body].Walk[heading]
+				: 0;
+			if (walkGrh <= 0 || walkGrh >= _gameData.Grhs.Length) continue;
+
+			var grh = _gameData.Grhs[walkGrh];
+			if (grh.NumFrames <= 1) continue;
+
+			if (ch.WalkFrameCount > 1 && ch.WalkFrameCount != grh.NumFrames)
+				ch.WalkFrame = ch.WalkFrame / ch.WalkFrameCount * grh.NumFrames;
+			ch.WalkFrameCount = grh.NumFrames;
+			// AO20 ApplySpeedingToChar: ms per frame = (Grh.speed  NumFrames) / Speeding,
+			// clamped to [40, 220] ms. Graficos.ind stores the whole cycle duration.
+			float total = grh.Speed > 0 ? grh.Speed : 100f;
+			float basePerFrame = Math.Max(1f, (float)Math.Floor(total / grh.NumFrames));
+			float rate = ch.Speeding > 0 ? ch.Speeding : 1f;
+			float msPerFrame = Math.Clamp((float)Math.Floor(basePerFrame / rate), WalkFrameMsMin, WalkFrameMsMax);
+			ch.WalkFrame += deltaMs / msPerFrame;
+			if (ch.WalkFrame >= grh.NumFrames)
+				ch.WalkFrame %= grh.NumFrames;
 		}
 	}
 

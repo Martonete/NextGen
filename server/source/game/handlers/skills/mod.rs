@@ -339,8 +339,8 @@ pub(super) async fn handle_work_left_click(
         return;
     }
 
-    // Anti-cheat: check work cooldown (except for ranged attack which has its own)
-    if skill_type != skill_id::PROYECTILES && !puede_trabajar(state, conn_id) {
+    // AO20: IntervaloPermiteTrabajarExtraer for gathering skills (ranged attack has its own gate)
+    if skill_type != skill_id::PROYECTILES && skill_type != skill_id::MAGIA && !intervalo_permite_trabajar(state, conn_id, false, true) {
         return;
     }
 
@@ -385,8 +385,14 @@ pub(super) async fn handle_work_left_click(
         skill_id::MAGIA => {
             crate::game::handlers::do_lookat_tile(state, conn_id, target_x, target_y).await;
 
-            // Anti-cheat cooldown
-            if !puede_castear(state, conn_id) {
+            // AO20 HandleWorkLeftClick/Magia: bow (peek) → melee→spell (peek) → spell interval.
+            if !intervalo_permite_usar_arcos(state, conn_id, false) {
+                return;
+            }
+            if !intervalo_permite_golpe_magia(state, conn_id, false) {
+                return;
+            }
+            if !intervalo_permite_lanzar_spell(state, conn_id, true) {
                 return;
             }
 

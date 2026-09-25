@@ -123,6 +123,23 @@ pub fn faction_armor_amount(rango: i32, tier: usize) -> i32 {
     }
 }
 
+/// AO20 [BACKSTAB] + [EXTRA_AO20] globals (FileIO.bas LoadBalance 450-530, 800).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BackstabConfig {
+    pub critical_hit_dmg_modifier: f32,
+    pub ignore_armor_chance: f32,
+    pub extra_backstab_chance: f32,
+    pub assasin_stabbing_chance: f32,
+    pub hunter_stabbing_chance: f32,
+    pub bard_stabbing_chance: f32,
+    pub generic_stabbing_chance: f32,
+    pub bandit_critical_hit_chance: f32,
+    /// [EXTRA] ModDañoGolpeCritico — critical bonus vs NPCs (0.33)
+    pub mod_dano_golpe_critico: f32,
+    /// [EXTRA] AirHitReductParalisisTime — paralysis ticks shaved per air swing
+    pub air_hit_reduct_paralisis_time: i32,
+}
+
 /// All combat balance data — VB6 13.3 exact.
 #[derive(Debug, Clone)]
 pub struct BalanceData {
@@ -138,6 +155,12 @@ pub struct BalanceData {
     pub mod_dano_proyectiles: [f32; NUM_CLASSES],
     pub mod_dano_wrestling: [f32; NUM_CLASSES],
     pub mod_escudo: [f32; NUM_CLASSES],
+
+    // AO20 SistemaCombate extras (MODAPUNALAR, MODAPUNALARNPCMIN/MAX, [BACKSTAB], [EXTRA_AO20])
+    pub mod_apunalar: [f32; NUM_CLASSES],
+    pub mod_apunalar_npc_min: [f32; NUM_CLASSES],
+    pub mod_apunalar_npc_max: [f32; NUM_CLASSES],
+    pub backstab: BackstabConfig,
 
     // HP base per class (VB6: MODVIDA)
     pub mod_vida: [f32; NUM_CLASSES],
@@ -170,6 +193,10 @@ impl Default for BalanceData {
             mod_dano_proyectiles: [1.0; NUM_CLASSES],
             mod_dano_wrestling: [1.0; NUM_CLASSES],
             mod_escudo: [1.0; NUM_CLASSES],
+            mod_apunalar: [1.0; NUM_CLASSES],
+            mod_apunalar_npc_min: [1.0; NUM_CLASSES],
+            mod_apunalar_npc_max: [1.0; NUM_CLASSES],
+            backstab: BackstabConfig { mod_dano_golpe_critico: 0.33, air_hit_reduct_paralisis_time: 1, ..Default::default() },
             mod_vida: [
                 7.5,  // Mago
                 8.5,  // Clerigo
@@ -361,63 +388,55 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
             };
         }
 
-        // Per-class modifiers
+        // Per-class modifiers — AO20 tables. Presence-based: a key that exists with
+        // value 0 (e.g. MODESCUDO Mago=0) must stay 0; only a *missing* key defaults.
+        let get_opt = |section: &str, key: &str| -> Option<f32> {
+            ini.get(section, key)
+                .and_then(|s| s.replace(',', ".").trim().parse::<f32>().ok())
+        };
+        let get_or = |section: &str, key: &str, default: f32| -> f32 {
+            get_opt(section, key).unwrap_or(default)
+        };
         for ci in 0..NUM_CLASSES {
             let name = CLASS_NAMES[ci];
-            data.mod_evasion[ci] = get_f32("MODEVASION", name);
-            data.mod_ataque_armas[ci] = get_f32("MODATAQUEARMAS", name);
-            data.mod_ataque_proyectiles[ci] = get_f32("MODATAQUEPROYECTILES", name);
-            data.mod_ataque_wrestling[ci] = get_f32("MODATAQUEWRESTLING", name);
-
-            // MODDAÑOARMAS — section name has ñ (Ñ = \u{00d1})
-            data.mod_dano_armas[ci] = get_f32("MODDA\u{00d1}OARMAS", name);
-            if data.mod_dano_armas[ci] == 0.0 {
-                data.mod_dano_armas[ci] = get_f32("MODDANOARMAS", name);
-            }
-            data.mod_dano_proyectiles[ci] = get_f32("MODDA\u{00d1}OPROYECTILES", name);
-            if data.mod_dano_proyectiles[ci] == 0.0 {
-                data.mod_dano_proyectiles[ci] = get_f32("MODDANOPROYECTILES", name);
-            }
-            data.mod_dano_wrestling[ci] = get_f32("MODDA\u{00d1}OWRESTLING", name);
-            if data.mod_dano_wrestling[ci] == 0.0 {
-                data.mod_dano_wrestling[ci] = get_f32("MODDANOWRESTLING", name);
-            }
-
-            data.mod_escudo[ci] = get_f32("MODESCUDO", name);
-
-            // MODVIDA
-            data.mod_vida[ci] = get_f32("MODVIDA", name);
-
-            // Default multipliers to 1.0 if still 0.0
-            if data.mod_evasion[ci] == 0.0 {
-                data.mod_evasion[ci] = 1.0;
-            }
-            if data.mod_ataque_armas[ci] == 0.0 {
-                data.mod_ataque_armas[ci] = 1.0;
-            }
-            if data.mod_ataque_proyectiles[ci] == 0.0 {
-                data.mod_ataque_proyectiles[ci] = 1.0;
-            }
-            if data.mod_ataque_wrestling[ci] == 0.0 {
-                data.mod_ataque_wrestling[ci] = 1.0;
-            }
-            if data.mod_dano_armas[ci] == 0.0 {
-                data.mod_dano_armas[ci] = 1.0;
-            }
-            if data.mod_dano_proyectiles[ci] == 0.0 {
-                data.mod_dano_proyectiles[ci] = 1.0;
-            }
-            if data.mod_dano_wrestling[ci] == 0.0 {
-                data.mod_dano_wrestling[ci] = 1.0;
-            }
-            if data.mod_escudo[ci] == 0.0 {
-                data.mod_escudo[ci] = 1.0;
-            }
-            // mod_vida 0 is valid for non-loaded, use default
+            data.mod_evasion[ci] = get_or("MODEVASION", name, 1.0);
+            data.mod_ataque_armas[ci] = get_or("MODATAQUEARMAS", name, 1.0);
+            data.mod_ataque_proyectiles[ci] = get_or("MODATAQUEPROYECTILES", name, 1.0);
+            data.mod_ataque_wrestling[ci] = get_or("MODATAQUEWRESTLING", name, data.mod_ataque_armas[ci]);
+            data.mod_dano_armas[ci] = get_opt("MODDA\u{00d1}OARMAS", name)
+                .or_else(|| get_opt("MODDANOARMAS", name))
+                .unwrap_or(1.0);
+            data.mod_dano_proyectiles[ci] = get_opt("MODDA\u{00d1}OPROYECTILES", name)
+                .or_else(|| get_opt("MODDANOPROYECTILES", name))
+                .unwrap_or(1.0);
+            data.mod_dano_wrestling[ci] = get_opt("MODDA\u{00d1}OWRESTLING", name)
+                .or_else(|| get_opt("MODDANOWRESTLING", name))
+                .unwrap_or(1.0);
+            data.mod_escudo[ci] = get_or("MODESCUDO", name, 1.0);
+            // AO20 LoadBalance: MODAPUNALAR* default to 1 when absent.
+            data.mod_apunalar[ci] = get_or("MODAPUNALAR", name, 1.0);
+            data.mod_apunalar_npc_min[ci] = get_or("MODAPUNALARNPCMIN", name, 1.0);
+            data.mod_apunalar_npc_max[ci] = get_or("MODAPUNALARNPCMAX", name, 1.0);
+            // MODVIDA — 0 is "not loaded", use default
+            data.mod_vida[ci] = get_or("MODVIDA", name, 0.0);
             if data.mod_vida[ci] == 0.0 {
                 data.mod_vida[ci] = 8.0;
             }
         }
+
+        // AO20 [BACKSTAB] + [EXTRA_AO20]
+        data.backstab = BackstabConfig {
+            critical_hit_dmg_modifier: get_or("BACKSTAB", "CriticalHitDmgModifier", 0.0),
+            ignore_armor_chance: get_or("BACKSTAB", "IgnoreArmorChance", 0.0),
+            extra_backstab_chance: get_or("BACKSTAB", "ExtraBackstabChance", 0.0),
+            assasin_stabbing_chance: get_or("BACKSTAB", "AssasinStabbingChance", 0.0),
+            hunter_stabbing_chance: get_or("BACKSTAB", "HunterStabbingChance", 0.0),
+            bard_stabbing_chance: get_or("BACKSTAB", "BardStabbingChance", 0.0),
+            generic_stabbing_chance: get_or("BACKSTAB", "GenericStabbingChance", 0.0),
+            bandit_critical_hit_chance: get_or("BACKSTAB", "BanditCriticalHitChance", 0.0),
+            mod_dano_golpe_critico: get_or("EXTRA_AO20", "ModDanoGolpeCritico", 0.33),
+            air_hit_reduct_paralisis_time: get_or("EXTRA_AO20", "AirHitReductParalisisTime", 1.0) as i32,
+        };
 
         // DISTRIBUCION — HP level-up probability brackets
         for i in 0..5 {
@@ -534,8 +553,21 @@ mod tests {
         assert!((bal.mod_evasion[class_id::GUERRERO] - 1.0).abs() < 0.01);
         // Cazador evasion = 0.9
         assert!((bal.mod_evasion[class_id::CAZADOR] - 0.9).abs() < 0.01);
-        // Pirata evasion = 1.25
-        assert!((bal.mod_evasion[class_id::PIRATA] - 1.25).abs() < 0.01);
+        // AO20 MODEVASION: Pirata = 0.85, Mago = 0.2
+        assert!((bal.mod_evasion[class_id::PIRATA] - 0.85).abs() < 0.01);
+        assert!((bal.mod_evasion[class_id::MAGO] - 0.2).abs() < 0.01);
+        // AO20 MODESCUDO Mago=0 must load as 0, not default to 1
+        assert_eq!(bal.mod_escudo[class_id::MAGO], 0.0);
+        assert!((bal.mod_escudo[class_id::BANDIDO] - 1.3).abs() < 0.01);
+        // AO20 MODATAQUEARMAS / MODDANOWRESTLING / MODAPUNALAR
+        assert!((bal.mod_ataque_armas[class_id::GUERRERO] - 1.1).abs() < 0.01);
+        assert!((bal.mod_dano_wrestling[class_id::LADRON] - 1.0).abs() < 0.01);
+        assert!((bal.mod_apunalar[class_id::ASESINO] - 1.35).abs() < 0.01);
+        assert!((bal.mod_apunalar_npc_max[class_id::ASESINO] - 1.9).abs() < 0.01);
+        // [BACKSTAB] absent in AO20 → zeros; [EXTRA_AO20] crit vs NPC 0.33
+        assert_eq!(bal.backstab.assasin_stabbing_chance, 0.0);
+        assert!((bal.backstab.mod_dano_golpe_critico - 0.33).abs() < 0.001);
+        assert_eq!(bal.backstab.air_hit_reduct_paralisis_time, 1);
         // MODRAZA: Humano STR = +1
         assert_eq!(bal.mod_raza[race_id::HUMANO].fuerza, 1);
         // MODRAZA: Gnomo INT = +4

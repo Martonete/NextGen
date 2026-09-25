@@ -584,9 +584,16 @@ public partial class StatsPanel : RpgBaseForm
 
     public void MarkDirty() => _dirty = true;
 
+    private ulong _lastRefreshMs;
+
     public override void _Process(double delta)
     {
         if (!Visible || _state == null) return;
+        // Nothing marks this panel dirty from the packet handlers, so it polls — but at 4 Hz:
+        // the skills tab rewrites 22 labels + theme overrides per refresh (each re-shapes text).
+        ulong now = Godot.Time.GetTicksMsec();
+        if (!_dirty && now - _lastRefreshMs < 250) return;
+        _lastRefreshMs = now;
         _dirty = false;
         RefreshCurrentTab();
     }

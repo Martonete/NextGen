@@ -33,8 +33,8 @@ public partial class WeatherRenderer : Node2D
     private readonly float[] _snowY = new float[MaxSnowFlakes];
     private readonly float[] _snowSway = new float[MaxSnowFlakes]; // per-flake sway velocity
     private bool _snowInitialized;
-    private static int ViewW => ResolutionManager.ViewportW;
-    private static int ViewH => ResolutionManager.ViewportH;
+    private static int ViewW => ResolutionManager.RenderPixelW;
+    private static int ViewH => ResolutionManager.RenderPixelH;
     // Spawn margin: drops spawn outside viewport so they enter from top/left
     private const float SpawnMarginX = 160f;
 
@@ -86,6 +86,7 @@ public partial class WeatherRenderer : Node2D
     private ImageTexture? _fogMaskTexture;
     private int _fogMaskW, _fogMaskH;
     private bool _fogMaskDirty = true;
+    private bool _fogUniformsDirty = true;
     private int _fogMaskZoneX1, _fogMaskZoneY1, _fogMaskZoneX2, _fogMaskZoneY2;
 
     public void Init(GameState state, SoundManager? soundManager, IResourceProvider? resources = null)
@@ -439,26 +440,33 @@ public partial class WeatherRenderer : Node2D
                 {
                     RebuildFogMask(mapW, mapH);
                     _fogMaskDirty = false;
+                    _fogUniformsDirty = true;
                 }
 
                 if (_fogShaderRect.Material is ShaderMaterial sm)
                 {
-                    sm.SetShaderParameter("density", _state.ZoneFogDensity / 255f);
-                    sm.SetShaderParameter("fog_color",
-                        new Color(_state.ZoneFogR / 255f, _state.ZoneFogG / 255f, _state.ZoneFogB / 255f, 1f));
-                    sm.SetShaderParameter("speed",
-                        new Vector2(_state.ZoneFogSpeedX / 100f, _state.ZoneFogSpeedY / 100f));
-                    if (_fogMaskTexture != null)
-                        sm.SetShaderParameter("fog_mask", _fogMaskTexture);
-                    sm.SetShaderParameter("map_tile_size", new Vector2(mapW, mapH));
-                    sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
-                    sm.SetShaderParameter("rect_world_size", new Vector2(worldW, worldH));
+                    // Constant uniforms only when the zone/map changed (each SetShaderParameter
+                    // is a StringName + Variant marshal); per frame only the player position.
+                    if (_fogUniformsDirty)
+                    {
+                        _fogUniformsDirty = false;
+                        sm.SetShaderParameter("density", _state.ZoneFogDensity / 255f);
+                        sm.SetShaderParameter("fog_color",
+                            new Color(_state.ZoneFogR / 255f, _state.ZoneFogG / 255f, _state.ZoneFogB / 255f, 1f));
+                        sm.SetShaderParameter("speed",
+                            new Vector2(_state.ZoneFogSpeedX / 100f, _state.ZoneFogSpeedY / 100f));
+                        if (_fogMaskTexture != null)
+                            sm.SetShaderParameter("fog_mask", _fogMaskTexture);
+                        sm.SetShaderParameter("map_tile_size", new Vector2(mapW, mapH));
+                        sm.SetShaderParameter("rect_world_origin", Vector2.Zero);
+                        sm.SetShaderParameter("rect_world_size", new Vector2(worldW, worldH));
+                        sm.SetShaderParameter("player_break_radius", 144f);
+                        sm.SetShaderParameter("free_smoke", _state.MapData.FogFreeSmoke ? 1.0f : 0.0f);
+                    }
                     // Player's world position (tile center). Fog dissolves inside the break radius.
                     float playerWorldX = (_state.UserPosX - 0.5f) * TS;
                     float playerWorldY = (_state.UserPosY - 0.5f) * TS;
                     sm.SetShaderParameter("player_world_pos", new Vector2(playerWorldX, playerWorldY));
-                    sm.SetShaderParameter("player_break_radius", 144f);
-                    sm.SetShaderParameter("free_smoke", _state.MapData.FogFreeSmoke ? 1.0f : 0.0f);
                 }
             }
         }
